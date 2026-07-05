@@ -69,17 +69,63 @@ Engineering grew a full sub-branch because the work needed it; Design and Sales 
 
 ## Current status
 
-Canopy is in the **design phase** — no runtime code yet, just the domain model and catalog that everything else will be built on. See `docs/` for the full picture:
+Canopy is in the **build phase**. The domain model and catalog are settled, and **Phase 1 — the
+WYSIWYG org-chart editor and its thin persistence server — is implemented** (see
+[`docs/org-chart-editor.md`](docs/org-chart-editor.md)). You can pick an organization type, drop
+roles and formations onto a canvas, wire reporting lines and sibling dependencies, nest child
+organizations, set salaries, and serialize the result to a single document. No runtime yet — the
+chart is *built and serialized*, not *actuated*.
+
+See `docs/` for the full picture:
 
 | Doc | What's in it |
 |---|---|
 | [`docs/domain-model.md`](docs/domain-model.md) | The core abstractions — Organization, Agent, Assignment, Gate, BudgetMeter, Step — their lifecycles, and the invariants the runtime must honor |
 | [`docs/archetypes.md`](docs/archetypes.md) | 26 organization types, from software teams to franchises to research labs, each with example roles and dynamics |
-| [`docs/roles.md`](docs/roles.md) | ~75 catalog roles, each with responsibilities written as duty → deliverable |
-| [`docs/teams.md`](docs/teams.md) | Reusable team formations — pre-wired manager + report subtrees with their artifact flow and dependencies |
+| [`docs/roles.md`](docs/roles.md) | 87 catalog roles, each with responsibilities written as duty → deliverable |
+| [`docs/teams.md`](docs/teams.md) | 16 reusable team formations — pre-wired manager + report subtrees with their artifact flow and dependencies |
 | [`docs/use-cases.md`](docs/use-cases.md) | The out-of-the-box acceptance suite: what you can ask for on day one |
+| [`docs/org-chart-editor.md`](docs/org-chart-editor.md) | Phase-1 front-end design spec: the editor, its REST contract, the serialization format, and the validation rules |
 
-Planned direction: a Python SDK (decorator-based agent authoring, CrewAI as a swappable execution backend behind a clean seam), a FastAPI control plane, pluggable sandbox isolation, and a WYSIWYG org-chart editor. The core framework and control plane are intended to be fully open source (Apache-2.0); a hosted service is the eventual commercial layer on top.
+## Running the org-chart editor (Phase 1)
+
+**Prerequisites:** Node ≥ 20 with [pnpm](https://pnpm.io), Python ≥ 3.11 with [uv](https://docs.astral.sh/uv/).
+
+```sh
+pnpm install                 # install UI deps
+uv sync --project server     # install server deps
+pnpm dev                     # → open http://localhost:5173
+```
+
+`pnpm dev` runs both processes: the FastAPI server on **8700** (with `--reload`) and Vite on
+**5173** with `/api` proxied. One command, one URL.
+
+**Production** (single port serves API + built UI):
+
+```sh
+pnpm build                                   # builds the UI into ui/dist
+uv run --project server uvicorn canopy_server.main:app --port 8700
+```
+
+**Checks:**
+
+```sh
+pnpm typecheck    # tsc + ruff + server import
+pnpm test         # vitest (UI) + pytest (server), incl. shared validation golden vectors
+```
+
+Organizations are stored as one JSON document each under `data/organizations/<uuid>.json`
+(gitignored). Export/Download produces a canonical `<slug>.organization.json` you can version and
+hand off; Import/Upload round-trips it back in with fresh ids.
+
+### Architecture at a glance
+
+- **`catalog/catalog.json`** — the machine-readable catalog (26 org types, 87 roles, 16 formations), transcribed from the domain docs and integrity-checked in CI.
+- **`server/`** — FastAPI thin control plane: Pydantic models, the authoritative validator, a JSON file store with atomic writes, and the REST contract the future control plane inherits.
+- **`ui/`** — React + Vite + React Flow editor: a zustand/zundo document store, a mirrored Zod schema + TypeScript validator, and a drag-and-drop canvas.
+- **`testdata/validation/`** — shared golden vectors that keep the Python and TypeScript validators byte-for-byte in agreement.
+
+Planned direction beyond Phase 1: a Python SDK (decorator-based agent authoring, CrewAI as a swappable execution backend behind a clean seam), the control plane grown from this same FastAPI seam, and pluggable sandbox isolation. The core framework and control plane are intended to be fully open source (Apache-2.0); a hosted service is the eventual commercial layer on top.
 
 ## License
 

@@ -1,0 +1,78 @@
+{
+  "name": "manager-dangling",
+  "description": "managerId points to a non-existent agent.",
+  "mode": "export",
+  "document": {
+    "kind": "canopy.organization",
+    "schemaVersion": 1,
+    "id": "mgrdang",
+    "name": "mgrdang",
+    "organizationType": "product-engineering",
+    "agents": [
+      {
+        "id": "a1",
+        "name": "a1",
+        "role": {
+          "key": "team-lead",
+          "version": 1
+        },
+        "managerId": null,
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a2",
+        "name": "a2",
+        "role": {
+          "key": "backend-engineer",
+          "version": 1
+        },
+        "managerId": "ghost",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "dependencies": [],
+    "customRoles": [],
+    "childOrganizations": [],
+    "meta": {}
+  },
+  "expectedIssues": [
+    {
+      "severity": "warning",
+      "code": "AGENT_ORPHAN",
+      "agentIds": [
+        "a2"
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "MANAGER_DANGLING",
+      "agentIds": [
+        "a2"
+      ]
+    }
+  ]
+}

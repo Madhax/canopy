@@ -1,0 +1,8 @@
+packages:
+  - "ui"
+
+# esbuild ships a native binary via a postinstall script; allow it to run (vite/vitest need it).
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild

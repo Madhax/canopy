@@ -1,0 +1,94 @@
+{
+  "name": "custom-role-ok",
+  "description": "A document-local custom role resolves without ROLE_UNKNOWN.",
+  "mode": "draft",
+  "document": {
+    "kind": "canopy.organization",
+    "schemaVersion": 1,
+    "id": "customok",
+    "name": "customok",
+    "organizationType": "product-engineering",
+    "agents": [
+      {
+        "id": "a_root",
+        "name": "a_root",
+        "role": {
+          "key": "team-lead",
+          "version": 1
+        },
+        "managerId": null,
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_rc",
+        "name": "a_rc",
+        "role": {
+          "key": "custom-release-captain",
+          "version": 1
+        },
+        "managerId": "a_root",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "dependencies": [],
+    "customRoles": [
+      {
+        "key": "custom-release-captain",
+        "version": 1,
+        "title": "Release Captain",
+        "group": "custom",
+        "purpose": "Owns release trains.",
+        "isManager": false,
+        "responsibilities": [
+          {
+            "duty": "Cut releases",
+            "deliverable": {
+              "kind": "artifact",
+              "type": "ReleaseCandidate"
+            }
+          }
+        ],
+        "defaultSalary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        }
+      }
+    ],
+    "childOrganizations": [],
+    "meta": {}
+  },
+  "expectedIssues": [
+    {
+      "severity": "warning",
+      "code": "AGENT_ORPHAN",
+      "agentIds": [
+        "a_rc"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "name": "dep-self",
+  "description": "Agent depends on itself.",
+  "mode": "export",
+  "document": {
+    "kind": "canopy.organization",
+    "schemaVersion": 1,
+    "id": "org",
+    "name": "org",
+    "organizationType": "product-engineering",
+    "agents": [
+      {
+        "id": "a_lead",
+        "name": "a_lead",
+        "role": {
+          "key": "engineering-lead",
+          "version": 1
+        },
+        "managerId": null,
+        "salary": {
+          "perAssignmentAllowance": 160000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_be",
+        "name": "a_be",
+        "role": {
+          "key": "backend-engineer",
+          "version": 1
+        },
+        "managerId": "a_lead",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_fe",
+        "name": "a_fe",
+        "role": {
+          "key": "frontend-engineer",
+          "version": 1
+        },
+        "managerId": "a_lead",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_qa",
+        "name": "a_qa",
+        "role": {
+          "key": "qa-engineer",
+          "version": 1
+        },
+        "managerId": "a_lead",
+        "salary": {
+          "perAssignmentAllowance": 130000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "d1",
+        "from": "a_be",
+        "to": "a_be"
+      }
+    ],
+    "customRoles": [],
+    "childOrganizations": [],
+    "meta": {}
+  },
+  "expectedIssues": [
+    {
+      "severity": "warning",
+      "code": "AGENT_ORPHAN",
+      "agentIds": [
+        "a_fe"
+      ]
+    },
+    {
+      "severity": "warning",
+      "code": "AGENT_ORPHAN",
+      "agentIds": [
+        "a_qa"
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "DEP_SELF",
+      "dependencyIds": [
+        "d1"
+      ]
+    }
+  ]
+}
