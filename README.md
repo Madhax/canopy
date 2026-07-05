@@ -41,18 +41,18 @@ graph BT
   Designer["Product Designer"]:::leaf
   AE["Account Executive"]:::leaf
 
-  Eng --- Root
-  Design --- Root
-  Sales --- Root
+  Root --- Eng
+  Root --- Design
+  Root --- Sales
 
-  Backend --- Eng
-  Frontend --- Eng
-  QALead --- Eng
-  QA1 --- QALead
+  Eng --- Backend
+  Eng --- Frontend
+  Eng --- QALead
+  QALead --- QA1
 
-  Designer --- Design
+  Design --- Designer
 
-  AE --- Sales
+  Sales --- AE
 
   linkStyle 0 stroke:#26361F,stroke-width:3px
   linkStyle 1 stroke:#26361F,stroke-width:3px
