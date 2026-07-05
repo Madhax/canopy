@@ -1,0 +1,3564 @@
+{
+  "kind": "canopy.catalog",
+  "catalogVersion": 1,
+  "organizationTypes": [
+    {
+      "key": "product-engineering",
+      "title": "Core Product Engineering",
+      "section": "tech-enterprise",
+      "description": "Translating ambiguous market requirements into shipped, stable, and highly performant code.",
+      "exampleIntent": "Release the new multi-tenant billing microservice to production by Q3.",
+      "rolePalette": [
+        "program-manager",
+        "engineering-lead",
+        "backend-engineer",
+        "frontend-engineer",
+        "fullstack-engineer",
+        "qa-engineer",
+        "code-reviewer",
+        "tech-writer",
+        "product-manager"
+      ],
+      "formations": [
+        "product-engineering-pod",
+        "design-studio-cell"
+      ]
+    },
+    {
+      "key": "site-reliability",
+      "title": "Site Reliability & Infrastructure",
+      "section": "tech-enterprise",
+      "description": "Maintaining high availability and scaling infrastructure to meet user demand without manual intervention.",
+      "exampleIntent": "Migrate the primary database cluster to a multi-region active-active setup.",
+      "rolePalette": [
+        "sre-lead",
+        "cloud-architect",
+        "platform-engineer",
+        "incident-responder",
+        "security-engineer",
+        "tech-writer"
+      ],
+      "formations": [
+        "incident-response-squad",
+        "platform-pod"
+      ]
+    },
+    {
+      "key": "enterprise-sales",
+      "title": "Go-to-Market & Enterprise Sales",
+      "section": "tech-enterprise",
+      "description": "Identifying targets, qualifying leads, and closing high-value software contracts.",
+      "exampleIntent": "Close $500k in new enterprise annual recurring revenue this quarter.",
+      "rolePalette": [
+        "sales-director",
+        "sales-development-rep",
+        "account-executive",
+        "solutions-engineer",
+        "customer-success-manager"
+      ],
+      "formations": [
+        "sales-pod"
+      ]
+    },
+    {
+      "key": "platform-engineering",
+      "title": "Platform Engineering",
+      "section": "tech-enterprise",
+      "description": "Product teams reinventing infrastructure badly; slow builds, flaky deploys, inconsistent tooling.",
+      "exampleIntent": "Cut median CI time to under 8 minutes and give every pod one-command preview environments.",
+      "rolePalette": [
+        "engineering-lead",
+        "platform-engineer",
+        "cloud-architect",
+        "security-engineer"
+      ],
+      "formations": [
+        "platform-pod"
+      ]
+    },
+    {
+      "key": "security-operations",
+      "title": "Security Operations",
+      "section": "tech-enterprise",
+      "description": "Finding vulnerabilities before attackers do, and responding when they find them first.",
+      "exampleIntent": "Complete the quarterly threat review of the payments path and close all criticals.",
+      "rolePalette": [
+        "sre-lead",
+        "security-engineer",
+        "security-analyst",
+        "incident-responder"
+      ],
+      "formations": [
+        "incident-response-squad"
+      ]
+    },
+    {
+      "key": "data-analytics",
+      "title": "Data & Analytics",
+      "section": "tech-enterprise",
+      "description": "Decisions being made on vibes because the data is scattered, stale, or wrong.",
+      "exampleIntent": "Stand up the retention dashboard and tell me whether January's pricing change actually worked.",
+      "rolePalette": [
+        "team-lead",
+        "data-engineer",
+        "data-analyst",
+        "data-scientist"
+      ],
+      "formations": [
+        "data-insights-cell"
+      ]
+    },
+    {
+      "key": "applied-ml",
+      "title": "Applied ML",
+      "section": "tech-enterprise",
+      "description": "Shipping models that are actually better than the heuristic they replace, with evidence.",
+      "exampleIntent": "Replace the rules-based fraud filter with a model at equal recall and half the false-positive rate.",
+      "rolePalette": [
+        "engineering-lead",
+        "ml-engineer",
+        "data-engineer",
+        "data-scientist",
+        "qa-engineer"
+      ],
+      "formations": [
+        "ml-delivery-pod"
+      ]
+    },
+    {
+      "key": "product-design",
+      "title": "Product Design Studio",
+      "section": "tech-enterprise",
+      "description": "Building the wrong thing beautifully, or the right thing unusably.",
+      "exampleIntent": "Redesign onboarding so activation hits 40%, with research to prove it.",
+      "rolePalette": [
+        "design-lead",
+        "product-designer",
+        "ux-researcher",
+        "content-designer",
+        "product-manager"
+      ],
+      "formations": [
+        "design-studio-cell"
+      ]
+    },
+    {
+      "key": "growth-marketing",
+      "title": "Growth Marketing",
+      "section": "tech-enterprise",
+      "description": "Nobody knows the product exists; or they know and don't convert.",
+      "exampleIntent": "Launch the Q3 content campaign and grow organic signups 25%.",
+      "rolePalette": [
+        "marketing-lead",
+        "content-writer",
+        "editor",
+        "social-media-manager",
+        "growth-analyst"
+      ],
+      "formations": [
+        "content-machine"
+      ]
+    },
+    {
+      "key": "customer-support-center",
+      "title": "Customer Support Center",
+      "section": "tech-enterprise",
+      "description": "High ticket volume, wildly varying difficulty, and institutional amnesia about past fixes.",
+      "exampleIntent": "Hold first-response under 2 hours this quarter while cutting repeat-issue tickets 30%.",
+      "rolePalette": [
+        "team-lead",
+        "support-agent",
+        "support-engineer",
+        "knowledge-base-writer",
+        "customer-success-manager"
+      ],
+      "formations": [
+        "support-tier"
+      ]
+    },
+    {
+      "key": "franchise-operation",
+      "title": "High-Volume Franchise Operation",
+      "section": "physical-world",
+      "description": "Executing high-throughput, standardized physical service delivery within strict time and safety tolerances.",
+      "exampleIntent": "Serve a 200-car lunch rush while maintaining a sub-3-minute average ticket time.",
+      "rolePalette": [
+        "store-manager",
+        "cashier",
+        "line-cook",
+        "expeditor"
+      ],
+      "formations": [
+        "franchise-shift"
+      ]
+    },
+    {
+      "key": "general-contracting",
+      "title": "General Contracting & Construction",
+      "section": "physical-world",
+      "description": "Coordinating physical materials, specialized labor, and strict safety codes into a durable structure.",
+      "exampleIntent": "Build a custom 8x4 cedar lumber planter garden and wire the adjacent exterior electrical outlets.",
+      "rolePalette": [
+        "general-contractor",
+        "carpenter",
+        "electrician",
+        "site-inspector"
+      ],
+      "formations": [
+        "build-crew"
+      ]
+    },
+    {
+      "key": "ecommerce-fulfillment",
+      "title": "E-commerce Fulfillment",
+      "section": "physical-world",
+      "description": "Orders in, correct boxes out, at volume, with inventory that never lies.",
+      "exampleIntent": "Clear the Black Friday backlog within 48 hours at under 0.5% mis-pick rate.",
+      "rolePalette": [
+        "warehouse-lead",
+        "picker-packer",
+        "inventory-analyst",
+        "support-agent"
+      ],
+      "formations": [
+        "franchise-shift",
+        "data-insights-cell"
+      ]
+    },
+    {
+      "key": "medical-clinic",
+      "title": "Outpatient Medical Clinic",
+      "section": "physical-world",
+      "description": "Patient flow, care quality, and documentation under regulatory constraint.",
+      "exampleIntent": "Run today's schedule of 40 appointments with complete intake notes and zero missed follow-ups.",
+      "rolePalette": [
+        "clinic-director",
+        "physician",
+        "nurse",
+        "medical-scheduler"
+      ],
+      "formations": []
+    },
+    {
+      "key": "event-production",
+      "title": "Event Production",
+      "section": "physical-world",
+      "description": "A hard deadline that cannot slip, dozens of vendors, and a day-of execution window measured in minutes.",
+      "exampleIntent": "Produce the 300-person launch conference on Oct 12, from venue to recap video.",
+      "rolePalette": [
+        "event-producer",
+        "coordinator",
+        "stage-manager",
+        "av-technician",
+        "content-writer"
+      ],
+      "formations": [
+        "event-crew"
+      ]
+    },
+    {
+      "key": "research-lab",
+      "title": "Academic Research Lab",
+      "section": "knowledge-community",
+      "description": "Expanding the boundary of human knowledge through rigorous testing, data modeling, and peer-reviewed publication.",
+      "exampleIntent": "Draft and publish a paper solving the atmospheric carbon-capture efficiency drop.",
+      "rolePalette": [
+        "principal-investigator",
+        "literature-analyst",
+        "data-scientist",
+        "research-assistant",
+        "manuscript-drafter"
+      ],
+      "formations": [
+        "research-cell"
+      ]
+    },
+    {
+      "key": "community-organization",
+      "title": "Grassroots Community Organization",
+      "section": "knowledge-community",
+      "description": "Mobilizing local participants, securing resources, and synchronizing outdoor community events for a shared purpose.",
+      "exampleIntent": "Design and execute a 45-minute synchronized community fitness workout across a local high school football field.",
+      "rolePalette": [
+        "community-lead",
+        "event-producer",
+        "coordinator",
+        "content-writer",
+        "volunteer-coordinator"
+      ],
+      "formations": [
+        "event-crew",
+        "fundraising-office"
+      ]
+    },
+    {
+      "key": "newsroom",
+      "title": "The Newsroom",
+      "section": "knowledge-community",
+      "description": "Publishing stories fast enough to matter and verified enough to defend.",
+      "exampleIntent": "Investigate the city procurement records and publish by Friday if the story holds.",
+      "rolePalette": [
+        "managing-editor",
+        "reporter",
+        "fact-checker",
+        "editor"
+      ],
+      "formations": [
+        "newsdesk"
+      ]
+    },
+    {
+      "key": "curriculum-studio",
+      "title": "Curriculum Studio",
+      "section": "knowledge-community",
+      "description": "Turning expertise into teachable, assessable learning material.",
+      "exampleIntent": "Build the 6-week 'Intro to Data Analysis' course: outline, twelve modules, assessments.",
+      "rolePalette": [
+        "curriculum-designer",
+        "instructional-writer",
+        "assessment-reviewer"
+      ],
+      "formations": []
+    },
+    {
+      "key": "nonprofit-fundraising",
+      "title": "Nonprofit Development Office",
+      "section": "knowledge-community",
+      "description": "Funding a mission from grants, donors, and volunteers, with radical accountability for where money goes.",
+      "exampleIntent": "Raise $250k this fiscal year across grants and the spring donor campaign.",
+      "rolePalette": [
+        "development-director",
+        "grant-writer",
+        "volunteer-coordinator",
+        "content-writer",
+        "community-lead"
+      ],
+      "formations": [
+        "fundraising-office"
+      ]
+    },
+    {
+      "key": "creative-agency",
+      "title": "Marketing / Creative Agency",
+      "section": "professional-services",
+      "description": "Delivering creative work that satisfies a client who changes their mind, on retainer economics.",
+      "exampleIntent": "Deliver the full rebrand package for Client X: identity, site copy, launch assets.",
+      "rolePalette": [
+        "account-manager",
+        "creative-director",
+        "content-writer",
+        "product-designer",
+        "editor"
+      ],
+      "formations": [
+        "content-machine"
+      ]
+    },
+    {
+      "key": "management-consultancy",
+      "title": "Management Consultancy",
+      "section": "professional-services",
+      "description": "Answering a high-stakes strategic question with rigor, on a deadline, for someone else.",
+      "exampleIntent": "Should Client Y enter the Brazilian market? Recommendation deck in six weeks.",
+      "rolePalette": [
+        "engagement-manager",
+        "consultant",
+        "data-analyst"
+      ],
+      "formations": []
+    },
+    {
+      "key": "law-practice",
+      "title": "Law Practice",
+      "section": "professional-services",
+      "description": "Legal throughput — contracts, redlines, filings — where errors are expensive and everything needs review.",
+      "exampleIntent": "Clear the M&A due-diligence document room by the 15th, flagging every change-of-control clause.",
+      "rolePalette": [
+        "legal-counsel",
+        "contracts-analyst",
+        "compliance-officer"
+      ],
+      "formations": []
+    },
+    {
+      "key": "talent-acquisition",
+      "title": "Talent Acquisition",
+      "section": "corporate-chassis",
+      "description": "Filling open roles with signal, not luck, at pipeline scale.",
+      "exampleIntent": "Fill the three open senior engineering roles this quarter.",
+      "rolePalette": [
+        "recruiter",
+        "sourcer",
+        "interview-coordinator"
+      ],
+      "formations": [
+        "recruiting-loop"
+      ]
+    },
+    {
+      "key": "finance-back-office",
+      "title": "Finance Back Office",
+      "section": "corporate-chassis",
+      "description": "Books that close on time and survive audit.",
+      "exampleIntent": "Close March by the 5th business day with all reconciliations reviewed.",
+      "rolePalette": [
+        "finance-controller",
+        "staff-accountant",
+        "financial-analyst"
+      ],
+      "formations": []
+    },
+    {
+      "key": "legal-compliance-desk",
+      "title": "Legal & Compliance Desk",
+      "section": "corporate-chassis",
+      "description": "Contract review and regulatory adherence as an internal service.",
+      "exampleIntent": "Every inbound NDA triaged within 24 hours; quarterly compliance audit complete by the 20th.",
+      "rolePalette": [
+        "legal-counsel",
+        "contracts-analyst",
+        "compliance-officer"
+      ],
+      "formations": []
+    }
+  ],
+  "roles": [
+    {
+      "key": "chief-executive",
+      "version": 1,
+      "title": "Chief Executive",
+      "group": "leadership-coordination",
+      "purpose": "Org root; owns the standing intent and delegates everything else",
+      "responsibilities": [
+        {
+          "duty": "Decompose standing intent into child Assignments",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DelegationPlan"
+          }
+        },
+        {
+          "duty": "Accept subtree deliverables",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "AcceptanceDecision"
+          }
+        },
+        {
+          "duty": "Compile status",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "StatusReport"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 200000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "general-manager",
+      "version": 1,
+      "title": "General Manager",
+      "group": "leadership-coordination",
+      "purpose": "Runs a self-contained business unit against a P&L",
+      "responsibilities": [
+        {
+          "duty": "Prioritize backlog",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PriorityList"
+          }
+        },
+        {
+          "duty": "Resolve escalations",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "EscalationResolution"
+          }
+        },
+        {
+          "duty": "Budget oversight",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "BudgetReview"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 190000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "team-lead",
+      "version": 1,
+      "title": "Team Lead",
+      "group": "leadership-coordination",
+      "purpose": "First-line manager of a small delivery team",
+      "responsibilities": [
+        {
+          "duty": "Decompose briefs into child Assignments",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TaskBreakdown"
+          }
+        },
+        {
+          "duty": "Review and accept work",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        },
+        {
+          "duty": "Unblock reports",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "GateResolution"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "program-manager",
+      "version": 1,
+      "title": "Technical Program Manager",
+      "group": "leadership-coordination",
+      "purpose": "Cross-team sequencing and dependency management",
+      "responsibilities": [
+        {
+          "duty": "Translate business intent",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FeatureBrief"
+          }
+        },
+        {
+          "duty": "Declare dependency graphs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DependencyMap"
+          }
+        },
+        {
+          "duty": "Track milestones",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "MilestoneReport"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "chief-of-staff",
+      "version": 1,
+      "title": "Chief of Staff",
+      "group": "leadership-coordination",
+      "purpose": "Aggregates upward reporting; runs the operating cadence",
+      "responsibilities": [
+        {
+          "duty": "Compile subtree progress",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "StatusReport"
+          }
+        },
+        {
+          "duty": "Run cadences",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "CadenceExecution"
+          }
+        },
+        {
+          "duty": "Flag risks",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "RiskRegister"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "coordinator",
+      "version": 1,
+      "title": "Coordinator",
+      "group": "leadership-coordination",
+      "purpose": "General-purpose logistics and scheduling under any manager",
+      "responsibilities": [
+        {
+          "duty": "Secure resources and bookings",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "BookingConfirmation"
+          }
+        },
+        {
+          "duty": "Maintain schedules",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Schedule"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "engineering-lead",
+      "version": 1,
+      "title": "Engineering Lead",
+      "group": "software-engineering",
+      "purpose": "Technical decomposition and code quality for a pod",
+      "responsibilities": [
+        {
+          "duty": "Break features into technical plans",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TechPlan"
+          }
+        },
+        {
+          "duty": "Review code",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        },
+        {
+          "duty": "Own standards",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "EngineeringGuideline"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "backend-engineer",
+      "version": 1,
+      "title": "Backend Engineer",
+      "group": "software-engineering",
+      "purpose": "Server-side implementation",
+      "responsibilities": [
+        {
+          "duty": "Implement features",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        },
+        {
+          "duty": "Fix defects",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        },
+        {
+          "duty": "Write unit tests",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TestSuite"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "frontend-engineer",
+      "version": 1,
+      "title": "Frontend Engineer",
+      "group": "software-engineering",
+      "purpose": "Client-side implementation",
+      "responsibilities": [
+        {
+          "duty": "Implement UI from specs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        },
+        {
+          "duty": "Integrate APIs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "fullstack-engineer",
+      "version": 1,
+      "title": "Full-Stack Engineer",
+      "group": "software-engineering",
+      "purpose": "End-to-end feature slices",
+      "responsibilities": [
+        {
+          "duty": "Ship vertical slices",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "mobile-engineer",
+      "version": 1,
+      "title": "Mobile Engineer",
+      "group": "software-engineering",
+      "purpose": "iOS/Android implementation",
+      "responsibilities": [
+        {
+          "duty": "Implement mobile features",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        },
+        {
+          "duty": "Prepare releases",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ReleaseCandidate"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "qa-engineer",
+      "version": 1,
+      "title": "QA Engineer",
+      "group": "software-engineering",
+      "purpose": "Verification and acceptance evidence",
+      "responsibilities": [
+        {
+          "duty": "Write test plans",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TestPlan"
+          }
+        },
+        {
+          "duty": "Execute verification",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TestReport"
+          }
+        },
+        {
+          "duty": "Reproduce defects",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "BugReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "code-reviewer",
+      "version": 1,
+      "title": "Code Reviewer",
+      "group": "software-engineering",
+      "purpose": "Dedicated deep review (security, performance, correctness)",
+      "responsibilities": [
+        {
+          "duty": "Review PRs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ReviewReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 140000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "tech-writer",
+      "version": 1,
+      "title": "Technical Writer",
+      "group": "software-engineering",
+      "purpose": "Developer-facing documentation",
+      "responsibilities": [
+        {
+          "duty": "Write and maintain docs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DocPage"
+          }
+        },
+        {
+          "duty": "Write runbooks",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "RunbookDoc"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "sre-lead",
+      "version": 1,
+      "title": "SRE Lead",
+      "group": "infra-security-reliability",
+      "purpose": "Reliability standards and infra spend oversight",
+      "responsibilities": [
+        {
+          "duty": "Define SLOs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "SLODefinition"
+          }
+        },
+        {
+          "duty": "Approve infra spend",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ApprovalDecision"
+          }
+        },
+        {
+          "duty": "Run postmortem reviews",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 180000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "cloud-architect",
+      "version": 1,
+      "title": "Cloud Architect",
+      "group": "infra-security-reliability",
+      "purpose": "Infrastructure design",
+      "responsibilities": [
+        {
+          "duty": "Draft IaC blueprints",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InfraSpec"
+          }
+        },
+        {
+          "duty": "Capacity planning",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CapacityPlan"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "platform-engineer",
+      "version": 1,
+      "title": "Platform Engineer",
+      "group": "infra-security-reliability",
+      "purpose": "Internal developer tooling and CI/CD",
+      "responsibilities": [
+        {
+          "duty": "Build and maintain pipelines",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        },
+        {
+          "duty": "Improve developer experience",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ToolingRelease"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "incident-responder",
+      "version": 1,
+      "title": "Incident Responder",
+      "group": "infra-security-reliability",
+      "purpose": "On-call triage and recovery",
+      "responsibilities": [
+        {
+          "duty": "Triage alerts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TriageNote"
+          }
+        },
+        {
+          "duty": "Execute recovery",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "RecoveryAttestation"
+          }
+        },
+        {
+          "duty": "Draft postmortems",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "IncidentPostmortem"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 140000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "security-engineer",
+      "version": 1,
+      "title": "Security Engineer",
+      "group": "infra-security-reliability",
+      "purpose": "Application and infra security",
+      "responsibilities": [
+        {
+          "duty": "Threat-model designs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ThreatModel"
+          }
+        },
+        {
+          "duty": "Run security reviews",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "SecurityReport"
+          }
+        },
+        {
+          "duty": "Patch vulnerabilities",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 155000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "security-analyst",
+      "version": 1,
+      "title": "Security Analyst",
+      "group": "infra-security-reliability",
+      "purpose": "Detection and monitoring",
+      "responsibilities": [
+        {
+          "duty": "Investigate alerts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InvestigationReport"
+          }
+        },
+        {
+          "duty": "Tune detections",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DetectionRule"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "data-engineer",
+      "version": 1,
+      "title": "Data Engineer",
+      "group": "data-ai",
+      "purpose": "Pipelines and data infrastructure",
+      "responsibilities": [
+        {
+          "duty": "Build ETL pipelines",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        },
+        {
+          "duty": "Maintain data quality",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DataQualityReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "data-analyst",
+      "version": 1,
+      "title": "Data Analyst",
+      "group": "data-ai",
+      "purpose": "Queries, dashboards, insight",
+      "responsibilities": [
+        {
+          "duty": "Answer data questions",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "AnalysisReport"
+          }
+        },
+        {
+          "duty": "Build dashboards",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Dashboard"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 120000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "data-scientist",
+      "version": 1,
+      "title": "Data Scientist",
+      "group": "data-ai",
+      "purpose": "Statistical modeling and experimentation",
+      "responsibilities": [
+        {
+          "duty": "Design experiments",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ExperimentDesign"
+          }
+        },
+        {
+          "duty": "Run models",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DataModel"
+          }
+        },
+        {
+          "duty": "Interpret results",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FindingsReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 155000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "ml-engineer",
+      "version": 1,
+      "title": "ML Engineer",
+      "group": "data-ai",
+      "purpose": "Model training, evaluation, deployment",
+      "responsibilities": [
+        {
+          "duty": "Train models",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ModelCard"
+          }
+        },
+        {
+          "duty": "Build eval harnesses",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "EvalReport"
+          }
+        },
+        {
+          "duty": "Productionize",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PullRequest"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "product-manager",
+      "version": 1,
+      "title": "Product Manager",
+      "group": "product-design",
+      "purpose": "What to build and why",
+      "responsibilities": [
+        {
+          "duty": "Write specs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ProductSpec"
+          }
+        },
+        {
+          "duty": "Prioritize roadmap",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Roadmap"
+          }
+        },
+        {
+          "duty": "Synthesize feedback",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InsightsReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "design-lead",
+      "version": 1,
+      "title": "Design Lead",
+      "group": "product-design",
+      "purpose": "Design quality and system consistency",
+      "responsibilities": [
+        {
+          "duty": "Review designs",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        },
+        {
+          "duty": "Own design system",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DesignSystemUpdate"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 155000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "product-designer",
+      "version": 1,
+      "title": "Product Designer",
+      "group": "product-design",
+      "purpose": "Flows, wireframes, high-fidelity UI",
+      "responsibilities": [
+        {
+          "duty": "Design features",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DesignSpec"
+          }
+        },
+        {
+          "duty": "Prototype",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Prototype"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "ux-researcher",
+      "version": 1,
+      "title": "UX Researcher",
+      "group": "product-design",
+      "purpose": "User evidence",
+      "responsibilities": [
+        {
+          "duty": "Plan studies",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ResearchPlan"
+          }
+        },
+        {
+          "duty": "Run studies",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ResearchReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 125000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "content-designer",
+      "version": 1,
+      "title": "Content Designer",
+      "group": "product-design",
+      "purpose": "In-product language",
+      "responsibilities": [
+        {
+          "duty": "Write UX copy",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CopyDoc"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "marketing-lead",
+      "version": 1,
+      "title": "Marketing Lead",
+      "group": "marketing-growth-content",
+      "purpose": "Campaign strategy and brand",
+      "responsibilities": [
+        {
+          "duty": "Plan campaigns",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CampaignBrief"
+          }
+        },
+        {
+          "duty": "Approve creative",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ApprovalDecision"
+          }
+        },
+        {
+          "duty": "Report performance",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PerformanceReport"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "content-writer",
+      "version": 1,
+      "title": "Content Writer",
+      "group": "marketing-growth-content",
+      "purpose": "Long-form and short-form content",
+      "responsibilities": [
+        {
+          "duty": "Draft content",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ContentPiece"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 95000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "editor",
+      "version": 1,
+      "title": "Editor",
+      "group": "marketing-growth-content",
+      "purpose": "Quality gate for published words",
+      "responsibilities": [
+        {
+          "duty": "Edit drafts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "EditedDraft"
+          }
+        },
+        {
+          "duty": "Enforce style",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 105000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "growth-analyst",
+      "version": 1,
+      "title": "Growth Analyst",
+      "group": "marketing-growth-content",
+      "purpose": "Funnel measurement and experiments",
+      "responsibilities": [
+        {
+          "duty": "Design growth experiments",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ExperimentDesign"
+          }
+        },
+        {
+          "duty": "Analyze funnels",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FunnelReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 120000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "social-media-manager",
+      "version": 1,
+      "title": "Social Media Manager",
+      "group": "marketing-growth-content",
+      "purpose": "Distribution and engagement",
+      "responsibilities": [
+        {
+          "duty": "Schedule and publish posts",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "PublishAttestation"
+          }
+        },
+        {
+          "duty": "Report engagement",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "EngagementReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 100000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "sales-director",
+      "version": 1,
+      "title": "Sales Director",
+      "group": "sales-customer",
+      "purpose": "Targets, pricing authority, deal escalations",
+      "responsibilities": [
+        {
+          "duty": "Set quotas",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "QuotaPlan"
+          }
+        },
+        {
+          "duty": "Resolve discount escalations",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "EscalationResolution"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 190000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "sales-development-rep",
+      "version": 1,
+      "title": "Sales Development Rep",
+      "group": "sales-customer",
+      "purpose": "Top-of-funnel outreach",
+      "responsibilities": [
+        {
+          "duty": "Prospect and qualify",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "QualifiedLead"
+          }
+        },
+        {
+          "duty": "Log outreach",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "OutreachAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "account-executive",
+      "version": 1,
+      "title": "Account Executive",
+      "group": "sales-customer",
+      "purpose": "Pitch, negotiate, close",
+      "responsibilities": [
+        {
+          "duty": "Run pitches",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "MeetingAttestation"
+          }
+        },
+        {
+          "duty": "Produce proposals",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Proposal"
+          }
+        },
+        {
+          "duty": "Close",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "SignedContract"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "solutions-engineer",
+      "version": 1,
+      "title": "Solutions Engineer",
+      "group": "sales-customer",
+      "purpose": "Technical depth in the sales cycle",
+      "responsibilities": [
+        {
+          "duty": "Run technical demos",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "DemoAttestation"
+          }
+        },
+        {
+          "duty": "Answer security questionnaires",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "QuestionnaireResponse"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 140000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "support-agent",
+      "version": 1,
+      "title": "Support Agent",
+      "group": "sales-customer",
+      "purpose": "Front-line ticket resolution",
+      "responsibilities": [
+        {
+          "duty": "Resolve tickets",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ResolutionAttestation"
+          }
+        },
+        {
+          "duty": "Escalate with context",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "EscalationPackage"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 80000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "support-engineer",
+      "version": 1,
+      "title": "Support Engineer",
+      "group": "sales-customer",
+      "purpose": "Deep technical escalations",
+      "responsibilities": [
+        {
+          "duty": "Diagnose escalations",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DiagnosisReport"
+          }
+        },
+        {
+          "duty": "File product defects",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "BugReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "knowledge-base-writer",
+      "version": 1,
+      "title": "Knowledge Base Writer",
+      "group": "sales-customer",
+      "purpose": "Turn resolutions into reusable answers",
+      "responsibilities": [
+        {
+          "duty": "Write KB articles",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "KBArticle"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 100000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "customer-success-manager",
+      "version": 1,
+      "title": "Customer Success Manager",
+      "group": "sales-customer",
+      "purpose": "Retention and account health",
+      "responsibilities": [
+        {
+          "duty": "Run account reviews",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "HealthReport"
+          }
+        },
+        {
+          "duty": "Drive renewals",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "RenewalPlan"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "recruiter",
+      "version": 1,
+      "title": "Recruiter",
+      "group": "people-recruiting",
+      "purpose": "Own the hiring pipeline for open roles",
+      "responsibilities": [
+        {
+          "duty": "Screen candidates",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ScreenNote"
+          }
+        },
+        {
+          "duty": "Manage pipeline",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PipelineReport"
+          }
+        },
+        {
+          "duty": "Extend offers",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "OfferPacket"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "sourcer",
+      "version": 1,
+      "title": "Sourcer",
+      "group": "people-recruiting",
+      "purpose": "Fill the top of the hiring funnel",
+      "responsibilities": [
+        {
+          "duty": "Source candidates",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CandidateList"
+          }
+        },
+        {
+          "duty": "Log outreach",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "OutreachAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "interview-coordinator",
+      "version": 1,
+      "title": "Interview Coordinator",
+      "group": "people-recruiting",
+      "purpose": "Loop logistics",
+      "responsibilities": [
+        {
+          "duty": "Schedule loops",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "BookingConfirmation"
+          }
+        },
+        {
+          "duty": "Collect feedback",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FeedbackPacket"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 85000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "finance-controller",
+      "version": 1,
+      "title": "Controller",
+      "group": "finance-legal",
+      "purpose": "Accurate books and the monthly close",
+      "responsibilities": [
+        {
+          "duty": "Run the close",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ClosePackage"
+          }
+        },
+        {
+          "duty": "Review reconciliations",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 180000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "staff-accountant",
+      "version": 1,
+      "title": "Staff Accountant",
+      "group": "finance-legal",
+      "purpose": "Journal entries and reconciliation",
+      "responsibilities": [
+        {
+          "duty": "Prepare journal entries",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "JournalEntry"
+          }
+        },
+        {
+          "duty": "Reconcile accounts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Reconciliation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 100000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "financial-analyst",
+      "version": 1,
+      "title": "Financial Analyst",
+      "group": "finance-legal",
+      "purpose": "Variance and forecasting",
+      "responsibilities": [
+        {
+          "duty": "Analyze variances",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "VarianceReport"
+          }
+        },
+        {
+          "duty": "Build forecasts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Forecast"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 120000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "legal-counsel",
+      "version": 1,
+      "title": "Legal Counsel",
+      "group": "finance-legal",
+      "purpose": "Contracts and risk judgment",
+      "responsibilities": [
+        {
+          "duty": "Review contracts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ContractRedline"
+          }
+        },
+        {
+          "duty": "Assess risk",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "RiskMemo"
+          }
+        },
+        {
+          "duty": "Approve exceptions",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ApprovalDecision"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 200000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "contracts-analyst",
+      "version": 1,
+      "title": "Contracts Analyst",
+      "group": "finance-legal",
+      "purpose": "Templated agreement throughput",
+      "responsibilities": [
+        {
+          "duty": "Triage NDAs",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TriageNote"
+          }
+        },
+        {
+          "duty": "Fill templates",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DraftAgreement"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "compliance-officer",
+      "version": 1,
+      "title": "Compliance Officer",
+      "group": "finance-legal",
+      "purpose": "Regulatory adherence",
+      "responsibilities": [
+        {
+          "duty": "Audit processes",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "AuditReport"
+          }
+        },
+        {
+          "duty": "Maintain policies",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PolicyDoc"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "store-manager",
+      "version": 1,
+      "title": "Store Manager",
+      "group": "physical-operations",
+      "purpose": "Shift orchestration and exception handling",
+      "responsibilities": [
+        {
+          "duty": "Staff and sequence shifts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ShiftPlan"
+          }
+        },
+        {
+          "duty": "Resolve floor exceptions",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "InterventionResolution"
+          }
+        },
+        {
+          "duty": "Manage inventory",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InventoryOrder"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "cashier",
+      "version": 1,
+      "title": "Cashier / Teller",
+      "group": "physical-operations",
+      "purpose": "Customer-facing order capture",
+      "responsibilities": [
+        {
+          "duty": "Take orders",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "OrderTicket"
+          }
+        },
+        {
+          "duty": "Handle payment",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "PaymentAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 60000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "line-cook",
+      "version": 1,
+      "title": "Line Cook (Station)",
+      "group": "physical-operations",
+      "purpose": "Execute one station to spec and tempo",
+      "responsibilities": [
+        {
+          "duty": "Prepare station items",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "StationAttestation"
+          }
+        },
+        {
+          "duty": "Flag equipment failures",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "FaultReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 55000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "expeditor",
+      "version": 1,
+      "title": "Expeditor",
+      "group": "physical-operations",
+      "purpose": "Assemble and verify complete orders",
+      "responsibilities": [
+        {
+          "duty": "Assemble orders",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "OrderCompleteAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 60000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "general-contractor",
+      "version": 1,
+      "title": "General Contractor",
+      "group": "physical-operations",
+      "purpose": "Sequence trades, hold the master budget",
+      "responsibilities": [
+        {
+          "duty": "Sequence trades",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "WorkSchedule"
+          }
+        },
+        {
+          "duty": "Accept trade work",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "AcceptanceDecision"
+          }
+        },
+        {
+          "duty": "Procure materials",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "PurchaseOrder"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 140000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "carpenter",
+      "version": 1,
+      "title": "Carpenter",
+      "group": "physical-operations",
+      "purpose": "Structural build work",
+      "responsibilities": [
+        {
+          "duty": "Build to blueprint",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "BuildAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 80000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "electrician",
+      "version": 1,
+      "title": "Electrician",
+      "group": "physical-operations",
+      "purpose": "Wiring to code",
+      "responsibilities": [
+        {
+          "duty": "Wire to code",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "WiringAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 85000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "site-inspector",
+      "version": 1,
+      "title": "Site Inspector",
+      "group": "physical-operations",
+      "purpose": "Code compliance gate",
+      "responsibilities": [
+        {
+          "duty": "Inspect work",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InspectionReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 95000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "warehouse-lead",
+      "version": 1,
+      "title": "Warehouse Lead",
+      "group": "physical-operations",
+      "purpose": "Fulfillment throughput",
+      "responsibilities": [
+        {
+          "duty": "Plan pick/pack waves",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "WavePlan"
+          }
+        },
+        {
+          "duty": "Resolve exceptions",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "InterventionResolution"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 100000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "picker-packer",
+      "version": 1,
+      "title": "Picker/Packer",
+      "group": "physical-operations",
+      "purpose": "Order fulfillment execution",
+      "responsibilities": [
+        {
+          "duty": "Pick and pack orders",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "FulfillmentAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 50000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "inventory-analyst",
+      "version": 1,
+      "title": "Inventory Analyst",
+      "group": "physical-operations",
+      "purpose": "Stock accuracy and reordering",
+      "responsibilities": [
+        {
+          "duty": "Cycle counts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CountReport"
+          }
+        },
+        {
+          "duty": "Reorder proposals",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ReorderProposal"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "clinic-director",
+      "version": 1,
+      "title": "Clinic Director",
+      "group": "healthcare",
+      "purpose": "Care quality and clinic operations",
+      "responsibilities": [
+        {
+          "duty": "Approve protocols",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ApprovalDecision"
+          }
+        },
+        {
+          "duty": "Review outcomes",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "OutcomesReport"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 200000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "physician",
+      "version": 1,
+      "title": "Physician",
+      "group": "healthcare",
+      "purpose": "Diagnosis and care decisions",
+      "responsibilities": [
+        {
+          "duty": "Examine and diagnose",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CarePlan"
+          }
+        },
+        {
+          "duty": "Order tests",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "OrderAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 220000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "nurse",
+      "version": 1,
+      "title": "Nurse",
+      "group": "healthcare",
+      "purpose": "Patient intake and care execution",
+      "responsibilities": [
+        {
+          "duty": "Intake patients",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "IntakeNote"
+          }
+        },
+        {
+          "duty": "Administer care",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "CareAttestation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 100000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "medical-scheduler",
+      "version": 1,
+      "title": "Medical Scheduler",
+      "group": "healthcare",
+      "purpose": "Patient flow",
+      "responsibilities": [
+        {
+          "duty": "Book appointments",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "BookingConfirmation"
+          }
+        },
+        {
+          "duty": "Manage waitlists",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ScheduleReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 65000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "principal-investigator",
+      "version": 1,
+      "title": "Principal Investigator",
+      "group": "research-education",
+      "purpose": "Research direction and final review",
+      "responsibilities": [
+        {
+          "duty": "Set research intent",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ResearchBrief"
+          }
+        },
+        {
+          "duty": "Review findings",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        },
+        {
+          "duty": "Secure funding",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "GrantProposal"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 180000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "literature-analyst",
+      "version": 1,
+      "title": "Literature Analyst",
+      "group": "research-education",
+      "purpose": "Survey existing knowledge",
+      "responsibilities": [
+        {
+          "duty": "Review literature",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "LitReview"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 95000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "research-assistant",
+      "version": 1,
+      "title": "Research Assistant",
+      "group": "research-education",
+      "purpose": "Data collection and experiment execution",
+      "responsibilities": [
+        {
+          "duty": "Run protocols",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ProtocolAttestation"
+          }
+        },
+        {
+          "duty": "Collect data",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Dataset"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 70000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "manuscript-drafter",
+      "version": 1,
+      "title": "Manuscript Drafter",
+      "group": "research-education",
+      "purpose": "Synthesis into publishable form",
+      "responsibilities": [
+        {
+          "duty": "Draft manuscripts",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Manuscript"
+          }
+        },
+        {
+          "duty": "Handle review responses",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "RevisionMemo"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "curriculum-designer",
+      "version": 1,
+      "title": "Curriculum Designer",
+      "group": "research-education",
+      "purpose": "Learning architecture",
+      "responsibilities": [
+        {
+          "duty": "Design course outlines",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CourseOutline"
+          }
+        },
+        {
+          "duty": "Define assessments",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "AssessmentSpec"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "instructional-writer",
+      "version": 1,
+      "title": "Instructional Writer",
+      "group": "research-education",
+      "purpose": "Lesson content",
+      "responsibilities": [
+        {
+          "duty": "Write lesson modules",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "LessonModule"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "assessment-reviewer",
+      "version": 1,
+      "title": "Assessment Reviewer",
+      "group": "research-education",
+      "purpose": "Pedagogical quality gate",
+      "responsibilities": [
+        {
+          "duty": "Review modules",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ReviewReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 100000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "managing-editor",
+      "version": 1,
+      "title": "Managing Editor",
+      "group": "media-events",
+      "purpose": "Editorial direction and standards",
+      "responsibilities": [
+        {
+          "duty": "Assign stories",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "StoryBrief"
+          }
+        },
+        {
+          "duty": "Final publication approval",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ApprovalDecision"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "reporter",
+      "version": 1,
+      "title": "Reporter",
+      "group": "media-events",
+      "purpose": "Investigation and drafting",
+      "responsibilities": [
+        {
+          "duty": "Investigate",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InterviewNotes"
+          }
+        },
+        {
+          "duty": "Draft stories",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "StoryDraft"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 95000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "fact-checker",
+      "version": 1,
+      "title": "Fact Checker",
+      "group": "media-events",
+      "purpose": "Verification gate",
+      "responsibilities": [
+        {
+          "duty": "Verify claims",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FactCheckReport"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "event-producer",
+      "version": 1,
+      "title": "Event Producer",
+      "group": "media-events",
+      "purpose": "Own an event end-to-end",
+      "responsibilities": [
+        {
+          "duty": "Plan events",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "EventRunSheet"
+          }
+        },
+        {
+          "duty": "Accept vendor work",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "AcceptanceDecision"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 130000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "stage-manager",
+      "version": 1,
+      "title": "Stage Manager",
+      "group": "media-events",
+      "purpose": "Day-of execution",
+      "responsibilities": [
+        {
+          "duty": "Run the show",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ShowAttestation"
+          }
+        },
+        {
+          "duty": "Manage cues",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CueSheet"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "av-technician",
+      "version": 1,
+      "title": "AV Technician",
+      "group": "media-events",
+      "purpose": "Sound, video, streaming",
+      "responsibilities": [
+        {
+          "duty": "Set up and operate AV",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "SetupAttestation"
+          }
+        },
+        {
+          "duty": "Deliver recordings",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "RecordingFile"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 85000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "engagement-manager",
+      "version": 1,
+      "title": "Engagement Manager",
+      "group": "professional-services",
+      "purpose": "Client relationship and delivery quality",
+      "responsibilities": [
+        {
+          "duty": "Scope engagements",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "StatementOfWork"
+          }
+        },
+        {
+          "duty": "Manage client escalations",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "EscalationResolution"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 190000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "consultant",
+      "version": 1,
+      "title": "Consultant",
+      "group": "professional-services",
+      "purpose": "Analysis and recommendation",
+      "responsibilities": [
+        {
+          "duty": "Analyze problems",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "AnalysisDeck"
+          }
+        },
+        {
+          "duty": "Interview stakeholders",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "InterviewNotes"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "account-manager",
+      "version": 1,
+      "title": "Account Manager (Agency)",
+      "group": "professional-services",
+      "purpose": "Client servicing for agency work",
+      "responsibilities": [
+        {
+          "duty": "Translate client asks",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CreativeBrief"
+          }
+        },
+        {
+          "duty": "Manage feedback rounds",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FeedbackDigest"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 120000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "creative-director",
+      "version": 1,
+      "title": "Creative Director",
+      "group": "professional-services",
+      "purpose": "Creative quality gate",
+      "responsibilities": [
+        {
+          "duty": "Review creative",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ReviewDecision"
+          }
+        },
+        {
+          "duty": "Set direction",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "CreativeDirection"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "development-director",
+      "version": 1,
+      "title": "Development Director",
+      "group": "nonprofit-community",
+      "purpose": "Fundraising strategy and donor stewardship",
+      "responsibilities": [
+        {
+          "duty": "Plan campaigns",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "FundraisingPlan"
+          }
+        },
+        {
+          "duty": "Steward major donors",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "MeetingAttestation"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 150000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "grant-writer",
+      "version": 1,
+      "title": "Grant Writer",
+      "group": "nonprofit-community",
+      "purpose": "Institutional funding",
+      "responsibilities": [
+        {
+          "duty": "Draft grant applications",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "GrantProposal"
+          }
+        },
+        {
+          "duty": "Track deadlines",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DeadlineCalendar"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 90000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "volunteer-coordinator",
+      "version": 1,
+      "title": "Volunteer Coordinator",
+      "group": "nonprofit-community",
+      "purpose": "Mobilize and schedule people",
+      "responsibilities": [
+        {
+          "duty": "Recruit volunteers",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "VolunteerRoster"
+          }
+        },
+        {
+          "duty": "Coordinate shifts",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "ShiftConfirmation"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 70000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "community-lead",
+      "version": 1,
+      "title": "Community Lead",
+      "group": "nonprofit-community",
+      "purpose": "Local presence and engagement",
+      "responsibilities": [
+        {
+          "duty": "Run community events",
+          "deliverable": {
+            "kind": "attestation",
+            "type": "EventAttestation"
+          }
+        },
+        {
+          "duty": "Publish updates",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "Newsletter"
+          }
+        }
+      ],
+      "isManager": true,
+      "defaultSalary": {
+        "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    }
+  ],
+  "formations": [
+    {
+      "key": "product-engineering-pod",
+      "title": "Product Engineering Pod",
+      "purpose": "Ship product features end-to-end with built-in verification.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "engineering-lead"
+      },
+      "members": [
+        {
+          "slot": "backend",
+          "roleKey": "backend-engineer"
+        },
+        {
+          "slot": "frontend",
+          "roleKey": "frontend-engineer"
+        },
+        {
+          "slot": "qa",
+          "roleKey": "qa-engineer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "qa",
+          "to": "backend"
+        },
+        {
+          "from": "qa",
+          "to": "frontend"
+        }
+      ],
+      "artifactFlow": "brief → engineers produce PullRequest → DependencyGate opens QA → TestReport → lead accepts both → publishes upward"
+    },
+    {
+      "key": "incident-response-squad",
+      "title": "Incident Response Squad",
+      "purpose": "Restore service fast, then convert the pain into prevention.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "sre-lead"
+      },
+      "members": [
+        {
+          "slot": "responder",
+          "roleKey": "incident-responder"
+        },
+        {
+          "slot": "platform",
+          "roleKey": "platform-engineer"
+        },
+        {
+          "slot": "writer",
+          "roleKey": "tech-writer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "writer",
+          "to": "responder"
+        }
+      ],
+      "artifactFlow": "alert → responder TriageNote → recovery RecoveryAttestation → postmortem IncidentPostmortem → tech-writer RunbookDoc"
+    },
+    {
+      "key": "platform-pod",
+      "title": "Platform Pod",
+      "purpose": "Internal developer platform — CI/CD, infra, paved roads.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "engineering-lead"
+      },
+      "members": [
+        {
+          "slot": "platform",
+          "roleKey": "platform-engineer"
+        },
+        {
+          "slot": "architect",
+          "roleKey": "cloud-architect"
+        },
+        {
+          "slot": "security",
+          "roleKey": "security-engineer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "platform",
+          "to": "architect"
+        },
+        {
+          "from": "security",
+          "to": "platform"
+        }
+      ],
+      "artifactFlow": "InfraSpec → implementation PullRequest → security SecurityReport gate → release"
+    },
+    {
+      "key": "design-studio-cell",
+      "title": "Design Studio Cell",
+      "purpose": "Turn product questions into validated, buildable designs.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "design-lead"
+      },
+      "members": [
+        {
+          "slot": "designer",
+          "roleKey": "product-designer"
+        },
+        {
+          "slot": "researcher",
+          "roleKey": "ux-researcher"
+        },
+        {
+          "slot": "content",
+          "roleKey": "content-designer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "designer",
+          "to": "researcher"
+        }
+      ],
+      "artifactFlow": "ResearchPlan → ResearchReport → DependencyGate → DesignSpec + CopyDoc → lead review → publish to engineering"
+    },
+    {
+      "key": "data-insights-cell",
+      "title": "Data Insights Cell",
+      "purpose": "Answer questions with data; keep the data trustworthy enough to ask.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "team-lead"
+      },
+      "members": [
+        {
+          "slot": "engineer",
+          "roleKey": "data-engineer"
+        },
+        {
+          "slot": "analyst",
+          "roleKey": "data-analyst"
+        },
+        {
+          "slot": "scientist",
+          "roleKey": "data-scientist"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "analyst",
+          "to": "engineer"
+        },
+        {
+          "from": "scientist",
+          "to": "engineer"
+        }
+      ],
+      "artifactFlow": "question brief → engineer PullRequest (pipeline) → analyst Dashboard/AnalysisReport → scientist FindingsReport for the hard questions"
+    },
+    {
+      "key": "ml-delivery-pod",
+      "title": "ML Delivery Pod",
+      "purpose": "Train, evaluate, and ship models with evidence.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "engineering-lead"
+      },
+      "members": [
+        {
+          "slot": "ml",
+          "roleKey": "ml-engineer"
+        },
+        {
+          "slot": "data",
+          "roleKey": "data-engineer"
+        },
+        {
+          "slot": "scientist",
+          "roleKey": "data-scientist"
+        },
+        {
+          "slot": "qa",
+          "roleKey": "qa-engineer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "ml",
+          "to": "data"
+        },
+        {
+          "from": "qa",
+          "to": "ml"
+        }
+      ],
+      "artifactFlow": "ExperimentDesign → DataQualityReport → ModelCard → EvalReport (QA-style gate) → deployment PR"
+    },
+    {
+      "key": "sales-pod",
+      "title": "Sales Pod",
+      "purpose": "Take a territory from cold to closed.",
+      "manager": {
+        "slot": "director",
+        "roleKey": "sales-director"
+      },
+      "members": [
+        {
+          "slot": "sdr",
+          "roleKey": "sales-development-rep"
+        },
+        {
+          "slot": "ae",
+          "roleKey": "account-executive"
+        },
+        {
+          "slot": "se",
+          "roleKey": "solutions-engineer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "ae",
+          "to": "sdr"
+        },
+        {
+          "from": "ae",
+          "to": "se"
+        }
+      ],
+      "artifactFlow": "SDR QualifiedLead → DependencyGate → AE Proposal → SignedContract; SE feeds QuestionnaireResponse/DemoAttestation into the AE's stages"
+    },
+    {
+      "key": "support-tier",
+      "title": "Support Tier",
+      "purpose": "Resolve customer issues at the cheapest competent level, and never solve the same problem twice.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "team-lead"
+      },
+      "members": [
+        {
+          "slot": "agent",
+          "roleKey": "support-agent"
+        },
+        {
+          "slot": "engineer",
+          "roleKey": "support-engineer"
+        },
+        {
+          "slot": "writer",
+          "roleKey": "knowledge-base-writer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "engineer",
+          "to": "agent"
+        },
+        {
+          "from": "writer",
+          "to": "engineer"
+        }
+      ],
+      "artifactFlow": "ticket → agent ResolutionAttestation, or EscalationPackage → engineer DiagnosisReport → KB writer KBArticle"
+    },
+    {
+      "key": "content-machine",
+      "title": "Content Machine",
+      "purpose": "Produce, polish, distribute, and measure content on a cadence.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "marketing-lead"
+      },
+      "members": [
+        {
+          "slot": "writer",
+          "roleKey": "content-writer"
+        },
+        {
+          "slot": "editor",
+          "roleKey": "editor"
+        },
+        {
+          "slot": "social",
+          "roleKey": "social-media-manager"
+        },
+        {
+          "slot": "analyst",
+          "roleKey": "growth-analyst"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "editor",
+          "to": "writer"
+        },
+        {
+          "from": "social",
+          "to": "editor"
+        },
+        {
+          "from": "analyst",
+          "to": "social"
+        }
+      ],
+      "artifactFlow": "CampaignBrief → writer ContentPiece → editor EditedDraft (quality gate) → PublishAttestation → analyst EngagementReport"
+    },
+    {
+      "key": "recruiting-loop",
+      "title": "Recruiting Loop",
+      "purpose": "Fill an open role from sourcing to signed offer.",
+      "manager": {
+        "slot": "recruiter",
+        "roleKey": "recruiter"
+      },
+      "members": [
+        {
+          "slot": "sourcer",
+          "roleKey": "sourcer"
+        },
+        {
+          "slot": "coordinator",
+          "roleKey": "interview-coordinator"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "coordinator",
+          "to": "sourcer"
+        }
+      ],
+      "artifactFlow": "CandidateList → ScreenNote → coordinator BookingConfirmation + FeedbackPacket → recruiter OfferPacket"
+    },
+    {
+      "key": "research-cell",
+      "title": "Research Cell",
+      "purpose": "Produce publishable knowledge.",
+      "manager": {
+        "slot": "pi",
+        "roleKey": "principal-investigator"
+      },
+      "members": [
+        {
+          "slot": "lit",
+          "roleKey": "literature-analyst"
+        },
+        {
+          "slot": "scientist",
+          "roleKey": "data-scientist"
+        },
+        {
+          "slot": "assistant",
+          "roleKey": "research-assistant"
+        },
+        {
+          "slot": "drafter",
+          "roleKey": "manuscript-drafter"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "scientist",
+          "to": "assistant"
+        },
+        {
+          "from": "drafter",
+          "to": "lit"
+        },
+        {
+          "from": "drafter",
+          "to": "scientist"
+        }
+      ],
+      "artifactFlow": "ResearchBrief → parallel LitReview + Dataset/DataModel → DependencyGate → Manuscript → PI review"
+    },
+    {
+      "key": "franchise-shift",
+      "title": "Franchise Shift",
+      "purpose": "High-throughput standardized physical service.",
+      "manager": {
+        "slot": "manager",
+        "roleKey": "store-manager"
+      },
+      "members": [
+        {
+          "slot": "cashier",
+          "roleKey": "cashier"
+        },
+        {
+          "slot": "grill",
+          "roleKey": "line-cook"
+        },
+        {
+          "slot": "fry",
+          "roleKey": "line-cook"
+        },
+        {
+          "slot": "expeditor",
+          "roleKey": "expeditor"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "grill",
+          "to": "cashier"
+        },
+        {
+          "from": "fry",
+          "to": "cashier"
+        },
+        {
+          "from": "expeditor",
+          "to": "grill"
+        },
+        {
+          "from": "expeditor",
+          "to": "fry"
+        }
+      ],
+      "artifactFlow": "OrderTicket fans out to stations in parallel → StationAttestations → expeditor OrderCompleteAttestation"
+    },
+    {
+      "key": "build-crew",
+      "title": "Build Crew",
+      "purpose": "Sequence physical trades where dependencies are physics, not preference.",
+      "manager": {
+        "slot": "gc",
+        "roleKey": "general-contractor"
+      },
+      "members": [
+        {
+          "slot": "carpenter",
+          "roleKey": "carpenter"
+        },
+        {
+          "slot": "electrician",
+          "roleKey": "electrician"
+        },
+        {
+          "slot": "inspector",
+          "roleKey": "site-inspector"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "electrician",
+          "to": "carpenter"
+        },
+        {
+          "from": "inspector",
+          "to": "carpenter"
+        },
+        {
+          "from": "inspector",
+          "to": "electrician"
+        }
+      ],
+      "artifactFlow": "WorkSchedule → carpenter BuildAttestation → DependencyGate → electrician WiringAttestation → inspector InspectionReport (ApprovalGate) → GC acceptance"
+    },
+    {
+      "key": "newsdesk",
+      "title": "Newsdesk",
+      "purpose": "Investigate and publish stories that survive scrutiny.",
+      "manager": {
+        "slot": "editor",
+        "roleKey": "managing-editor"
+      },
+      "members": [
+        {
+          "slot": "reporter",
+          "roleKey": "reporter"
+        },
+        {
+          "slot": "factchecker",
+          "roleKey": "fact-checker"
+        },
+        {
+          "slot": "copyeditor",
+          "roleKey": "editor"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "factchecker",
+          "to": "reporter"
+        },
+        {
+          "from": "copyeditor",
+          "to": "reporter"
+        }
+      ],
+      "artifactFlow": "StoryBrief → reporter StoryDraft → parallel FactCheckReport + EditedDraft → editor-in-chief ApprovalGate → publish"
+    },
+    {
+      "key": "event-crew",
+      "title": "Event Crew",
+      "purpose": "Take an event from concept through day-of execution to follow-up.",
+      "manager": {
+        "slot": "producer",
+        "roleKey": "event-producer"
+      },
+      "members": [
+        {
+          "slot": "coordinator",
+          "roleKey": "coordinator"
+        },
+        {
+          "slot": "stage",
+          "roleKey": "stage-manager"
+        },
+        {
+          "slot": "av",
+          "roleKey": "av-technician"
+        },
+        {
+          "slot": "writer",
+          "roleKey": "content-writer"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "stage",
+          "to": "coordinator"
+        },
+        {
+          "from": "av",
+          "to": "coordinator"
+        },
+        {
+          "from": "writer",
+          "to": "stage"
+        }
+      ],
+      "artifactFlow": "EventRunSheet → coordinator BookingConfirmations (permits/venue behind ApprovalGates) → day-of ShowAttestation + RecordingFile → writer post-event ContentPiece"
+    },
+    {
+      "key": "fundraising-office",
+      "title": "Fundraising Office",
+      "purpose": "Fund and staff a mission.",
+      "manager": {
+        "slot": "director",
+        "roleKey": "development-director"
+      },
+      "members": [
+        {
+          "slot": "grant",
+          "roleKey": "grant-writer"
+        },
+        {
+          "slot": "volunteer",
+          "roleKey": "volunteer-coordinator"
+        },
+        {
+          "slot": "writer",
+          "roleKey": "content-writer"
+        }
+      ],
+      "dependencies": [],
+      "artifactFlow": "FundraisingPlan → parallel GrantProposals + donor MeetingAttestations + VolunteerRoster → quarterly StatusReport rollup"
+    }
+  ]
+}

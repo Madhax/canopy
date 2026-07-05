@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — calm, product-grade. Themes are selected explicitly via a `data-theme`
+ * attribute on <html> (see store/settingsStore.ts), persisted to localStorage.
+ * The @theme block below is the DEFAULT (Sage); [data-theme="…"] blocks override per theme.
+ */
+@theme {
+  /* Sage (default) */
+  --color-canvas: #eef1e9;
+  --color-surface: #ffffff;
+  --color-surface-2: #e4e9dc;
+  --color-border: #d3dbc6;
+  --color-border-strong: #b9c4a6;
+  --color-ink: #212b18;
+  --color-ink-muted: #566149;
+  --color-ink-subtle: #5c6b4a80;
+  --color-accent: #4d6b40;
+  --color-accent-fg: #f4fbf0;
+  --color-accent-hover: #3f5a34;
+  --color-danger: #b3261e;
+  --color-warn: #8a5a00;
+  --color-ok: #3e7d32;
+
+  --radius-node: 12px;
+}
+
+:root[data-theme="light"] {
+  --color-canvas: #f6f7f5;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef0ec;
+  --color-border: #e1e4de;
+  --color-border-strong: #c9cdc3;
+  --color-ink: #1a1d18;
+  --color-ink-muted: #5b6357;
+  --color-ink-subtle: #8a90837a;
+  --color-accent: #4d6b40;
+  --color-accent-fg: #ffffff;
+  --color-accent-hover: #3f5a34;
+  --color-danger: #b3261e;
+  --color-warn: #8a5a00;
+  --color-ok: #3e7d32;
+}
+
+:root[data-theme="dark"] {
+  --color-canvas: #12140f;
+  --color-surface: #1b1e18;
+  --color-surface-2: #23271f;
+  --color-border: #313629;
+  --color-border-strong: #434a38;
+  --color-ink: #eef2e8;
+  --color-ink-muted: #a7b09c;
+  --color-ink-subtle: #a7b09c55;
+  --color-accent: #7fa06b;
+  --color-accent-fg: #12140f;
+  --color-accent-hover: #8fb079;
+  --color-danger: #f87171;
+  --color-warn: #fbbf24;
+  --color-ok: #86c66f;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+/* React Flow surface tuned to our tokens. */
+.react-flow {
+  background: var(--color-canvas);
+}
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  background: var(--color-border-strong);
+  border: 1px solid var(--color-surface);
+}
+.react-flow__handle:hover {
+  background: var(--color-accent);
+}

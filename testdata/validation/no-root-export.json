@@ -1,0 +1,60 @@
+{
+  "name": "no-root-export",
+  "description": "No agent with managerId null; export treats as error.",
+  "mode": "export",
+  "document": {
+    "kind": "canopy.organization",
+    "schemaVersion": 1,
+    "id": "noroot",
+    "name": "noroot",
+    "organizationType": "product-engineering",
+    "agents": [
+      {
+        "id": "a1",
+        "name": "a1",
+        "role": {
+          "key": "backend-engineer",
+          "version": 1
+        },
+        "managerId": "a_missing",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "dependencies": [],
+    "customRoles": [],
+    "childOrganizations": [],
+    "meta": {}
+  },
+  "expectedIssues": [
+    {
+      "severity": "warning",
+      "code": "AGENT_ORPHAN",
+      "agentIds": [
+        "a1"
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "MANAGER_DANGLING",
+      "agentIds": [
+        "a1"
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "NO_ROOT"
+    }
+  ]
+}

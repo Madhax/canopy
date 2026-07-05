@@ -1,0 +1,26 @@
+{
+  "name": "canopy",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Canopy — build AI-agent organizations as literal, executable org charts. Phase 1: the WYSIWYG org-chart editor and thin persistence server.",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,ui -c green,cyan \"pnpm dev:server\" \"pnpm dev:ui\"",
+    "dev:server": "uv run --project server uvicorn canopy_server.main:app --reload --reload-dir server/src --port 8700",
+    "dev:ui": "pnpm --filter @canopy/ui dev",
+    "build": "pnpm --filter @canopy/ui build",
+    "typecheck": "pnpm --filter @canopy/ui typecheck && pnpm run typecheck:server",
+    "typecheck:server": "uv run --project server ruff check server/src && uv run --project server python -c \"import canopy_server.main\"",
+    "test": "pnpm run test:ui && pnpm run test:server",
+    "test:ui": "pnpm --filter @canopy/ui test",
+    "test:server": "uv run --project server pytest server/tests -q",
+    "start": "uv run --project server uvicorn canopy_server.main:app --port 8700"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
