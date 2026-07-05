@@ -11,6 +11,7 @@ Design documentation for Canopy: a framework for building AI-agent organizations
 | `roles.md` | The role catalog: every role's purpose and responsibilities, written as duty → deliverable contract | `RoleTemplate` |
 | `teams.md` | Formations: reusable manager+members subtrees with pre-wired artifact flow and dependencies | blueprint fragments for the chart |
 | `use-cases.md` | The out-of-the-box acceptance suite: what a user can ask for on day one and what comes back | `Intent` recipes |
+| `org-chart-editor.md` | Design spec for the phase-1 WYSIWYG org-chart editor: catalog/document schemas, validation rules, thin FastAPI server, React Flow UI, build milestones | the editor + the serialized `Organization` document |
 
 The layering is strict: **use cases** are satisfied by **archetypes**, which compose **formations**, which compose **roles**, which are constrained by the **domain model**. Anything expressible in the lower layers but not deliverable through the upper ones is a catalog gap, not a user error.
 
