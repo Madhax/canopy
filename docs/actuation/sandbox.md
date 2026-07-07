@@ -58,4 +58,4 @@ One sandbox == one agent == one A2A endpoint. Sandboxes are cattle: any sandbox 
 | `microvm` (Firecracker/Cloud Hypervisor) | kernel-level isolation | for untrusted-code workloads (agents running arbitrary tools) |
 | `remote` (e2b / Cloud Run / k8s Job) | off-host scale-out | agents dial the control plane over the network; A2A push notifications replace local forwards; this provider is also the "agent as standalone microservice" packaging path |
 
-The `SandboxSpec.runtime` string becoming an OCI image reference is the only planned interface change, reserved now.
+The `SandboxSpec.runtime` string becoming an OCI image reference is the only planned interface change, reserved now — plus the additions in `agent-envelope.md` §7: `tier` and `egress_policy` fields on the spec, and a `max_tier` declaration per provider. The provider ladder above maps onto the **sandbox tiers** (T0–T3) defined in `agent-envelope.md` §5, where the tier for each agent is *derived from its tool grants*, never chosen directly.

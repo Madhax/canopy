@@ -75,7 +75,7 @@ The prebuilt functionality behind a role. A RoleTemplate carries:
 - **key + title** — `software-engineer`, `qa-tester`, `line-cook`
 - **base instructions** — the persona/behavior contract an Agent inherits
 - **responsibilities** — named duties this role is expected to discharge (see Responsibility below)
-- **tool grants** — the default toolset an Agent of this role receives in its workspace
+- **tool grants** — the default capability set an Agent of this role receives, as references into the platform's ToolGrant vocabulary. Grants are the scope-enforcement mechanism: what an agent can do is what it possesses, and possession is only ever narrowed below the template (per node or per Assignment), never silently widened. The vocabulary, its risk classes, and enforcement are specified in `actuation/agent-envelope.md`.
 - **deliverable contract** — the default expected output shape (artifact type or action attestation)
 - **default salary** — a starting token allowance, overridable per Agent
 - **effort expectations** — baseline token/duration envelopes for its responsibilities, the primary source for overrun detection, continuously calibrated by the platform against historical actuals (see Economics)

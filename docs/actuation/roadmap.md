@@ -26,7 +26,7 @@ The seams are designed now; these are the planned swaps. None changes an interfa
 | **SecretStore** (local encrypted) | OS keychain, Vault, cloud secret managers; IAM-based providers remove stored keys entirely |
 | **ArtifactStore** (local disk) | S3/GCS/MinIO backend; content-delivery URLs; retention policies |
 | **Control plane** (modular monolith) | Extraction order when scale demands: Model Gateway first (stateless, hot path) → Message Router (stateless over shared bus) → Actuator/Directory → Ledger/Artifacts. Each is already interface-isolated with own tables |
-| **Agent runtime** (thin loop) | Pluggable execution backends behind the same charter/tool contract — CrewAI (per the original README direction), LangGraph, or CLI-agent adapters (Claude Code as a worker, Paperclip-adapter-style) — all still metered through the gateway |
+| **Agent runtime** (thin loop) | Runtime kinds per `agent-envelope.md` §4: the loop becomes the `loop` kind in a runtime registry; `cli` adapters (Claude Code headless behind the gateway's provider proxy — gated on T2/docker) and the `actor` kind (closed-API decision loop over the Tool Proxy — gated on phase-3 ApprovalGates) follow; CrewAI/LangGraph remain possible backends behind the same envelope contract, all still metered through the gateway |
 | **Workspace** (persistent dir) | Fresh-per-assignment provisioning, git-worktree workspaces for code roles, volume/object-backed workspaces for remote sandboxes |
 | **UI** (status pills + panels) | Live execution theater: task-tree overlay on the chart, step drill-down, queue-depth heat, replayable activity timeline |
 

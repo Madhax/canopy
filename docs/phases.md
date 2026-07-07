@@ -1,6 +1,6 @@
 # Canopy — The Three Phases: Build → Actuate → Execute
 
-**Status:** Design overview (Phase 1 implemented; Phase 2 in progress — A1–A3 shipped; Phase 3 forthcoming)
+**Status:** Design overview (Phase 1 implemented; Phase 2 in progress — A1–A3 shipped; Phase 3 designed — see `execution/README.md`)
 **Reads with:** `domain-model.md` (authoritative abstractions), `org-chart-editor.md` (Phase 1 spec, esp. §10 "Seams for actuate & execute").
 
 Canopy turns an organization chart into a running system. That happens in three distinct phases,
@@ -68,7 +68,7 @@ design); and how readiness failures surface back to the operator.
 
 ---
 
-## Phase 3 — Execute (forthcoming)
+## Phase 3 — Execute (designed: `execution/README.md`)
 
 **What it is:** the **execution engine** — it gives an actuated organization a standing **Intent**
 and drives the work through the chart until every responsibility ends in something checkable.
