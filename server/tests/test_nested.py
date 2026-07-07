@@ -19,7 +19,11 @@ def _nested_doc(top, mount_agent_id, child_root_role="team-lead"):
                         "name": "Support Lead",
                         "role": {"key": child_root_role, "version": 1},
                         "managerId": None,
-                        "salary": {"perAssignmentAllowance": 150000, "warnThresholdPct": 80, "hardStop": True},
+                        "salary": {
+                            "perAssignmentAllowance": 150000,
+                            "warnThresholdPct": 80,
+                            "hardStop": True,
+                        },
                     }
                 ],
                 "dependencies": [],

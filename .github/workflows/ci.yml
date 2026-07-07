@@ -1,0 +1,54 @@
+name: CI
+
+# Windows + Linux matrix from the start (risk IM-3): development happens on Windows but most
+# deploy targets are Linux, and this is a process-orchestration product — "works on my machine"
+# is where single-platform development of *this* becomes architectural. The subprocess-sandbox
+# lifecycle tests (from A2) are the core matrix content.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Sync deps
+        run: uv sync --project server --extra dev
+      - name: Lint
+        run: uv run --project server ruff check server/src
+      - name: Test
+        run: uv run --project server pytest server/tests -q
+
+  ui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # No explicit version: pnpm/action-setup reads the `packageManager` field in package.json
+      # (pnpm@11.10.0). Specifying both errors with ERR_PNPM_BAD_PM_VERSION.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm --filter @canopy/ui typecheck
+      - name: Test
+        run: pnpm --filter @canopy/ui test
+      - name: Build
+        run: pnpm --filter @canopy/ui build

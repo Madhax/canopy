@@ -36,9 +36,10 @@ interface Props {
   issueAgentIds: Set<string>;
   issueDepIds: Set<string>;
   onOpenChild: (childOrgId: string) => void;
+  nodeStatus?: Map<string, string>;
 }
 
-function Canvas({ org, catalog, issueAgentIds, issueDepIds, onOpenChild }: Props) {
+function Canvas({ org, catalog, issueAgentIds, issueDepIds, onOpenChild, nodeStatus }: Props) {
   const { toast } = useToast();
   const store = useDocumentStore();
   const path = useSelectionStore((s) => s.path);
@@ -51,8 +52,8 @@ function Canvas({ org, catalog, issueAgentIds, issueDepIds, onOpenChild }: Props
 
   const selectedId = selection.kind !== "none" ? selection.id : undefined;
   const projectionInput = useMemo(
-    () => ({ org, catalog, selectedId, issueAgentIds, issueDepIds, direction }),
-    [org, catalog, selectedId, issueAgentIds, issueDepIds, direction],
+    () => ({ org, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus }),
+    [org, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(projectNodes(projectionInput));

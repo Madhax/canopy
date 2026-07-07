@@ -14,6 +14,7 @@ export interface AgentNodeData extends Record<string, unknown> {
   selected: boolean;
   hasIssue: boolean;
   direction: LayoutDirection;
+  status?: string; // live actuation status for this node (A2), undefined when not actuated
 }
 
 export interface ChildOrgNodeData extends Record<string, unknown> {
@@ -33,6 +34,7 @@ export interface ProjectionInput {
   issueAgentIds: Set<string>;
   issueDepIds: Set<string>;
   direction: LayoutDirection;
+  nodeStatus?: Map<string, string>; // nodeId -> live actuation status (A2)
 }
 
 function resolveRole(
@@ -65,6 +67,7 @@ export function projectNodes(input: ProjectionInput): Node[] {
         selected: selectedId === agent.id,
         hasIssue: issueAgentIds.has(agent.id),
         direction,
+        status: input.nodeStatus?.get(agent.id),
       } satisfies AgentNodeData,
       selected: selectedId === agent.id,
     });

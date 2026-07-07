@@ -1,0 +1,54 @@
+# Canopy control-plane configuration (docs/actuation/topology.md §3.5).
+#
+# Implementations are selected by key; each key maps to a self-registered class in its module's
+# registry (see canopy_server/registry.py). Swapping an implementation later — Postgres for
+# SQLite, docker for subprocess, a managed bus for the local one — is a one-line change here and
+# never touches an interface. That is the acceptance test for every seam in the actuation design.
+
+[db]
+# "sqlite" in v1; Postgres later is a repo-layer swap (docs/actuation/roadmap.md).
+backend = "sqlite"
+# Path is relative to CANOPY_DATA_DIR (default ./data). One file, WAL mode.
+path = "canopy.db"
+
+[sandbox]
+# "subprocess" in v1 (A2); "docker"/"microvm"/"remote" behind the same ABC later.
+provider = "subprocess"
+
+[bus]
+# "sqlite" in v1 (A3); "redis"/"nats"/managed pub-sub later.
+backend = "sqlite"
+
+[secrets]
+# Local Fernet-encrypted store, master key in data/master.key (A1). Keychain/Vault/IAM later.
+backend = "local-encrypted"
+
+[gateway]
+# The default model provider. "mock" is the deterministic provider that makes CI green and demos
+# free with zero API spend and no keys (risk IM-2 — the mock provider is the testing spine).
+# Per-node Agent Profiles still pick "anthropic"/"gemini" explicitly; this is only the fallback.
+default_provider = "mock"
+
+[gateway.concurrency]
+# Per-provider in-flight caps at the single gateway — cheap prevention of the 429 cascade that
+# would otherwise serialize a whole org when many agents share one API tier (risk SC-3).
+anthropic = 4
+gemini = 4
+mock = 64
+
+# Static per-model price table. Kept as DATA, not code, because it churns faster than anything
+# else in the stack (risk IM-4). USD per 1,000,000 tokens. These are ESTIMATES, surfaced as such
+# in the UI (risk IM-5) — the gateway records provider-authoritative token counts either way.
+[prices.anthropic]
+claude-opus-4-8 = { input = 15.0, output = 75.0 }
+claude-sonnet-5 = { input = 3.0, output = 15.0 }
+claude-haiku-4-5 = { input = 1.0, output = 5.0 }
+claude-sonnet-4-5 = { input = 3.0, output = 15.0 }
+
+[prices.gemini]
+gemini-2.5-pro = { input = 1.25, output = 10.0 }
+gemini-2.5-flash = { input = 0.30, output = 2.5 }
+
+[prices.mock]
+# The mock provider is free by construction.
+mock-1 = { input = 0.0, output = 0.0 }

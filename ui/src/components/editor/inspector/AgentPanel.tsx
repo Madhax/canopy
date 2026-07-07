@@ -4,6 +4,7 @@ import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
 import { roleGroupColor } from "../../../lib/theme";
 import { Button } from "../../common";
+import { BindingPicker } from "./BindingPicker";
 import { SalaryEditor } from "./SalaryEditor";
 import { ExtensionsEditor } from "./ExtensionsEditor";
 
@@ -17,6 +18,10 @@ export function AgentPanel({ agent, org, catalog }: Props) {
   const store = useDocumentStore();
   const path = useSelectionStore((s) => s.path);
   const clear = useSelectionStore((s) => s.clear);
+  const topOrgId = useDocumentStore((s) => s.doc?.id);
+  const sameRoleNodeIds = org.agents
+    .filter((a) => a.role.key === agent.role.key)
+    .map((a) => a.id);
 
   const role =
     catalog.roles.find((r) => r.key === agent.role.key) ??
@@ -73,6 +78,15 @@ export function AgentPanel({ agent, org, catalog }: Props) {
           )}
         </select>
       </label>
+
+      {topOrgId && (
+        <BindingPicker
+          orgId={topOrgId}
+          agentNodeId={agent.id}
+          orgPath={path}
+          sameRoleNodeIds={sameRoleNodeIds}
+        />
+      )}
 
       <SalaryEditor
         salary={agent.salary}

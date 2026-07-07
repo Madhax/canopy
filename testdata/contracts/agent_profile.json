@@ -1,0 +1,17 @@
+{
+  "id": "ap_examplex1",
+  "organizationId": "6b9f2c1e-1111-2222-3333-444455556666",
+  "name": "Sonnet — default engineer",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "endpoint": null,
+  "apiKeySecretId": "sec_examplekey",
+  "params": {
+    "maxOutputTokens": 8192,
+    "temperature": 0.7,
+    "providerOptions": {}
+  },
+  "systemPreamble": "",
+  "createdAt": "2026-07-05T18:00:00Z",
+  "updatedAt": "2026-07-05T18:00:00Z"
+}

@@ -10,7 +10,8 @@ An **Agent Profile** is the answer to "which brain does this node get": provider
   "id": "ap_9f2k1x7c",
   "organizationId": "6b9f2c1e-...",        // profiles are org-scoped in v1
   "name": "Sonnet — default engineer",
-  "provider": "anthropic",                  // "anthropic" | "gemini"  (v1 closed enum)
+  "provider": "anthropic",                  // "anthropic" | "gemini" | "mock"  (v1 closed enum;
+                                            // "mock" is the deterministic keyless provider — IM-2)
   "model": "claude-sonnet-4-5",             // provider-native model id, free string
   "endpoint": null,                         // base-URL override (proxies, regional endpoints); null = provider default
   "apiKeySecretId": "sec_k2m8p1qz",         // reference into the Secret Store — NEVER the key itself
