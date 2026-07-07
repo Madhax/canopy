@@ -2,6 +2,8 @@
 
 `canopy-agent` is one Python package, identical for every role — roles are data (invariant 11), so the runtime is a generic shell that loads a charter and behaves accordingly. It is deliberately thin: **all** intelligence goes through the Model Gateway, **all** communication through the Router, **all** outputs through the Artifact Store. What remains here is the loop.
 
+> **Scope note:** this doc specifies the `loop` runtime kind — the first of several agent implementations behind one envelope contract. `agent-envelope.md` defines the full encapsulation model (tool grants, runtime kinds `loop`/`cli`/`actor`, sandbox tiers); under it, the §3 tool table below is the **baseline grant set** every envelope receives, extended per role by catalog tool grants.
+
 ## 1. Boot sequence
 
 1. Read env (`CANOPY_CP_URL`, run token, ids, A2A host/port).

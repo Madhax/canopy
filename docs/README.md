@@ -11,9 +11,11 @@ Design documentation for Canopy: a framework for building AI-agent organizations
 | `roles.md` | The role catalog: every role's purpose and responsibilities, written as duty → deliverable contract | `RoleTemplate` |
 | `teams.md` | Formations: reusable manager+members subtrees with pre-wired artifact flow and dependencies | blueprint fragments for the chart |
 | `use-cases.md` | The out-of-the-box acceptance suite: what a user can ask for on day one and what comes back | `Intent` recipes |
+| `manager-responsibilities.md` | Taxonomy of manager responsibilities across all archetypes, coverage verdicts against the domain model, and proposed extensions for the gaps (mid-flight intervention, scope-divergence detection, checkpoints, standing directives) | proposal feeding `domain-model.md` |
 | `phases.md` | The three phases — Build → Actuate → Execute — and the artifact each hands the next | product navigation |
 | `org-chart-editor.md` | Design spec for the phase-1 WYSIWYG org-chart editor: catalog/document schemas, validation rules, thin FastAPI server, React Flow UI, build milestones | the editor + the serialized `Organization` document |
 | `actuation/` | Phase-2 design suite: control/data plane topology, agent profiles (Claude/Gemini), sandboxes, agent runtime, workspaces/artifacts, A2A + bus fabric, roadmap. Start at `actuation/README.md`. | actuating the chart into running agents |
+| `execution/` | Phase-3 design suite: the work layer made executable (Assignments, five Gates, Plans/Steps, assignment-bound meters, memory, cadences), the Claude-CLI-wrapped agent runtime (no API key), the ongoing operator experience (mission control, agent inspector, cost explorer, inbox), and the MVP-1 software-team plan. Start at `execution/README.md`. | executing work through the chart |
 | `risks/` | Risk register and derisking strategy across seven contexts (problem-fit, usefulness, marketing, design, architecture, implementation, scalability). Start at `risks/README.md`. | keeping the project alive |
 
 The layering is strict: **use cases** are satisfied by **archetypes**, which compose **formations**, which compose **roles**, which are constrained by the **domain model**. Anything expressible in the lower layers but not deliverable through the upper ones is a catalog gap, not a user error.
