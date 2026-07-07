@@ -36,6 +36,7 @@ from .ids import new_actuation_id
 from .ledger import BudgetLedger
 from .models import Agent, Catalog, Organization
 from .profiles import ProfileStore
+from .router import MessageRouter
 from .runtokens import RunTokenStore
 from .sandbox.base import SandboxHandle, SandboxProvider, SandboxSpec
 from .secretstore import SecretStore
@@ -135,6 +136,7 @@ class Actuator:
         agent_pythonpath: str,
         boot_timeout_s: int,
         sandboxes_root: Path,
+        router: MessageRouter | None = None,
     ):
         self.db = db
         self.store = store
@@ -150,6 +152,7 @@ class Actuator:
         self.agent_pythonpath = agent_pythonpath
         self.boot_timeout_s = boot_timeout_s
         self.sandboxes_root = sandboxes_root
+        self.router = router
 
     # -- readiness ---------------------------------------------------------- #
     def check_readiness(self, org: Organization) -> list[ValidationIssue]:
@@ -188,6 +191,8 @@ class Actuator:
             )
         for org_path, agent in enumerate_nodes(org):
             self._insert_node(actuation_id, agent.id, org_path)
+        if self.router is not None:
+            self.router.derive_channels(actuation_id, org)  # chart → allowed channels (A3)
         self.activity.log("operator", "actuation.requested", org_id=org_id,
                           subject_ids=[actuation_id])
         return actuation_id
@@ -306,6 +311,8 @@ class Actuator:
                     pass
             if node["meter_id"]:
                 self.ledger.close_meter(node["meter_id"])
+        if self.router is not None:
+            self.router.clear_actuation(actuation_id)  # drop channels + drain queues
         self.directory.remove_actuation(actuation_id)
         self._set_state(actuation_id, "stopped")
         row = self._actuation_row(actuation_id)

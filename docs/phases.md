@@ -1,6 +1,6 @@
 # Canopy — The Three Phases: Build → Actuate → Execute
 
-**Status:** Design overview (Phase 1 implemented; Phases 2–3 forthcoming)
+**Status:** Design overview (Phase 1 implemented; Phase 2 in progress — A1–A3 shipped; Phase 3 forthcoming)
 **Reads with:** `domain-model.md` (authoritative abstractions), `org-chart-editor.md` (Phase 1 spec, esp. §10 "Seams for actuate & execute").
 
 Canopy turns an organization chart into a running system. That happens in three distinct phases,
@@ -36,7 +36,7 @@ Phase 2. It is versionable, diffable, and hand-offable; nothing about it assumes
 
 ---
 
-## Phase 2 — Actuate (forthcoming)
+## Phase 2 — Actuate (in progress: A1 profiles/gateway/ledger + A2 sandbox/runtime boot + A3 router/bus shipped)
 
 **What it is:** the **organization actuator** — it takes a validated Organization document and
 *spins up the agents*, provisioning each node into a live, addressable runtime agent that is ready

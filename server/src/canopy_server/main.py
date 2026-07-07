@@ -41,15 +41,63 @@ async def _reconciler_loop() -> None:
         await asyncio.sleep(15)
 
 
+async def _forward_to_agent(endpoint_url: str, envelope) -> bool:
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(endpoint_url.rstrip("/") + "/inbox", json=envelope.model_dump())
+            return r.status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _delivery_loop() -> None:
+    """Forward queued messages to idle agents (data-plane.md §3: delivery workers).
+
+    Only delivers to a node the directory shows ``idle`` — an engaged/paused node simply isn't
+    delivered to until it heartbeats idle, which gives the domain's "one executing assignment at a
+    time; a growing queue is a visible bottleneck" for free.
+    """
+    while True:
+        try:
+            from .deps import get_activity, get_actuator, get_bus, get_directory
+            from .router import inbox_topic
+
+            actuator, directory, bus, activity = (
+                get_actuator(), get_directory(), get_bus(), get_activity()
+            )
+            for actuation_id in actuator.list_active_actuation_ids():
+                for agent in directory.list(actuation_id):
+                    if agent.status != "idle" or not agent.endpointUrl:
+                        continue
+                    topic = inbox_topic(actuation_id, agent.nodeId)
+                    for delivery in bus.poll(topic, "delivery-worker", 5, 30):
+                        if await _forward_to_agent(agent.endpointUrl, delivery.envelope):
+                            bus.ack(delivery.id)
+                        else:
+                            dead, _env = bus.nack(delivery.id, requeue=True)
+                            if dead:
+                                activity.log(
+                                    "system", "router.dead_letter", org_id=None,
+                                    subject_ids=[actuation_id, agent.nodeId, delivery.id],
+                                )
+        except Exception:  # noqa: BLE001 - a delivery hiccup must not kill the worker
+            pass
+        await asyncio.sleep(1)
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    task = asyncio.create_task(_reconciler_loop())
+    tasks = [asyncio.create_task(_reconciler_loop()), asyncio.create_task(_delivery_loop())]
     try:
         yield
     finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 def create_app() -> FastAPI:

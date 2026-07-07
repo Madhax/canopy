@@ -1,8 +1,9 @@
 """Data plane API (``/api/dp/*``) — run-token auth only, loopback-bound in v1.
 
-This is the surface agents call. A1: the Model Gateway (``llm/complete``). A2: ``charter`` fetch,
-``register``, ``heartbeat``. A3: ``a2a/{targetNodeId}``. Auth is the per-agent run token in the
-``Authorization: Bearer`` header — an agent can act only as itself (sandbox.md §5).
+This is the surface agents call. In A1 only the Model Gateway lives here (``llm/complete``); A2
+adds ``register``/``heartbeat``, A3 ``a2a/{targetNodeId}``/``inbox/poll``, A4 ``artifacts``. Auth is
+the per-agent run token in the ``Authorization: Bearer`` header — an agent can act only as itself
+(sandbox.md §5).
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..deps import get_actuator, get_directory, get_gateway, get_runtokens
+from ..deps import get_actuator, get_directory, get_gateway, get_router, get_runtokens
 from ..gateway.base import CompletionRequest, Message, StepKind, ToolSpec
 from ..gateway.service import GatewayBudgetExhausted, GatewayError
+from ..router import ChannelForbidden
 
 router = APIRouter(prefix="/dp")
 
@@ -147,3 +149,39 @@ def heartbeat(
         return _unauthorized()
     directory.heartbeat(rec.actuationId, rec.nodeId, body.status)  # type: ignore[arg-type]
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# Mediated A2A (A3): the ONLY way any agent reaches any other. Topology-checked.
+# --------------------------------------------------------------------------- #
+class A2ASendBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    payload: dict[str, Any] = Field(default_factory=dict)
+    taskRef: str | None = None
+    idempotencyKey: str | None = None
+
+
+@router.post("/a2a/{target_node_id}")
+def a2a_send(
+    target_node_id: str,
+    body: A2ASendBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    message_router=Depends(get_router),
+) -> Any:
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    try:
+        sent = message_router.send(
+            rec.actuationId, rec.nodeId, target_node_id, body.payload,
+            task_ref=body.taskRef, idempotency_key=body.idempotencyKey,
+        )
+    except ChannelForbidden as exc:
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"code": exc.code, "message": str(exc),
+                               "from": exc.fromNode, "to": exc.toNode}},
+        )
+    return sent.model_dump()

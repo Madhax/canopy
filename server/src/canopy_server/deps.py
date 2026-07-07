@@ -154,6 +154,29 @@ def get_sandbox():
 
 
 @lru_cache(maxsize=8)
+def _bus_for(path_str: str):
+    from .bus import bus_registry
+    from .config import get_bus_backend
+
+    return bus_registry.create(get_bus_backend(), _db_for(path_str))
+
+
+def get_bus():
+    return _bus_for(str(get_db_path()))
+
+
+@lru_cache(maxsize=8)
+def _router_for(path_str: str):
+    from .router import MessageRouter
+
+    return MessageRouter(_db_for(path_str), _bus_for(path_str))
+
+
+def get_router():
+    return _router_for(str(get_db_path()))
+
+
+@lru_cache(maxsize=8)
 def _actuator_for(path_str: str, data_dir_str: str):
     from .actuator import Actuator
     from .catalog import get_catalog
@@ -174,6 +197,7 @@ def _actuator_for(path_str: str, data_dir_str: str):
         agent_pythonpath=get_agent_pythonpath(),
         boot_timeout_s=get_boot_timeout_s(),
         sandboxes_root=Path(data_dir_str) / "sandboxes",
+        router=_router_for(path_str),
     )
 
 
