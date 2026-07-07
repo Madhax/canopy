@@ -25,6 +25,7 @@ from .routes import health as health_routes
 from .routes import operations as operations_routes
 from .routes import organizations as organization_routes
 from .routes import profiles as profiles_routes
+from .routes import work as work_routes
 
 
 async def _reconciler_loop() -> None:
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
     api.include_router(operations_routes.router)  # spend rollups + activity feed (A1)
     api.include_router(actuation_routes.router)  # actuate / deactuate / current (A2)
     api.include_router(dp_routes.router)  # data plane /api/dp/* (gateway + charter/register/hb)
+    api.include_router(work_routes.router)  # operator work API: intents + assignments (E1)
     app.mount("/api", api)
 
     _mount_ui(app)

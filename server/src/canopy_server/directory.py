@@ -2,9 +2,11 @@
 
 Maps ``{actuationId, agentNodeId} -> {endpointUrl, agentCard, status, lastHeartbeatAt}``. It is
 what the router consults for where-to-deliver (A3) and what the UI reads for live chart badges.
-Status is the domain's observable set, reduced for Phase 2: ``provisioning | idle | engaged |
-paused | dead``. Agents heartbeat every 10 s; the Actuator's reconciler treats a stale heartbeat
-as liveness loss (control-plane.md §2).
+Status is the domain's observable set: ``provisioning | idle | engaged | gated | paused | dead``.
+``gated`` (a Phase-3 addition — debt D2) means the node is suspended on a Gate and consuming
+nothing; the heartbeat payload carries ``gateKind`` for the chart badge. Existing values keep
+their meanings (the debt rule: phase-3 only adds, never repurposes). Agents heartbeat every 10 s;
+the Actuator's reconciler treats a stale heartbeat as liveness loss (control-plane.md §2).
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from pydantic import BaseModel
 from .db import Db, register_schema
 from .deps import now_iso
 
-AgentStatus = Literal["provisioning", "idle", "engaged", "paused", "dead"]
+AgentStatus = Literal["provisioning", "idle", "engaged", "gated", "paused", "dead"]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS directory_agent (

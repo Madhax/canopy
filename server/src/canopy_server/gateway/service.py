@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 
 from pydantic import BaseModel
 
@@ -130,6 +131,7 @@ class DefaultModelGateway(ModelGateway):
         *,
         prices: dict,
         concurrency: dict[str, int],
+        meter_resolver: Callable[[str, str, str], str | None] | None = None,
     ):
         self.db = db
         self.profiles = profiles
@@ -139,6 +141,10 @@ class DefaultModelGateway(ModelGateway):
         self.activity = activity
         self.prices = prices
         self._concurrency = concurrency
+        # Resolves (actuationId, nodeId, taskId) → the task's bound meter id, or None to fall back
+        # to the node's default meter. The engine injects an assignment→meter lookup here (D1);
+        # left None, the gateway keeps A1's node-default behavior.
+        self._meter_resolver = meter_resolver
         self._providers = {k: provider_registry.create(k) for k in provider_registry.keys()}
         self._sems: dict[str, asyncio.Semaphore] = {}
 
@@ -268,9 +274,11 @@ class DefaultModelGateway(ModelGateway):
 
     # -- helpers ------------------------------------------------------------ #
     def _meter_for_task(self, actuation_id: str, node_id: str, task_id: str) -> str | None:
-        # A4 opens a fresh meter per delivered task; until then this is unused (A1 uses the
-        # node's default meter). Kept so the resolution order is already task-first.
-        return None
+        # Phase-3 binds a meter per Assignment; the engine's resolver maps the task (assignment id)
+        # to that meter — closing debt D1. Absent a resolver, fall back to the node's default meter.
+        if self._meter_resolver is None:
+            return None
+        return self._meter_resolver(actuation_id, node_id, task_id)
 
     def _insert_step(
         self, step_id, actuation_id, node_id, task_id, provider, model, kind, in_tok, out_tok,
