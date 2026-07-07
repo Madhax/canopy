@@ -159,6 +159,12 @@ class ExecutionEngine:
             delta_ref=delta_ref, step_id=step_id, session_span_id=session_span_id,
         )
 
+    def update_stage(self, assignment_id: str, idx: int, state: str) -> None:
+        """Advance a plan stage (the runtime's ``stage-update`` report). No-op if no plan yet."""
+        plan = self.store.get_plan(assignment_id)
+        if plan is not None:
+            self.store.set_stage_state(plan.id, idx, state)
+
     def put_artifact(
         self, assignment_id: str, name: str, type: str, content: bytes, *,
         filename: str | None = None,
