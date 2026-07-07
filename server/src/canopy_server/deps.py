@@ -109,6 +109,44 @@ def get_activity():
 
 
 @lru_cache(maxsize=8)
+def _work_store_for(path_str: str):
+    from .engine.store import WorkStore
+
+    return WorkStore(_db_for(path_str))
+
+
+def get_work_store():
+    return _work_store_for(str(get_db_path()))
+
+
+@lru_cache(maxsize=8)
+def _artifact_store_for(path_str: str, data_dir_str: str):
+    from .artifacts import artifact_store_registry
+    from .config import get_artifact_backend
+
+    return artifact_store_registry.create(
+        get_artifact_backend(), _db_for(path_str), Path(data_dir_str) / "artifacts"
+    )
+
+
+def get_artifact_store():
+    return _artifact_store_for(str(get_db_path()), str(get_data_dir()))
+
+
+def _assignment_meter_resolver(work_store):
+    """Maps a gateway ``task_id`` (an assignment id) to that assignment's bound meter (D1). Returns
+    None for unknown/foreign tasks so the gateway falls back to the node's default meter."""
+
+    def resolve(actuation_id: str, node_id: str, task_id: str) -> str | None:
+        a = work_store.get_assignment(task_id)
+        if a is None or a.actuationId != actuation_id or a.nodeId != node_id:
+            return None
+        return a.meterId
+
+    return resolve
+
+
+@lru_cache(maxsize=8)
 def _gateway_for(path_str: str, data_dir_str: str):
     from .config import get_prices, get_provider_concurrency
     from .gateway import DefaultModelGateway
@@ -122,11 +160,29 @@ def _gateway_for(path_str: str, data_dir_str: str):
         _activity_for(path_str),
         prices=get_prices(),
         concurrency=get_provider_concurrency(),
+        meter_resolver=_assignment_meter_resolver(_work_store_for(path_str)),
     )
 
 
 def get_gateway():
     return _gateway_for(str(get_db_path()), str(get_data_dir()))
+
+
+@lru_cache(maxsize=8)
+def _engine_for(path_str: str, data_dir_str: str):
+    from .engine.engine import ExecutionEngine
+
+    return ExecutionEngine(
+        _work_store_for(path_str),
+        _ledger_for(path_str),
+        _artifact_store_for(path_str, data_dir_str),
+        get_store(),
+        activity=_activity_for(path_str),
+    )
+
+
+def get_engine():
+    return _engine_for(str(get_db_path()), str(get_data_dir()))
 
 
 @lru_cache(maxsize=8)

@@ -82,6 +82,45 @@ def new_channel_id() -> str:
     return _prefixed("ch")
 
 
+# --------------------------------------------------------------------------- #
+# Phase-3 (execution / work layer) ids — prefixes per docs/execution/work-model.md.
+# --------------------------------------------------------------------------- #
+def new_intent_id() -> str:
+    return _prefixed("in")
+
+
+def new_assignment_id() -> str:
+    return _prefixed("as")
+
+
+def new_gate_id() -> str:
+    return _prefixed("gt")
+
+
+def new_plan_id() -> str:
+    return _prefixed("pl")
+
+
+def new_deliverable_id() -> str:
+    return _prefixed("dv")
+
+
+def new_directive_id() -> str:
+    return _prefixed("dr")
+
+
+def new_cadence_id() -> str:
+    return _prefixed("cd")
+
+
+def new_notification_id() -> str:
+    return _prefixed("nt")
+
+
+def new_artifact_id() -> str:
+    return _prefixed("art")
+
+
 def new_run_token() -> str:
     """A 256-bit URL-safe run-token secret (stored only as a hash — sandbox.md §2)."""
     return secrets.token_urlsafe(32)

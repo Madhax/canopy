@@ -58,6 +58,7 @@ _DEFAULTS: dict[str, Any] = {
     "db": {"backend": "sqlite", "path": "canopy.db"},
     "sandbox": {"provider": "subprocess"},
     "bus": {"backend": "sqlite"},
+    "artifacts": {"backend": "local"},
     "secrets": {"backend": "local-encrypted"},
     "gateway": {
         "default_provider": "mock",
@@ -112,6 +113,10 @@ def get_sandbox_provider() -> str:
 
 def get_bus_backend() -> str:
     return str(_raw_config()["bus"]["backend"])
+
+
+def get_artifact_backend() -> str:
+    return str(_raw_config()["artifacts"]["backend"])
 
 
 def get_secrets_backend() -> str:

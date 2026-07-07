@@ -16,8 +16,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+
+# Import the schema-owning modules whose tables no route pulls in yet (the Execution Engine's
+# routes arrive in E1 item 3). Schemas register at import (see db.py), and the gateway now depends
+# on the work store, so these must be registered before the first Db is built.
+from . import artifacts as _artifacts  # noqa: F401
 from .catalog import get_catalog
 from .config import get_ui_dist
+from .engine import store as _engine_store  # noqa: F401
 from .routes import actuations as actuation_routes
 from .routes import catalog as catalog_routes
 from .routes import dp as dp_routes
