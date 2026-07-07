@@ -1,0 +1,16 @@
+{
+  "system": "You are a backend engineer. Deliver a PullRequest.",
+  "messages": [
+    { "role": "user", "content": "Implement the multi-tenant billing endpoint." }
+  ],
+  "tools": [
+    {
+      "name": "write_file",
+      "description": "Write a file into the workspace.",
+      "inputSchema": { "type": "object", "properties": { "path": { "type": "string" } } }
+    }
+  ],
+  "maxOutputTokens": 4096,
+  "temperature": 0.7,
+  "providerOptions": {}
+}

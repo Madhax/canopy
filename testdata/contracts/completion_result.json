@@ -1,0 +1,10 @@
+{
+  "text": "Implemented the endpoint and staged the deliverable.",
+  "toolCalls": [
+    { "id": "tc_1", "name": "produce_artifact", "arguments": { "path": "out/pr.md", "type": "code-patch" } }
+  ],
+  "inputTokens": 1200,
+  "outputTokens": 340,
+  "stopReason": "end_turn",
+  "providerRaw": {}
+}

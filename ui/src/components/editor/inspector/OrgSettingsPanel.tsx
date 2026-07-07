@@ -3,6 +3,7 @@ import type { ValidationIssue } from "../../../validation/codes";
 import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
 import { IssuesPanel } from "./IssuesPanel";
+import { ProfilesSecretsPanel } from "./ProfilesSecretsPanel";
 
 interface Props {
   org: OrganizationDoc;
@@ -13,6 +14,7 @@ interface Props {
 export function OrgSettingsPanel({ org, issues, onFocusIssue }: Props) {
   const store = useDocumentStore();
   const path = useSelectionStore((s) => s.path);
+  const topOrgId = useDocumentStore((s) => s.doc?.id);
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -31,6 +33,8 @@ export function OrgSettingsPanel({ org, issues, onFocusIssue }: Props) {
         <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Type</span>
         <span className="text-sm text-ink-muted">{org.organizationType}</span>
       </div>
+
+      {topOrgId && <ProfilesSecretsPanel orgId={topOrgId} />}
 
       <div className="border-t border-border pt-4">
         <IssuesPanel issues={issues} onFocus={onFocusIssue} />

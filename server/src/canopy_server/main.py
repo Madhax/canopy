@@ -15,8 +15,11 @@ from . import __version__
 from .catalog import get_catalog
 from .config import get_ui_dist
 from .routes import catalog as catalog_routes
+from .routes import dp as dp_routes
 from .routes import health as health_routes
+from .routes import operations as operations_routes
 from .routes import organizations as organization_routes
+from .routes import profiles as profiles_routes
 
 
 def create_app() -> FastAPI:
@@ -36,6 +39,9 @@ def create_app() -> FastAPI:
     api.include_router(health_routes.router)
     api.include_router(catalog_routes.router)
     api.include_router(organization_routes.router)
+    api.include_router(profiles_routes.router)  # profiles / bindings / secrets (A1)
+    api.include_router(operations_routes.router)  # spend rollups + activity feed (A1)
+    api.include_router(dp_routes.router)  # data plane: /api/dp/* run-token auth (A1: gateway)
     app.mount("/api", api)
 
     _mount_ui(app)
