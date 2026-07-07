@@ -4,8 +4,20 @@ import type { AgentNodeData } from "../../../store/projection";
 import { roleGroupColor } from "../../../lib/theme";
 import { formatSalary } from "../../../lib/format";
 
+const STATUS_TONE: Record<string, string> = {
+  ready: "bg-ok/15 text-ok",
+  idle: "bg-ok/15 text-ok",
+  engaged: "bg-accent/15 text-accent",
+  booting: "bg-warn/15 text-warn",
+  provisioning: "bg-warn/15 text-warn",
+  pending: "bg-warn/15 text-warn",
+  paused: "bg-warn/15 text-warn",
+  failed: "bg-danger/15 text-danger",
+  dead: "bg-danger/15 text-danger",
+};
+
 function AgentNodeImpl({ data, selected }: NodeProps & { data: AgentNodeData }) {
-  const { agent, role, isManager, hasIssue, direction } = data;
+  const { agent, role, isManager, hasIssue, direction, status } = data;
   const color = roleGroupColor(role?.group ?? "custom");
   const roleTitle = role?.title ?? agent.role.key;
   // Bottom-up (BT): the manager sits below its reports, so its outgoing handle is on top.
@@ -44,6 +56,18 @@ function AgentNodeImpl({ data, selected }: NodeProps & { data: AgentNodeData }) 
           )}
         </div>
         <div className="truncate text-sm font-semibold text-ink">{agent.name}</div>
+        {status && (
+          <div className="mt-1">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ${
+                STATUS_TONE[status] ?? "bg-surface-2 text-ink-muted"
+              }`}
+            >
+              <span className="size-1.5 rounded-full bg-current" />
+              {status}
+            </span>
+          </div>
+        )}
         {selected && (
           <div className="mt-1 text-[10px] text-ink-muted">{formatSalary(agent.salary)}</div>
         )}

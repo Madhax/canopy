@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useCatalog } from "../api/catalog";
 import { importOrganization, useOrganization } from "../api/organizations";
+import { useActuationCurrent } from "../api/actuation";
 import { apiGet } from "../api/client";
 import type { OrganizationDoc } from "../schema/organization";
 import type { ValidationIssue } from "../validation/codes";
@@ -19,6 +20,7 @@ import { slugify } from "../lib/format";
 import { CenteredSpinner, useToast } from "../components/common";
 import { Breadcrumbs } from "../components/editor/Breadcrumbs";
 import { Toolbar } from "../components/editor/Toolbar";
+import { ActuationControls } from "../components/editor/ActuationControls";
 import { ConflictDialog } from "../components/editor/ConflictDialog";
 import { OrgCanvas } from "../components/editor/canvas/OrgCanvas";
 import { Palette } from "../components/editor/palette/Palette";
@@ -94,6 +96,20 @@ export function EditorPage() {
     catalog.data,
     path,
   );
+
+  // Live actuation status (A2): map each node on the CURRENT canvas to its status pill.
+  const { data: actuation } = useActuationCurrent(doc?.id);
+  const nodeStatus = useMemo(() => {
+    const m = new Map<string, string>();
+    if (actuation) {
+      const pathKey = JSON.stringify(path);
+      for (const n of actuation.nodes) {
+        if (JSON.stringify(n.orgPath) !== pathKey) continue;
+        m.set(n.nodeId, n.subState === "ready" ? n.status ?? "idle" : n.subState);
+      }
+    }
+    return m;
+  }, [actuation, path]);
 
   useKeyboardShortcuts(saveNow);
 
@@ -228,7 +244,10 @@ export function EditorPage() {
         </div>
       )}
       <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2">
-        <Breadcrumbs doc={doc} path={path} onNavigate={setPath} />
+        <div className="flex items-center gap-3">
+          <Breadcrumbs doc={doc} path={path} onNavigate={setPath} />
+          <ActuationControls orgId={doc.id} />
+        </div>
         <Toolbar
           status={status}
           errorCount={errorCount}
@@ -275,6 +294,7 @@ export function EditorPage() {
             issueAgentIds={issueAgentIds}
             issueDepIds={issueDepIds}
             onOpenChild={(childOrgId) => setPath([...path, childOrgId])}
+            nodeStatus={nodeStatus}
           />
         </div>
 

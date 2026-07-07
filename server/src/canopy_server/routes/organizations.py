@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from ..catalog import get_catalog
-from ..deps import get_store, now_iso
+from ..deps import get_actuator, get_store, now_iso
 from ..ids import new_document_id
 from ..migrate import UnsupportedSchemaVersion, migrate_organization
 from ..models import Organization
@@ -164,6 +164,13 @@ def save_organization(
     # Optimistic concurrency: the client must have loaded the current version.
     if body.get("updatedAt") != stored.updatedAt:
         return _error(409, "STALE_WRITE", "The stored document changed since you loaded it.")
+
+    # Structure is locked while an actuation is live (control-plane.md §2): deactuate → edit →
+    # re-actuate in v1. Live status still streams; the chart just can't be re-shaped underneath it.
+    if get_actuator().get_current(doc_id) is not None:
+        return _error(
+            409, "ACTUATION_LIVE", "Deactuate this organization before editing its chart."
+        )
 
     # Re-impose server-owned immutable fields, then bump updatedAt.
     incoming.id = stored.id

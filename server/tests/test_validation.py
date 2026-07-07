@@ -12,7 +12,7 @@ import pytest
 from canopy_server.catalog import get_catalog
 from canopy_server.models import Organization
 from canopy_server.validation import validate_organization
-from canopy_server.validation.codes import CODE_MESSAGES
+from canopy_server.validation.codes import ACTUATION_CODES, CODE_MESSAGES
 
 VECTOR_DIR = Path(__file__).resolve().parents[2] / "testdata" / "validation"
 
@@ -55,5 +55,6 @@ def test_validator_matches_vector(vector):
 
 def test_every_rule_code_has_a_vector():
     seen = {ni["code"] for v in VECTORS for ni in v["expectedIssues"]}
-    missing = set(CODE_MESSAGES) - seen
+    # Actuation-readiness codes are checked at actuate time, not against a document.
+    missing = set(CODE_MESSAGES) - seen - ACTUATION_CODES
     assert not missing, f"rule codes with no vector coverage: {sorted(missing)}"
