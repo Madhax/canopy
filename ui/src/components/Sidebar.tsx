@@ -13,7 +13,7 @@ interface Phase {
 
 const PHASES: Phase[] = [
   { to: "/", n: 1, title: "Build", blurb: "Shape the organization", status: "live" },
-  { to: "/actuate", n: 2, title: "Actuate", blurb: "Spin up the agents", status: "soon" },
+  { to: "/actuate", n: 2, title: "Actuate", blurb: "Spin up the agents", status: "live" },
   { to: "/execute", n: 3, title: "Execute", blurb: "Run the work", status: "soon" },
 ];
 

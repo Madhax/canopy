@@ -55,36 +55,6 @@ export function PhasePlaceholderPage({ phase, title, tagline, intro, does, produ
   );
 }
 
-export function ActuatePage() {
-  return (
-    <PhasePlaceholderPage
-      phase={2}
-      title="Actuate"
-      tagline="Spin up the agents and make the organization ready to receive work."
-      intro="The actuator takes a validated organization document and provisions each node into a live, addressable agent — the moment the chart stops being a drawing and becomes a standing organization waiting for intent. No work happens yet; actuation is reversible and idempotent."
-      does={[
-        {
-          heading: "Provision agents",
-          body: "Each node becomes a runtime agent with an isolated workspace. Role instructions and extensions seed its persona; its salary funds its budget meters.",
-        },
-        {
-          heading: "Wire the graph",
-          body: "Reporting lines become delegation and escalation routes; design-time dependencies become the manager's default declarations; child orgs mount as opaque reporting edges.",
-        },
-        {
-          heading: "Grant models & tools",
-          body: "Each agent is allocated its model and tool grants — decisions kept out of the Phase-1 document by design, resolved here against the catalog.",
-        },
-        {
-          heading: "Readiness checks",
-          body: "An organization is 'actuated' only when its whole tree reports ready — workspace, credentials, grants, and budget all green.",
-        },
-      ]}
-      produces="a provisioned organization — the same structure, now backed by live agents with durable, isolated workspaces, waiting idle for an intent."
-    />
-  );
-}
-
 export function ExecutePage() {
   return (
     <PhasePlaceholderPage

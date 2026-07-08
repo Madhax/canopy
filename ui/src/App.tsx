@@ -5,7 +5,8 @@ import { MainLayout } from "./components/MainLayout";
 import { OrganizationListPage } from "./pages/OrganizationListPage";
 import { NewOrganizationWizard } from "./pages/NewOrganizationWizard";
 import { EditorPage } from "./pages/EditorPage";
-import { ActuatePage, ExecutePage } from "./pages/PhasePlaceholderPage";
+import { ActuatePage } from "./pages/ActuatePage";
+import { ExecutePage } from "./pages/PhasePlaceholderPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
