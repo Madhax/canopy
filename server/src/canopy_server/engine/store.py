@@ -20,6 +20,7 @@ from ..deps import now_iso
 from ..ids import (
     new_assignment_id,
     new_deliverable_id,
+    new_gate_id,
     new_intent_id,
     new_plan_id,
     new_step_id,
@@ -29,6 +30,7 @@ from .models import (
     Assignment,
     Brief,
     Deliverable,
+    Gate,
     Intent,
     MemoryEntry,
     Plan,
@@ -65,7 +67,7 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     brief_version   INTEGER NOT NULL DEFAULT 1,
     contract_kind   TEXT NOT NULL,
     contract_type   TEXT NOT NULL,
-    meter_id        TEXT NOT NULL,
+    meter_id        TEXT,
     priority        INTEGER NOT NULL DEFAULT 0,
     deliverable_id  TEXT,
     reassigned_from TEXT,
@@ -143,8 +145,54 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     created_at TEXT NOT NULL,
     PRIMARY KEY (org_id, node_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS work_gate (
+    id            TEXT PRIMARY KEY,
+    assignment_id TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    opened_by     TEXT NOT NULL,
+    owner         TEXT NOT NULL,
+    reason        TEXT NOT NULL,
+    reason_hash   TEXT NOT NULL DEFAULT '',
+    payload       TEXT NOT NULL DEFAULT '{}',
+    state         TEXT NOT NULL DEFAULT 'open',
+    resolution    TEXT,
+    resolved_by   TEXT,
+    created_at    TEXT NOT NULL,
+    resolved_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_gate_open ON work_gate (state, owner);
+CREATE INDEX IF NOT EXISTS ix_gate_assignment ON work_gate (assignment_id, state);
+-- Trigger sweeps never double-open (engine.md §3): one open gate per (assignment, kind, reason).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_open_dedupe
+    ON work_gate (assignment_id, kind, reason_hash) WHERE state = 'open';
 """
 register_schema(SCHEMA)
+
+
+def _migrate_meter_nullable(db: Db) -> None:
+    """E1 shipped ``work_assignment.meter_id NOT NULL``; staged delegation (E2) needs it nullable
+    while ``proposed``. SQLite can't drop NOT NULL in place, so rebuild once for pre-E2 dev DBs.
+    The new table DDL comes from SCHEMA via a temporary name so the definitions can't drift."""
+    with db.connect() as conn:
+        cols = conn.execute("PRAGMA table_info(work_assignment)").fetchall()
+    meter_col = next((c for c in cols if c["name"] == "meter_id"), None)
+    if meter_col is None or not meter_col["notnull"]:
+        return
+    ddl = SCHEMA.split("CREATE TABLE IF NOT EXISTS work_assignment", 1)[1].split(";", 1)[0]
+    with db.transaction() as conn:
+        conn.execute(f"CREATE TABLE work_assignment_new{ddl}")
+        conn.execute("INSERT INTO work_assignment_new SELECT * FROM work_assignment")
+        conn.execute("DROP TABLE work_assignment")
+        conn.execute("ALTER TABLE work_assignment_new RENAME TO work_assignment")
+        # The dropped table takes its indexes with it; recreate them.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_assignment_node "
+            "ON work_assignment (actuation_id, node_id, state)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_assignment_intent ON work_assignment (intent_id)"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -213,9 +261,19 @@ def _memory(r) -> MemoryEntry:
     )
 
 
+def _gate(r) -> Gate:
+    return Gate(
+        id=r["id"], assignmentId=r["assignment_id"], kind=r["kind"], openedBy=r["opened_by"],
+        owner=r["owner"], reason=r["reason"], payload=json.loads(r["payload"]), state=r["state"],
+        resolution=json.loads(r["resolution"]) if r["resolution"] else None,
+        resolvedBy=r["resolved_by"], createdAt=r["created_at"], resolvedAt=r["resolved_at"],
+    )
+
+
 class WorkStore:
     def __init__(self, db: Db):
         self.db = db
+        _migrate_meter_nullable(db)
 
     # ----------------------------------------------------------------- intents
     def create_intent(
@@ -265,9 +323,9 @@ class WorkStore:
     # ------------------------------------------------------------- assignments
     def create_assignment(
         self, *, org_id: str, actuation_id: str, intent_id: str, node_id: str, issued_by: str,
-        contract_kind: str, contract_type: str, meter_id: str, parent_id: str | None = None,
-        state: str = "created", priority: int = 0, reassigned_from: str | None = None,
-        assignment_id: str | None = None,
+        contract_kind: str, contract_type: str, meter_id: str | None,
+        parent_id: str | None = None, state: str = "created", priority: int = 0,
+        reassigned_from: str | None = None, assignment_id: str | None = None,
     ) -> Assignment:
         aid = assignment_id or new_assignment_id()
         ts = now_iso()
@@ -296,16 +354,32 @@ class WorkStore:
 
     def current_assignment(self, actuation_id: str, node_id: str) -> Assignment | None:
         """The node's live assignment (most recent non-terminal). One `executing` per node is a
-        domain rule, so at most one active row is expected — newest wins if a race leaves two."""
-        placeholders = ",".join("?" for _ in ASSIGNMENT_TERMINAL_STATES)
+        domain rule, so at most one active row is expected — newest wins if a race leaves two.
+        ``proposed`` drafts are excluded: nothing is published to the node until dispatch."""
+        hidden = sorted(ASSIGNMENT_TERMINAL_STATES | {"proposed"})
+        placeholders = ",".join("?" for _ in hidden)
         with self.db.connect() as conn:
             r = conn.execute(
                 "SELECT * FROM work_assignment WHERE actuation_id=? AND node_id=? "
                 f"AND state NOT IN ({placeholders}) "  # noqa: S608 - fixed placeholders only
                 "ORDER BY created_at DESC LIMIT 1",
-                (actuation_id, node_id, *sorted(ASSIGNMENT_TERMINAL_STATES)),
+                (actuation_id, node_id, *hidden),
             ).fetchone()
         return _assignment(r) if r else None
+
+    def list_children(self, parent_id: str, *, state: str | None = None) -> list[Assignment]:
+        params: list = [parent_id]
+        extra = ""
+        if state is not None:
+            extra = "AND state=?"
+            params.append(state)
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM work_assignment WHERE parent_id=? {extra} "  # noqa: S608
+                "ORDER BY created_at, id",
+                params,
+            ).fetchall()
+        return [_assignment(r) for r in rows]
 
     def list_assignments(
         self, *, org_id: str | None = None, actuation_id: str | None = None,
@@ -341,6 +415,21 @@ class WorkStore:
                     "UPDATE work_assignment SET state=?, updated_at=? WHERE id=?",
                     (state, ts, assignment_id),
                 )
+
+    def set_assignment_meter(self, assignment_id: str, meter_id: str) -> None:
+        """Fund a proposed assignment at dispatch (work-model.md §2.1 staged delegation)."""
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE work_assignment SET meter_id=?, updated_at=? WHERE id=?",
+                (meter_id, now_iso(), assignment_id),
+            )
+
+    def set_assignment_priority(self, assignment_id: str, priority: int) -> None:
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE work_assignment SET priority=?, updated_at=? WHERE id=?",
+                (priority, now_iso(), assignment_id),
+            )
 
     def set_deliverable_ref(self, assignment_id: str, deliverable_id: str) -> None:
         with self.db.transaction() as conn:
@@ -381,6 +470,39 @@ class WorkStore:
         return Brief(
             assignmentId=assignment_id, version=version, text=text,
             artifactRefs=artifact_refs or [], revisedBy=revised_by, createdAt=ts,
+        )
+
+    def amend_draft_brief(
+        self, assignment_id: str, text: str, *, artifact_refs: list[str] | None = None,
+    ) -> Brief | None:
+        """Rewrite the draft (v1) brief in place. Only meaningful while the assignment is
+        ``proposed`` — draft briefs stay mutable until dispatch; versioning starts at dispatch
+        (work-model.md §2.1). The caller enforces the state precondition."""
+        with self.db.transaction() as conn:
+            if artifact_refs is None:
+                conn.execute(
+                    "UPDATE work_brief SET text=? WHERE assignment_id=? AND version=1",
+                    (text, assignment_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE work_brief SET text=?, artifact_refs=? "
+                    "WHERE assignment_id=? AND version=1",
+                    (text, json.dumps(artifact_refs), assignment_id),
+                )
+        return self.get_brief(assignment_id, 1)
+
+    def append_brief_refs(self, assignment_id: str, refs: list[str]) -> Brief | None:
+        """Dependency resolution: append granted refs as a new system-attributed brief version
+        (work-model.md §3 — exempt from the rework-funding rule)."""
+        latest = self.get_brief(assignment_id)
+        if latest is None:
+            return None
+        merged = list(dict.fromkeys([*latest.artifactRefs, *refs]))
+        if merged == latest.artifactRefs:
+            return latest  # idempotent under redelivery — nothing new to grant
+        return self.add_brief(
+            assignment_id, latest.text, artifact_refs=merged, revised_by="system",
         )
 
     def get_brief(self, assignment_id: str, version: int | None = None) -> Brief | None:
@@ -564,3 +686,80 @@ class WorkStore:
             conn.execute(
                 "DELETE FROM agent_memory WHERE org_id=? AND node_id=?", (org_id, node_id)
             )
+
+    # ------------------------------------------------------------------- gates
+    def create_gate(
+        self, assignment_id: str, kind: str, *, opened_by: str, owner: str, reason: str,
+        reason_hash: str, payload: dict,
+    ) -> Gate:
+        """Insert an open gate. Idempotent per (assignment, kind, reason-hash): if a matching open
+        gate exists (the partial unique index), it is returned unchanged — sweeps never double-open
+        (engine.md §3)."""
+        gid = new_gate_id()
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO work_gate (id, assignment_id, kind, opened_by, owner, "
+                "reason, reason_hash, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (gid, assignment_id, kind, opened_by, owner, reason, reason_hash,
+                 json.dumps(payload), ts),
+            )
+            if cur.rowcount == 0:  # lost to the dedupe index — hand back the existing open gate
+                r = conn.execute(
+                    "SELECT * FROM work_gate WHERE assignment_id=? AND kind=? AND reason_hash=? "
+                    "AND state='open'",
+                    (assignment_id, kind, reason_hash),
+                ).fetchone()
+                return _gate(r)
+        return Gate(
+            id=gid, assignmentId=assignment_id, kind=kind, openedBy=opened_by, owner=owner,
+            reason=reason, payload=payload, state="open", createdAt=ts,
+        )
+
+    def get_gate(self, gate_id: str) -> Gate | None:
+        with self.db.connect() as conn:
+            r = conn.execute("SELECT * FROM work_gate WHERE id=?", (gate_id,)).fetchone()
+        return _gate(r) if r else None
+
+    def list_gates(
+        self, *, assignment_id: str | None = None, kind: str | None = None,
+        state: str | None = None, owner: str | None = None, org_id: str | None = None,
+    ) -> list[Gate]:
+        clauses, params = [], []
+        for col, val in (
+            ("g.assignment_id", assignment_id), ("g.kind", kind), ("g.state", state),
+            ("g.owner", owner),
+        ):
+            if val is not None:
+                clauses.append(f"{col}=?")
+                params.append(val)
+        join = ""
+        if org_id is not None:  # the operator inbox filters by org via the assignment
+            join = "JOIN work_assignment a ON a.id = g.assignment_id"
+            clauses.append("a.org_id=?")
+            params.append(org_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"SELECT g.* FROM work_gate g {join} {where} "  # noqa: S608 - fixed columns only
+                "ORDER BY g.created_at, g.id",
+                params,
+            ).fetchall()
+        return [_gate(r) for r in rows]
+
+    def update_gate_payload(self, gate_id: str, payload: dict) -> None:
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE work_gate SET payload=? WHERE id=?", (json.dumps(payload), gate_id)
+            )
+
+    def resolve_gate(
+        self, gate_id: str, *, resolution: dict, resolved_by: str, state: str = "resolved",
+    ) -> Gate | None:
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE work_gate SET state=?, resolution=?, resolved_by=?, resolved_at=? "
+                "WHERE id=? AND state='open'",
+                (state, json.dumps(resolution), resolved_by, now_iso(), gate_id),
+            )
+        return self.get_gate(gate_id)

@@ -210,7 +210,7 @@ def a2a_send(
 class EventBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     assignmentId: str
-    kind: str  # intake-complete | step | stage-update | delivering
+    kind: str  # intake-complete | step | stage-update | awaiting-reports | delivering
     inputTokens: int = 0
     outputTokens: int = 0
     durationMs: int = 0
@@ -221,6 +221,30 @@ class EventBody(BaseModel):
     stepId: str | None = None
     sessionSpanId: str | None = None
     stageState: str | None = None
+
+
+class DependsOnIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str
+    resolveOn: str | None = None  # default: the chart's edge policy (work-model.md §3)
+
+
+class DelegateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str  # the CALLER's assignment (the delegation happens inside it)
+    reportNodeId: str
+    brief: str
+    refs: list[str] = Field(default_factory=list)
+    contractKind: str | None = None
+    contractType: str | None = None
+    dependsOn: list[DependsOnIn] = Field(default_factory=list)
+
+
+class ReviewBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str  # the REPORT's assignment under review
+    note: str = ""
+    revisedBrief: str | None = None  # reject only — triggers the rework-funding rule
 
 
 class PlanStageIn(BaseModel):
@@ -364,6 +388,10 @@ def assignment_events(
             if body.stageIdx is None or body.stageState is None:
                 return _work_conflict(WorkError("stage-update needs stageIdx and stageState"))
             engine.update_stage(body.assignmentId, body.stageIdx, body.stageState)
+        elif body.kind == "awaiting-reports":
+            # The manager's turn boundary after a fan-out (engine.md §2 9a/11a): closes any
+            # proposed batch into its plan-review gate, or arms/re-arms the await gate.
+            engine.finish_turn(body.assignmentId)
         elif body.kind == "delivering":
             pass  # advisory; the deliverable is submitted via /dp/finish
         else:
@@ -371,6 +399,92 @@ def assignment_events(
     except WorkError as exc:
         return _work_conflict(exc)
     return work_store.get_assignment(body.assignmentId).model_dump()
+
+
+@router.post("/delegate")
+def delegate(
+    body: DelegateBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+) -> Any:
+    """Managers: create a child assignment on a direct report (engine.md §2). Buffers as
+    ``proposed`` when the caller's assignment is checkpointed (X3)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    _a, err = _owned(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    try:
+        child = engine.delegate(
+            body.assignmentId, body.reportNodeId, body.brief, refs=body.refs,
+            contract_kind=body.contractKind, contract_type=body.contractType,
+            depends_on=[d.model_dump(exclude_none=True) for d in body.dependsOn],
+        )
+    except WorkError as exc:
+        return _work_conflict(exc)
+    return child.model_dump()
+
+
+def _reviewable(work_store, rec, assignment_id: str):
+    """(assignment, None) if the caller manages it — acceptance decisions travel manager →
+    report, so the target's PARENT assignment must belong to the caller's node."""
+    a = work_store.get_assignment(assignment_id)
+    if a is None:
+        return None, JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
+                                  "message": f"no assignment {assignment_id}"}})
+    parent = work_store.get_assignment(a.parentId) if a.parentId else None
+    if parent is None or parent.actuationId != rec.actuationId or parent.nodeId != rec.nodeId:
+        return None, JSONResponse(status_code=403, content={"error": {"code": "NOT_YOUR_REPORT",
+                                  "message": "assignment is not a report's work under the caller"}})
+    return a, None
+
+
+@router.post("/accept")
+def accept_deliverable(
+    body: ReviewBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+) -> Any:
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    _a, err = _reviewable(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    try:
+        a = engine.accept(body.assignmentId, note=body.note or None)
+    except WorkError as exc:
+        return _work_conflict(exc)
+    return a.model_dump()
+
+
+@router.post("/reject")
+def reject_deliverable(
+    body: ReviewBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+) -> Any:
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    _a, err = _reviewable(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    try:
+        a = engine.reject(body.assignmentId, body.note, revised_brief=body.revisedBrief)
+    except WorkError as exc:
+        return _work_conflict(exc)
+    return a.model_dump()
 
 
 @router.post("/finish")

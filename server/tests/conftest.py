@@ -38,7 +38,7 @@ def mint_session(client):
 
     def _mint(
         org_id, *, provider="mock", model="mock-1", allowance=5000, max_output=4096,
-        secret_value=None, warn=80.0, node_id=None,
+        secret_value=None, warn=80.0, node_id=None, actuation_id=None,
     ):
         from canopy_server.deps import (
             get_ledger,
@@ -59,7 +59,7 @@ def mint_session(client):
         )
         node = node_id or new_agent_id()
         profiles.set_binding(org_id, node, profile.id)
-        actuation_id = new_actuation_id()
+        actuation_id = actuation_id or new_actuation_id()
         meter = get_ledger().open_meter(
             actuation_id, node, allowance, warn_threshold_pct=warn
         )
