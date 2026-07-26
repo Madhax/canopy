@@ -172,6 +172,7 @@ def get_gateway():
 def _engine_for(path_str: str, data_dir_str: str):
     from .engine.engine import ExecutionEngine
 
+    repos = _repos_for(data_dir_str)
     return ExecutionEngine(
         _work_store_for(path_str),
         _ledger_for(path_str),
@@ -179,7 +180,21 @@ def _engine_for(path_str: str, data_dir_str: str):
         get_store(),
         activity=_activity_for(path_str),
         bus=_bus_for(path_str),  # dispatch/resume wake-ups ride the A3 delivery workers (E3)
+        executors={  # governed actions (E4): consented via ApprovalGate, then executed here
+            "repo-merge": lambda p: repos.merge(p["orgId"], p["branch"]),
+        },
     )
+
+
+@lru_cache(maxsize=8)
+def _repos_for(data_dir_str: str):
+    from .repos import RepoManager
+
+    return RepoManager(Path(data_dir_str) / "repos")
+
+
+def get_repos():
+    return _repos_for(str(get_data_dir()))
 
 
 def get_engine():

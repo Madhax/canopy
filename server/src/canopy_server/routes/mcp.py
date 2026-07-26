@@ -30,6 +30,7 @@ from ..deps import (
     get_work_store,
 )
 from ..engine.engine import WorkError
+from ..repos import RepoError
 
 router = APIRouter(prefix="/dp")
 
@@ -160,6 +161,36 @@ def _t_reports_status(rec, engine, work_store, args) -> dict:
     return {"reports": out}
 
 
+def _t_repo_checkout(rec, engine, work_store, args) -> dict:
+    from ..deps import get_repos
+
+    a = _current(work_store, rec)
+    if args.get("ref"):
+        return get_repos().readonly_checkout(a.orgId, args["ref"], tag=a.id)
+    return get_repos().materialize_worktree(a.orgId, a.id)
+
+
+def _t_repo_pr(rec, engine, work_store, args) -> dict:
+    from ..deps import get_repos
+
+    a = _current(work_store, rec)
+    pr = get_repos().assemble_pr(a.orgId, a.id, test_output=args.get("testOutput", ""))
+    meta = engine.put_artifact(
+        a.id, "pull-request", "PullRequest",
+        json.dumps(pr, indent=2).encode("utf-8"), filename="pull-request.json",
+    )
+    return {"ref": meta.ref, "pr": pr}
+
+
+def _t_repo_merge_request(rec, engine, work_store, args) -> dict:
+    a = _current(work_store, rec)
+    gate = engine.open_governed_action(
+        a.id, "repo-merge", {"orgId": a.orgId, "branch": args["branch"]},
+    )
+    return {"gateId": gate.id, "state": "gated",
+            "note": "the merge awaits operator approval (governed action)"}
+
+
 def _t_accept(rec, engine, work_store, args) -> dict:
     a = engine.accept(args["assignmentId"], note=args.get("note"))
     return {"assignmentId": a.id, "state": a.state}
@@ -256,6 +287,26 @@ TOOLS: dict[str, dict[str, Any]] = {
                        ["assignmentId", "note"]),
         "handler": _t_reject, "manager": True,
     },
+    # ---- granted tools (per-role, via the repo executors — E4) ----
+    "repo_checkout": {
+        "description": "Materialize your working copy: a fresh branch worktree (writers) or a "
+                       "read-only checkout at a submitted ref (reviewers). Returns the path.",
+        "schema": _obj({"ref": _STR}, []),
+        "handler": _t_repo_checkout, "manager": False,
+        "grants": ("code.repo.write", "repo.read"),
+    },
+    "repo_pr": {
+        "description": "Assemble the PullRequest artifact from your worktree state (branch, "
+                       "baseSha, headSha, diff, testOutput) — cite its ref in finish.",
+        "schema": _obj({"testOutput": _STR}, []),
+        "handler": _t_repo_pr, "manager": False, "grants": ("code.repo.write",),
+    },
+    "repo_merge_request": {
+        "description": "Request the governed merge of an approved branch into main; opens an "
+                       "ApprovalGate for the operator.",
+        "schema": _obj({"branch": _STR}, ["branch"]),
+        "handler": _t_repo_merge_request, "manager": False, "grants": ("repo.merge",),
+    },
 }
 
 
@@ -276,9 +327,37 @@ def _is_manager(actuator, engine, rec) -> bool:
     return any(a.managerId == rec.nodeId for a in org.agents)
 
 
+def _grants_of(actuator, engine, rec) -> set[str]:
+    """The caller's grant keys — from the charter when actuated, else the chart's role via the
+    catalog (the same fallback rule the dp repo endpoints use)."""
+    charter = actuator.get_charter(rec.actuationId, rec.nodeId)
+    if charter is not None:
+        return set(charter.get("toolGrants") or [])
+    try:
+        from ..catalog import get_catalog
+
+        org = engine.orgs.read(rec.orgId)
+        agent = next((a for a in org.agents if a.id == rec.nodeId), None)
+        role = next((r for r in get_catalog().roles if agent and r.key == agent.role.key), None)
+        return set(getattr(role, "toolGrants", []) or [])
+    except Exception:  # noqa: BLE001 - no chart => no grants
+        return set()
+
+
+def _tool_allowed(tool: dict, *, manager: bool, grants: set[str]) -> bool:
+    if tool["manager"] and not manager:
+        return False
+    need = tool.get("grants")
+    if need and not (set(need) & grants):
+        return False
+    return True
+
+
 def _visible_tools(actuator, engine, rec) -> dict[str, dict[str, Any]]:
     manager = _is_manager(actuator, engine, rec)
-    return {name: t for name, t in TOOLS.items() if manager or not t["manager"]}
+    grants = _grants_of(actuator, engine, rec)
+    return {name: t for name, t in TOOLS.items()
+            if _tool_allowed(t, manager=manager, grants=grants)}
 
 
 def _rpc_error(id_: Any, code: int, message: str) -> dict:
@@ -339,9 +418,12 @@ def mcp_endpoint(
         cur = work_store.current_assignment(rec.actuationId, rec.nodeId)
         aid = cur.id if cur else None
         tool = TOOLS.get(name)
-        # Layer 2, the guarantee: re-check per call. Unknown tool or a manager tool from a
-        # non-manager is a denial — recorded, never silent (envelope §3.3).
-        if tool is None or (tool["manager"] and not _is_manager(actuator, engine, rec)):
+        # Layer 2, the guarantee: re-check per call. Unknown tools, manager tools from
+        # non-managers, and ungranted tools are denials — recorded, never silent (§3.3).
+        if tool is None or not _tool_allowed(
+            tool, manager=_is_manager(actuator, engine, rec),
+            grants=_grants_of(actuator, engine, rec),
+        ):
             work_store.record_tool_event(
                 org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
                 assignment_id=aid, tool=name, params_hash=_params_hash(args),
@@ -354,7 +436,7 @@ def mcp_endpoint(
         except _GrantDenied as exc:
             outcome, detail = "denied", str(exc)
             result = None
-        except WorkError as exc:
+        except (WorkError, RepoError) as exc:
             outcome, detail = "error", str(exc)
             result = None
         work_store.record_tool_event(

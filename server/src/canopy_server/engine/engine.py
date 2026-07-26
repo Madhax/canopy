@@ -55,6 +55,7 @@ class ExecutionEngine:
     def __init__(
         self, store: WorkStore, ledger: BudgetLedger, artifacts: ArtifactStore,
         org_store: OrgStore, *, activity: ActivityLog | None = None, bus=None,
+        executors: dict | None = None,
     ):
         self.store = store
         self.ledger = ledger
@@ -62,6 +63,9 @@ class ExecutionEngine:
         self.orgs = org_store
         self.activity = activity
         self.bus = bus  # optional: dispatch/resume wake-ups ride the A3 delivery workers
+        # Governed-action executors (envelope §3.4): action name -> callable(payload) -> result.
+        # The engine runs one ONLY from a resolved ApprovalGate (invariant 9).
+        self.executors = executors or {}
         self.gates = GateService(store, activity=activity)
         # Gate resolutions wake the resumed node through the same delivery path as dispatch.
         self.gates.on_resume = lambda a: self._publish_wake(a, "resume")
@@ -314,6 +318,10 @@ class ExecutionEngine:
             raise WorkError(f"gate {gate_id} is already {gate.state}")
         body = payload or {}
 
+        if gate.kind == "approval" and gate.payload.get("governedAction"):
+            return self._resolve_governed_action(gate, action=action, resolved_by=resolved_by,
+                                                 body=body)
+
         if gate.kind == "approval" and action == "edit-draft":
             # Amend one draft brief pre-dispatch; the gate stays open for the actual verdict.
             child = self._require(body["assignmentId"])
@@ -378,6 +386,52 @@ class ExecutionEngine:
                                                body=body)
 
         raise WorkError(f"unsupported resolution {action!r} for {gate.kind!r} gate")
+
+    def open_governed_action(
+        self, assignment_id: str, action_name: str, payload: dict, *, owner: str = "operator",
+    ) -> Gate:
+        """An agent reached a governed action: suspend on an ApprovalGate carrying the action
+        (work-model.md §3 approval row). Approval executes it; denial is a prohibition."""
+        a = self._require(assignment_id)
+        gate = self.gates.open(
+            a, "approval", opened_by=a.nodeId, owner=owner,
+            reason=f"governed:{action_name}:{a.id}",
+            payload={"governedAction": action_name, **payload},
+        )
+        self._notify_gate_waiting(a, gate)
+        return gate
+
+    def _resolve_governed_action(
+        self, gate: Gate, *, action: str, resolved_by: str, body: dict,
+    ) -> Gate:
+        """Consented, then evidenced (invariant 9): approval runs the registered executor and
+        the result — the ActionAttestation's substance — is recorded on the gate resolution and
+        the activity log, linked to the gate. Denial is a prohibition: the agent resumes and
+        must re-plan around it, never treat it as a rework request."""
+        a = self._require(gate.assignmentId)
+        name = gate.payload["governedAction"]
+        if action == "deny":
+            self.gates.resolve(
+                gate, resolution={"action": "deny", "note": body.get("note", "")},
+                resolved_by=resolved_by,
+            )
+            return self.store.get_gate(gate.id)  # type: ignore[return-value]
+        if action != "approve":
+            raise WorkError(f"unsupported resolution {action!r} for a governed action")
+        executor = self.executors.get(name)
+        if executor is None:
+            raise WorkError(f"no executor registered for governed action {name!r}")
+        result = executor(dict(gate.payload))
+        self.gates.resolve(
+            gate,
+            resolution={"action": "approve", "executed": name, "result": result,
+                        "attestation": {"claim": f"{name} executed under gate {gate.id}",
+                                        "gateId": gate.id, "approvedBy": resolved_by}},
+            resolved_by=resolved_by,
+        )
+        self._log("governed.executed", a.orgId, [a.id, gate.id],
+                  {"action": name, "result": result})
+        return self.store.get_gate(gate.id)  # type: ignore[return-value]
 
     def _resolve_judgment_gate(
         self, gate: Gate, *, action: str, resolved_by: str, body: dict,
