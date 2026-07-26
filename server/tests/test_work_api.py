@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import base64
 
+import pytest
+
 
 def _h(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
@@ -120,3 +122,37 @@ def test_data_plane_rejects_foreign_assignment(client, make_org, mint_session):
     missing = client.post("/api/dp/assignment/events", headers=_h(s["token"]),
                           json={"assignmentId": "as_nope", "kind": "intake-complete"})
     assert missing.status_code == 404
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="grant enforcement lands in E3 (testing.md §4): GET /dp/artifacts checks org "
+    "scope but not grants — any agent in the org can fetch any org artifact today. "
+    "E3's grant check turns this green; strict=True forces the marker off in that PR.",
+)
+def test_artifact_fetch_requires_grant(client, make_org, mint_session):
+    """An agent must not fetch a ref outside its brief's granted set (isolation invariant)."""
+    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(org)
+    s = mint_session(org["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], org["id"])
+
+    r = client.post(
+        f"/api/organizations/{org['id']}/intents",
+        json={"text": "produce something private", "targetNodeId": root["id"]},
+    )
+    a = r.json()["assignment"]
+    client.post("/api/dp/assignment/events", headers=_h(s["token"]),
+                json={"assignmentId": a["id"], "kind": "intake-complete"})
+    put = client.post("/api/dp/artifacts", headers=_h(s["token"]), json={
+        "assignmentId": a["id"], "name": "private", "type": "code-patch",
+        "contentBase64": base64.b64encode(b"secret").decode(),
+    })
+    ref = put.json()["ref"]
+
+    # A sibling node in the SAME org, with no brief granting it this ref.
+    intruder = mint_session(org["id"], node_id="a_intruder")
+    got = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(intruder["token"]))
+    assert got.status_code in (403, 404), (
+        f"ungranted fetch must be refused, got {got.status_code}"
+    )
