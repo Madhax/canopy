@@ -49,10 +49,22 @@ The inspector is also reachable from every mention of a node anywhere in the app
 ## 4. Intent console — "give it work, watch it work"
 
 - **Composer**: intent text, target node (default root), episodic/standing toggle, allowance override with a projected-cost hint ("this org's median intent cost: ~N tokens") — U-3's wallet guard.
-- **Plan review** (X3 checkpoint, default-on for root assignments): when the root's decomposition lands, the intent view shows the proposed plan/delegations — per-child briefs, contracts, dependencies, funded allowances — with **Approve / Edit brief / Reject**. This is U-3's human-approved delegation, built as the first checkpoint instance, and it doubles as the operator's education in how their org thinks.
+- **Plan review** (X3 checkpoint, default-on for root assignments): when the root's staged fan-out lands (the `proposed` batch — `engine.md` §2 9a), the intent view shows the **actual proposed delegations** — per-child draft briefs, contracts, dependencies (with resolve thresholds), allowances to be funded — with **Approve / Edit brief / Reject**. Approval funds and dispatches the batch atomically; nothing is funded before it. This is U-3's human-approved delegation reviewing the real thing rather than a prose plan, and it doubles as the operator's education in how their org thinks.
 - **Tree view**: the assignment tree with live states, per-node spend, gate markers; collapsible; each node deep-links to the inspector.
 - **Deliverable card**: on completion — artifact refs (download via existing artifact API), attestation claims + evidence, total cost (with coordination/production split), duration, and the provenance chain. A **Rerun** affordance seeds a new intent from the same text.
 - **Cadences**: a small management list (name, cron, target, last/next fire, enabled) + "make this recurring" on any completed intent — the U-1 retention hook placed where satisfaction is highest.
+
+## 4a. The living plan — "what is the plan, right now?"
+
+The plan is organic: it grows as roles execute, and the operator can step into it at any moment — not a one-time review card. One aggregate (`GET /intents/{id}/plan`: the assignment tree, each node's plan with stage states/cursors/timestamps, brief versions, open gates, meter states, and anchored notes) feeds **three synchronized projections** — different lenses on the same data, one view selector:
+
+- **Outline** (default): the whole engagement as one nested living document — the intent at top, the root's plan stages, each delegation indented beneath with its own live plan; stage cursors, per-node spend, and gate padlocks inline. Reads top-to-bottom the way a chief of staff would keep the project plan.
+- **Chart overlay**: the same aggregate projected onto the live canvas (extends §2's assignment-flow overlay) — plan badges and stage cursors rendered on each node, for the operator who thinks spatially.
+- **Timeline**: stages as bars over time (from stage `started_at`/`completed_at`), gate-open spans shaded — where schedule pressure and long-open gates become visible.
+
+**Every line is a handle.** Any stage or assignment row offers two actions in place: **Note** — leave an anchored, non-blocking note (rendered at its anchor; injected into the target session at its next turn boundary; never suspends — the advice channel, `work-model.md` §5) — and **Intervene** — the X1 resolution set (redirect / constrain / reassign / top-up / cancel) without leaving the view. Everything deep-links into the inspector.
+
+Because every work-layer mutation is versioned (plans, briefs, directives), the outline can also replay history — plan v1 → v2 diffs, brief revisions, when each note landed. The view stores nothing; it is a projection, like every other Operate surface.
 
 ## 5. Inbox — "what needs me, and what happened while I was away?"
 
@@ -73,8 +85,8 @@ Reads the extended rollups (`spend?groupBy=…&split=…`):
 
 ## 7. Build notes
 
-Components extend the phase-1 stack (React Query + zustand; no new state architecture): `OperateLayout`, `OrgPulse`, `LiveCanvas` (the editor canvas in projection mode + overlay), `AgentInspector` (+ eight tab components), `IntentComposer`, `PlanReviewCard`, `AssignmentTree`, `DeliverableCard`, `InboxList` (+ per-kind resolution forms), `DigestPanel`, `CostExplorer`, `useOrgEvents` (SSE hook with polling fallback), `useNotifications` (badge + cursor). Live-update discipline: SSE events invalidate targeted queries; step events are throttled client-side (the inspector's step table paginates; mission control only consumes aggregates). Performance bar: smooth at 25 live nodes / 10 events/s — beyond that, aggregate server-side first (SC-3's measurement culture applies to the UI too).
+Components extend the phase-1 stack (React Query + zustand; no new state architecture): `OperateLayout`, `OrgPulse`, `LiveCanvas` (the editor canvas in projection mode + overlay), `AgentInspector` (+ eight tab components), `IntentComposer`, `PlanReviewCard`, `PlanView` (+ `PlanOutline`, `PlanOverlay`, `PlanTimeline`, `NoteComposer`), `AssignmentTree`, `DeliverableCard`, `InboxList` (+ per-kind resolution forms), `DigestPanel`, `CostExplorer`, `useOrgEvents` (SSE hook with polling fallback), `useNotifications` (badge + cursor). Live-update discipline: SSE events invalidate targeted queries; step events are throttled client-side (the inspector's step table paginates; mission control only consumes aggregates). Performance bar: smooth at 25 live nodes / 10 events/s — beyond that, aggregate server-side first (SC-3's measurement culture applies to the UI too).
 
 ## 8. MVP cut
 
-Everything in §2–§5 ships in MVP-1 (it *is* the product's answer to "the ongoing user experience"); §6 ships the by-intent and by-node views, deferring time-series charts to a fast-follow. Post-MVP: milestone board (derived Milestone view), re-org advisor (queue-depth / channel-telemetry suggestions), activity timeline replay, standing-directive management (X4), manager-scorecard view (F4 — the data is already collected).
+Everything in §2–§5 ships in MVP-1 (it *is* the product's answer to "the ongoing user experience"), including §4a's **outline** projection and notes — the chart-overlay and timeline projections are fast-follows on the same aggregate; §6 ships the by-intent and by-node views, deferring time-series charts to a fast-follow. Post-MVP: milestone board (derived Milestone view), re-org advisor (queue-depth / channel-telemetry suggestions), activity timeline replay, standing-directive management (X4), manager-scorecard view (F4 — the data is already collected).

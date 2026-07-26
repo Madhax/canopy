@@ -6,6 +6,8 @@ In domain-model terms, a formation is a blueprint fragment: dropping one into th
 
 Each formation has a stable `key`, the roles it wires (by role key), the canonical artifact flow, and the intents it's built to absorb.
 
+Dependency edges carry a **resolution policy** (`resolveOn`, per `domain-model.md` §Dependency): **verify** edges (`delivered`) unlock the moment the upstream work is *submitted* — the downstream role *is* the review (QA, fact-check, inspection, eval) — while **consume** edges (`accepted`, the default) wait for the manager's sign-off before the downstream role builds on the output. The policy is part of the formation's wiring, like the edge itself; the annotations below mark the non-default (verify) edges.
+
 ---
 
 ## `product-engineering-pod`
@@ -13,7 +15,7 @@ Each formation has a stable `key`, the roles it wires (by role key), the canonic
 **Manager:** `engineering-lead` · **Members:** `backend-engineer`, `frontend-engineer`, `qa-engineer`
 **Purpose:** Ship product features end-to-end with built-in verification.
 **Artifact flow:** brief → engineers produce `PullRequest` → DependencyGate opens QA → `TestReport` → lead accepts both → publishes upward.
-**Built-in dependencies:** QA assignments always depend on the implementing engineer's accepted PR.
+**Built-in dependencies:** QA assignments always depend on the implementing engineer's PR (**verify** — unlocks at submission; the lead's acceptance waits for the `TestReport`).
 **Absorbs intents like:** "Add multi-tenant billing," "Fix the checkout race condition."
 
 ## `incident-response-squad`
@@ -50,7 +52,7 @@ Each formation has a stable `key`, the roles it wires (by role key), the canonic
 **Manager:** `engineering-lead` · **Members:** `ml-engineer`, `data-engineer`, `data-scientist`, `qa-engineer`
 **Purpose:** Train, evaluate, and ship models with evidence.
 **Artifact flow:** `ExperimentDesign` → `DataQualityReport` → `ModelCard` → `EvalReport` (QA-style gate) → deployment PR.
-**Distinctive:** the eval assignment is a hard dependency before any deployment assignment can start — verification is structural, not optional.
+**Distinctive:** the eval's dependency on the model is **verify** (it starts on the submitted `ModelCard`), while deployment's dependency on the eval is consume — nothing deploys before the `EvalReport` is accepted. Verification is structural, not optional.
 
 ## `sales-pod`
 
@@ -85,7 +87,7 @@ Each formation has a stable `key`, the roles it wires (by role key), the canonic
 **Manager:** `principal-investigator` · **Members:** `literature-analyst`, `data-scientist`, `research-assistant`, `manuscript-drafter`
 **Purpose:** Produce publishable knowledge.
 **Artifact flow:** `ResearchBrief` → parallel `LitReview` + `Dataset`/`DataModel` → DependencyGate → `Manuscript` → PI review.
-**Distinctive:** the drafter is gated on *both* upstream artifacts; anomalous findings route back to the PI as escalations, not silent hypothesis drift.
+**Distinctive:** the drafter is gated on *both* upstream artifacts (consume — the `Manuscript` builds only on accepted inputs); anomalous findings route back to the PI as escalations, not silent hypothesis drift.
 
 ## `franchise-shift`
 
@@ -98,13 +100,13 @@ Each formation has a stable `key`, the roles it wires (by role key), the canonic
 
 **Manager:** `general-contractor` · **Members:** `carpenter`, `electrician`, `site-inspector`
 **Purpose:** Sequence physical trades where dependencies are physics, not preference.
-**Artifact flow:** `WorkSchedule` → carpenter `BuildAttestation` → DependencyGate → electrician `WiringAttestation` → inspector `InspectionReport` (ApprovalGate) → GC acceptance.
+**Artifact flow:** `WorkSchedule` → carpenter `BuildAttestation` → DependencyGate (consume — trades build on signed-off work) → electrician `WiringAttestation` → inspector `InspectionReport` (**verify** — inspection starts at submission; ApprovalGate) → GC acceptance.
 
 ## `newsdesk`
 
 **Manager:** `managing-editor` · **Members:** `reporter`, `fact-checker`, `editor`
 **Purpose:** Investigate and publish stories that survive scrutiny.
-**Artifact flow:** `StoryBrief` → reporter `StoryDraft` → parallel `FactCheckReport` + `EditedDraft` → editor-in-chief ApprovalGate → publish.
+**Artifact flow:** `StoryBrief` → reporter `StoryDraft` → parallel `FactCheckReport` + `EditedDraft` (both **verify** edges on the submitted draft) → editor-in-chief ApprovalGate → publish.
 **Distinctive:** publication is a governed action; the fact-check dependency cannot be waived by the reporter — only by the managing editor, visibly.
 
 ## `event-crew`

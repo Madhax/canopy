@@ -2,7 +2,7 @@
 
 **Status:** Implementation-ready draft · **Date:** 2026-07-06
 **Upstream:** `../domain-model.md` §3–4 (authoritative semantics), `../actuation/phase3-debts.md` (D1–D6 close here), `../manager-responsibilities.md` (adopted extensions per `README.md`).
-**What this doc is:** the persistence shapes, state machines, and rules for every work-layer object the Execution Engine (`engine.md`) manipulates. Conventions follow the existing server: camelCase Pydantic boundaries, snake_case SQLite tables via `register_schema`, ids from `ids.py` (`in_`, `as_`, `gt_`, `pl_`, `st_`, `dv_`, `dr_`, `cd_`, `nt_` + nanoid), one owner-module per table family.
+**What this doc is:** the persistence shapes, state machines, and rules for every work-layer object the Execution Engine (`engine.md`) manipulates. Conventions follow the existing server: camelCase Pydantic boundaries, snake_case SQLite tables via `register_schema`, ids from `ids.py` (`in_`, `as_`, `gt_`, `pl_`, `st_`, `dv_`, `dr_`, `cd_`, `nt_`, `no_` + nanoid), one owner-module per table family.
 
 ---
 
@@ -46,7 +46,7 @@ CREATE TABLE work_assignment (
     brief_version  INTEGER NOT NULL DEFAULT 1,
     contract_kind  TEXT NOT NULL,            -- 'artifact' | 'attestation'
     contract_type  TEXT NOT NULL,            -- e.g. 'PullRequest', 'TestReport' (open vocabulary)
-    meter_id       TEXT NOT NULL,            -- assignment-bound (closes debt D1)
+    meter_id       TEXT,                     -- assignment-bound (closes debt D1); NULL only while 'proposed' — funded at dispatch
     priority       INTEGER NOT NULL DEFAULT 0,   -- R3: higher first; FIFO within equal priority
     deliverable_id TEXT,                     -- set at delivery
     reassigned_from TEXT,                    -- R2 provenance link
@@ -71,8 +71,9 @@ CREATE TABLE work_brief (               -- versioned briefs drive rework funding
 
 ```
 created → briefed → intake ⇄ gated(clarification)
+(staged fan-out: created → proposed —batch approved→ briefed · unfunded drafts · denial cancels)
                       ↓
-                   planning →(X3 checkpoint? gated(approval))→ executing → delivering → accepted → closed
+                   planning →(X3 governed transition? gated(approval))→ executing → delivering → accepted → closed
                       ↑                                            |
                       └───────────────── rejected ─────────────────┘      (rework; funding rule §2.2)
 
@@ -81,7 +82,9 @@ operator hold:   any active state ⇄ paused
 terminal:        cancelled | failed(reason)
 ```
 
-State transitions are engine-owned; runtimes *report* progress ("intake done", "plan declared", "delivering refs") and the engine moves the row. A runtime cannot skip a state — e.g. `executing` is only entered after a funded meter exists and any plan-review checkpoint resolved. **Delegation is assignment creation** and only travels manager → direct report (invariant 4, checked against the charter's `reportNodeIds` — the same data the router already enforces channels with).
+State transitions are engine-owned; runtimes *report* progress ("intake done", "plan declared", "delivering refs") and the engine moves the row. A runtime cannot skip a state — e.g. `executing` is only entered after a funded meter exists. **Delegation is assignment creation** and only travels manager → direct report (invariant 4, checked against the charter's `reportNodeIds` — the same data the router already enforces channels with).
+
+**Staged delegation (the X3 plan-review instance).** When a plan-review checkpoint applies to the *delegating* assignment (root assignments by default), its `delegate` calls create children in `proposed`: draft brief recorded, **no meter opened**, nothing published. `finish_turn` closes the batch and opens the checkpoint ApprovalGate on the manager's assignment with the proposed batch as payload — the operator reviews the real delegations (per-child briefs, contracts, dependencies with thresholds, allowances), never a prose plan. Approval funds and dispatches the batch atomically (`proposed → briefed`; meters opened; dependency gates per policy; bus publishes). Draft briefs are mutable until dispatch (an operator edit amends the draft); versioning starts at dispatch as v1. **Denial is a prohibition:** drafts are cancelled and the manager re-plans, or its own assignment is cancelled.
 
 ### 2.2 Rework funding (the honesty rule)
 
@@ -120,12 +123,14 @@ CREATE INDEX ix_gate_open ON work_gate (state, owner);
 | Kind | Opened by | Owner | Resolution |
 |---|---|---|---|
 | **clarification** | the assigned agent at intake (feasibility check fails) | issuing manager (operator for root) | a **revised brief** (new `work_brief` version) or cancel. Closes D3: the A2A `rejected + reason` shim becomes this gate. |
-| **dependency** | engine at delegation (per declared dependency) | nobody — mechanical | auto-resolves when the last upstream deliverable is **accepted**; accepted refs are appended to the downstream brief's `artifact_refs` and the brief re-versioned (revision attributed to `system`, exempt from the rework-funding rule). |
+| **dependency** | engine at delegation (per declared dependency) | nobody — mechanical | auto-resolves when the last upstream assignment reaches the edge's declared threshold — **`delivered`** (verify edges: the downstream work *is* the review) or **`accepted`** (consume edges, the default). The gate snapshots each edge's `resolveOn` at delegation; on resolve, refs (pinned at the resolving version) are appended to the downstream brief's `artifact_refs` and the brief re-versioned (revision attributed to `system`, exempt from the rework-funding rule). |
 | **approval** | agent reaching a governed action, or engine at a governed transition (X3) | manager if within granted limits, else operator | approve (resume) / **deny (prohibition — agent must re-plan around it; never a rework request)**. |
 | **escalation** | agent asking above its pay grade (`escalate` tool) | manager (may re-own upward) | an answer: text and/or artifact refs, injected into the session on resume. Closes D4's `input-required` shim. |
 | **intervention** | platform triggers (§6) **or an authority's judgment (X1)** — `opened_by` records which | manager first, operator beyond bounds | resume / redirect (revised brief) / constrain (directive, R4) / reassign (R2) / top-up / cancel. |
 
 Gate mechanics are uniform: opening a gate moves the assignment to `gated`, snapshots `session_ref` for resume, releases the node, and emits a notification (`engine.md` §7). Resolving re-queues front-of-line with the resolution payload delivered as the next session input.
+
+Dependency gates resolve from **two mechanical hooks**: the sweep runs at `finish` (upstream → `delivering`; resolves `delivered`-threshold watchers) and at `accept` (resolves `accepted`-threshold watchers) — the same idempotent sweep, two entry points. The **manager-await gate** (`engine.md` §2 11a) is a `delivered`-threshold watcher over the manager's own child set: it resolves whenever *any* watched child reaches `delivering` or a terminal state, and re-arms after the review turn while children remain — a failing deliverable is reviewed while its siblings still work.
 
 ## 4. Plan, PlanStage, Step
 
@@ -146,6 +151,8 @@ CREATE TABLE work_plan_stage (
     sizing      TEXT NOT NULL DEFAULT 'medium',    -- small | medium | large (advisory — never a tripwire)
     envelope_tokens INTEGER,                        -- platform-set from role defaults (§6); NULL = uncalibrated
     state       TEXT NOT NULL DEFAULT 'pending',    -- pending | active | done | dropped
+    started_at  TEXT,                               -- stamped on first transition to 'active'
+    completed_at TEXT,                              -- stamped on 'done' | 'dropped' (the plan timeline reads these)
     PRIMARY KEY (plan_id, idx)
 );
 ```
@@ -203,6 +210,18 @@ CREATE TABLE work_directive (               -- assignment-scoped only (domain); 
     created_at    TEXT NOT NULL
 );
 
+CREATE TABLE work_note (                    -- the advice channel: anchored, non-blocking (domain §Message)
+    id            TEXT PRIMARY KEY,          -- no_xxxxxxxx
+    org_id        TEXT NOT NULL,
+    intent_id     TEXT NOT NULL,
+    assignment_id TEXT,                      -- NULL ⇒ a note on the intent itself
+    stage_idx     INTEGER,                   -- optional anchor into the assignment's plan
+    author        TEXT NOT NULL,             -- 'operator' (manager-agent notes are post-MVP)
+    text          TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    delivered_at  TEXT                       -- stamped when injected at a turn boundary
+);
+
 CREATE TABLE agent_memory (                 -- durable, platform-managed (closes D5's memory half)
     org_id      TEXT NOT NULL,
     node_id     TEXT NOT NULL,
@@ -215,6 +234,8 @@ CREATE TABLE agent_memory (                 -- durable, platform-managed (closes
 ```
 
 **ActionAttestation** is a first-class deliverable kind (the sales-agent case): a signed claim + evidence refs, same acceptance flow and budget accounting as artifacts. The `attest_action` MCP tool records it; for governed actions the engine verifies a resolved ApprovalGate exists for the action before accepting the attestation (consented, then evidenced — invariant 9).
+
+**Notes are advice, not authority.** A note renders in the plan view at its anchor (`operator-experience.md` §4a) and is injected into the target session's context at the next turn boundary — the same boundary directives use (R4) — but it opens no gate, revises no brief, and constrains nothing; `delivered_at` records the injection. The receiving agent may act on it or explain why not; both are visible. Binding change still travels as brief revisions, Directives, and Gate resolutions.
 
 **Memory rules:** keyed by `org_id + node_id` (survives re-actuation — the org's people remember; deactuation doesn't lobotomize). Written by the engine at assignment close from the deliverable summary + outcome; compacted by keeping the last N entries (default 20) plus a rolling digest entry. Injected into the session context at intake as a short "your recent work" block. Inspectable (`GET`) and resettable (`DELETE` = backfilling the position) via the API — never writable by the agent directly. Phase-2's `memory.json` workspace stub is deleted.
 

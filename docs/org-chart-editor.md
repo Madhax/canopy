@@ -95,8 +95,8 @@ The catalog is the machine-readable form of `archetypes.md` (26 organization typ
         { "slot": "qa",       "roleKey": "qa-engineer" }
       ],
       "dependencies": [
-        { "from": "qa", "to": "backend" },   // slot refs: QA depends on backend's output
-        { "from": "qa", "to": "frontend" }
+        { "from": "qa", "to": "backend", "resolveOn": "delivered" },   // slot refs; verify edges —
+        { "from": "qa", "to": "frontend", "resolveOn": "delivered" }   // QA unlocks at submission
       ],
       "artifactFlow": "brief → engineers produce PullRequest → QA TestReport → lead accepts → publishes upward"
     }
@@ -147,6 +147,7 @@ One JSON document per top-level organization. Pydantic models (server) and Zod s
       "id": "d_p3vq8n2m",
       "from": "a_qa000001",                  // the dependent (QA)
       "to": "a_be000001",                    // the dependency (backend) — "from depends on to"
+      "resolveOn": "delivered",              // "accepted" (consume, default) | "delivered" (verify)
       "note": "tests what engineering ships" // optional operator annotation
     }
     // Endpoints are agent ids — or a child-organization id, meaning that child org as an
@@ -194,7 +195,7 @@ One JSON document per top-level organization. Pydantic models (server) and Zod s
 **Deliberate encoding choices:**
 
 - **`managerId` instead of a reporting-edge list.** The tree invariant is structural: a second manager cannot be expressed, only replaced. The canvas *renders* reporting edges from `managerId`; it never stores them separately. A `managerId` chain that loops (a→b→a) is still checkable and is an error (`REPORTS_CYCLE`).
-- **Dependencies are a separate edge list**, because they genuinely are edges — but constrained to siblings (§5). Direction: `from` depends on `to` (`to`'s deliverable feeds `from`'s brief), matching the manager's-eye reading in `teams.md`.
+- **Dependencies are a separate edge list**, because they genuinely are edges — but constrained to siblings (§5). Direction: `from` depends on `to` (`to`'s deliverable feeds `from`'s brief), matching the manager's-eye reading in `teams.md`. Each edge carries `resolveOn` (`accepted` default | `delivered`): whether the dependent starts at the upstream's sign-off (consume) or its submission (verify) — see `domain-model.md` §Dependency. Formations stamp it; the schema enum rejects other values; omitted on import ⇒ `accepted`.
 - **Child orgs nest the full document recursively** under a mount point, mirroring "a nested Organization is a full Organization … attached at a mount point: its root Agent reports to a designated Agent in the parent." The parent document knows only the mount; everything about the child lives inside the child's own subtree of JSON. Timestamps and ids exist at every level; persistence, export, and validation always operate on the **top-level** document as one unit.
 - **Excluded on purpose** (per the structure-layer serialization note in `domain-model.md`): memory, secrets/credentials, and any in-flight work objects. There is nowhere in this schema to put them, which is the point.
 - **Forward-compat:** unknown keys rejected everywhere except `meta` (all levels) — the single escape hatch. `schemaVersion` gates loading; `migrateOrganization()` (identity in v1, hard error above 1) runs before parse on both sides.
@@ -375,7 +376,7 @@ Three sections, searchable together:
 #### Inspector (right)
 
 - **Agent selected:** display name; role (title, group, `key@version`; re-assign picker — also the repair path for `ROLE_UNKNOWN`); **Salary** (allowance stepper, warn-threshold slider, hard-stop toggle, "reset to role default"); **Extensions** — permanent instructions (textarea) and added responsibilities (duty + deliverable kind/type rows; deliverable required); danger-zone delete.
-- **Dependency selected:** "‹from› depends on ‹to›" summary, optional note, delete.
+- **Dependency selected:** "‹from› depends on ‹to›" summary, resolve-on toggle ("starts when: work is submitted / work is accepted" — verify vs consume), optional note, delete.
 - **Child org selected:** name, type, mount agent (re-mountable via picker), agent count, Open button, delete.
 - **Nothing selected:** organization settings (name; type read-only after creation in v1) and the **issues panel** — errors first, each row focusing/panning to its targets on click; issues from nested orgs show their `orgPath` and clicking drills in.
 
