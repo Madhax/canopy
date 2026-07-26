@@ -55,7 +55,14 @@ export function buildFormationSubtree(
   for (const d of formation.dependencies) {
     const from = slotToId[d.from];
     const to = slotToId[d.to];
-    if (from && to) dependencies.push({ id: newDependencyId(), from, to, note: null });
+    if (from && to)
+      dependencies.push({
+        id: newDependencyId(),
+        from,
+        to,
+        resolveOn: d.resolveOn ?? "accepted", // catalogs cast from raw JSON may omit it
+        note: null,
+      });
   }
 
   return { agents, dependencies };

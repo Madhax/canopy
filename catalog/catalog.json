@@ -3022,11 +3022,13 @@
       "dependencies": [
         {
           "from": "qa",
-          "to": "backend"
+          "to": "backend",
+          "resolveOn": "delivered"
         },
         {
           "from": "qa",
-          "to": "frontend"
+          "to": "frontend",
+          "resolveOn": "delivered"
         }
       ],
       "artifactFlow": "brief → engineers produce PullRequest → DependencyGate opens QA → TestReport → lead accepts both → publishes upward"
@@ -3192,7 +3194,8 @@
         },
         {
           "from": "qa",
-          "to": "ml"
+          "to": "ml",
+          "resolveOn": "delivered"
         }
       ],
       "artifactFlow": "ExperimentDesign → DataQualityReport → ModelCard → EvalReport (QA-style gate) → deployment PR"
@@ -3454,7 +3457,8 @@
         },
         {
           "from": "inspector",
-          "to": "electrician"
+          "to": "electrician",
+          "resolveOn": "delivered"
         }
       ],
       "artifactFlow": "WorkSchedule → carpenter BuildAttestation → DependencyGate → electrician WiringAttestation → inspector InspectionReport (ApprovalGate) → GC acceptance"
@@ -3484,11 +3488,13 @@
       "dependencies": [
         {
           "from": "factchecker",
-          "to": "reporter"
+          "to": "reporter",
+          "resolveOn": "delivered"
         },
         {
           "from": "copyeditor",
-          "to": "reporter"
+          "to": "reporter",
+          "resolveOn": "delivered"
         }
       ],
       "artifactFlow": "StoryBrief → reporter StoryDraft → parallel FactCheckReport + EditedDraft → editor-in-chief ApprovalGate → publish"

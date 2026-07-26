@@ -95,7 +95,9 @@ def stamp_formation(
         frm = slot_to_agent.get(d.from_)
         to = slot_to_agent.get(d.to)
         if frm and to:
-            deps.append(Dependency(id=new_dependency_id(), from_=frm, to=to))
+            deps.append(
+                Dependency(id=new_dependency_id(), from_=frm, to=to, resolveOn=d.resolveOn)
+            )
     return agents, deps
 
 

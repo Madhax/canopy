@@ -35,6 +35,29 @@ def test_every_formation_slot_and_dep_resolves():
             assert d.from_ in slots and d.to in slots
 
 
+def test_formation_verify_edges_match_teams_doc():
+    """The verify (resolveOn: delivered) edges are exactly the ones docs/teams.md annotates.
+
+    Catches the catalog and the doc drifting apart; parse-level enum enforcement means any
+    other value fails before this test runs.
+    """
+    catalog = get_catalog()
+    verify_edges = {
+        (f.key, d.from_, d.to)
+        for f in catalog.formations
+        for d in f.dependencies
+        if d.resolveOn == "delivered"
+    }
+    assert verify_edges == {
+        ("product-engineering-pod", "qa", "backend"),
+        ("product-engineering-pod", "qa", "frontend"),
+        ("ml-delivery-pod", "qa", "ml"),
+        ("newsdesk", "factchecker", "reporter"),
+        ("newsdesk", "copyeditor", "reporter"),
+        ("build-crew", "inspector", "electrician"),
+    }
+
+
 def test_integrity_catches_dangling_palette():
     catalog = get_catalog()
     broken = catalog.model_copy(deep=True)

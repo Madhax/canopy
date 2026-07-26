@@ -58,3 +58,20 @@ def test_every_rule_code_has_a_vector():
     # Actuation-readiness codes are checked at actuate time, not against a document.
     missing = set(CODE_MESSAGES) - seen - ACTUATION_CODES
     assert not missing, f"rule codes with no vector coverage: {sorted(missing)}"
+
+
+def test_dependency_resolve_on_defaults_and_rejects_unknown():
+    """`resolveOn` is schema-enforced: omitted => accepted, unknown values fail parse.
+
+    The TS side asserts the same in ui/src/schema/organization.test.ts — the enum is
+    part of the cross-language contract (docs/org-chart-editor.md §3.2).
+    """
+    vector = next(v for v in VECTORS if v["name"] == "dep-resolve-on-delivered")
+    org = Organization.model_validate(vector["document"])
+    assert org.dependencies[0].resolveOn == "delivered"
+    assert org.dependencies[1].resolveOn == "accepted"  # omitted in the fixture
+
+    broken = json.loads(json.dumps(vector["document"]))
+    broken["dependencies"][0]["resolveOn"] = "on-a-tuesday"
+    with pytest.raises(ValueError):
+        Organization.model_validate(broken)
