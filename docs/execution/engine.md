@@ -31,13 +31,18 @@ The **Artifact Store** (designed in `../actuation/workspace.md` and `control-pla
 manager session calls MCP delegate(reportNodeId, brief, refs[], contract, dependsOn?[])
   1. engine: verify reportNodeId ∈ caller charter reports (inv. 4); verify refs are readable
      by the caller (grant rule, workspace.md §2)
-  2. open meter: ledger.open_meter(allowance = report's salary.perAssignmentAllowance,
+  2. STAGED? if a plan-review checkpoint applies to the caller's assignment (X3: root
+     assignments by default) → insert work_assignment(state='proposed', draft brief, NO meter),
+     collect into the pending batch, return {assignmentId} — nothing is funded or published
+     until the batch is approved (step 9a); draft briefs stay mutable until dispatch
+  3. else: open meter: ledger.open_meter(allowance = report's salary.perAssignmentAllowance,
      task_id = new assignment id)                                    ── closes D1
-  3. insert work_assignment(state='briefed', brief v1 with refs)
-  4. dependsOn: for each named sibling assignment not yet accepted → open dependency Gate
-     (state 'gated' immediately — genuinely idle, consuming nothing)
-  5. ungated: publish to bus inbox topic of the report          ── existing A3 delivery
-  6. return {assignmentId} to the manager session (its step's delta: 'message')
+  4. insert work_assignment(state='briefed', brief v1 with refs)
+  5. dependsOn: snapshot each named edge's resolveOn (delivered | accepted — formation-
+     declared, default accepted); if the upstream has not yet reached that threshold →
+     open dependency Gate (state 'gated' immediately — genuinely idle, consuming nothing)
+  6. return {assignmentId} to the manager session (its step's delta: 'message');
+     ungated dispatched assignments publish to the report's bus inbox topic  ── A3 delivery
 
 report adapter receives delivery → intake:
   7. adapter materializes brief/ (fetch_artifact per ref — engine authorizes against the
@@ -47,24 +52,39 @@ report adapter receives delivery → intake:
 
 planning:
   9. session declares plan via MCP declare_plan(stages[]) → engine stores plan v1, stamps
-     envelope defaults; if a checkpoint applies (X3: root assignments by default) →
-     gate(approval, owner=operator) with the plan as payload — U-3's approve/edit surface
- 10. approved (or no checkpoint) → 'executing'; adapter drives the session (cli-runtime.md)
+     envelope defaults → 'executing'; adapter drives the session (cli-runtime.md). The X3
+     checkpoint no longer gates this transition — it gates the FAN-OUT (step 9a), so what
+     the operator approves is the real delegations, never a prose plan
+ 9a. checkpointed managers: delegate calls buffer as 'proposed' (step 2); MCP finish_turn
+     closes the batch → gate(approval, owner=operator) with the PROPOSED BATCH as payload —
+     per-child briefs, contracts, dependencies (with thresholds), allowances: U-3's
+     approve/edit surface reviews the real thing. Resolutions: approve → fund + dispatch
+     atomically (proposed → briefed; meters opened; dependency gates per step 5; bus
+     publishes), and the manager's suspension continues directly as its await gate (11a) —
+     no wasted wake; edit → amend a draft brief, then approve; deny → prohibition: drafts
+     cancelled, the manager re-plans (or its assignment is cancelled)
 
 executing:
  11. every assistant turn → step report → ledger record (SpendEvent) → trigger sweep
- 11a. managers: after fan-out, MCP finish_turn → engine opens a dependency gate on the
-     MANAGER'S OWN assignment (payload = outstanding child ids) — "awaiting reports" is not a
-     special state, it is gated(dependency) like any other wait (invariant 8); the gate
-     auto-resolves as children close, resuming the manager session with their deliverables
+ 11a. managers: after fan-out (dispatched directly, or via 9a's approval), the engine holds a
+     dependency gate on the MANAGER'S OWN assignment (payload = outstanding child ids) —
+     "awaiting reports" is not a special state, it is gated(dependency) like any other wait
+     (invariant 8). The gate resolves whenever ANY watched child reaches 'delivering' or a
+     terminal state; the resume payload carries every deliverable pending at that moment
+     plus the outstanding remainder. The manager reviews what arrived (accept/reject each),
+     then finish_turn re-enters the gate while children remain — a failing deliverable is
+     reviewed while its siblings still work, which keeps rework cheap
  12. finish → adapter uploads out/ files → produce_artifact refs → MCP finish(summary, refs)
-     → engine inserts work_deliverable, state 'delivering', notifies the manager (bus wake)
+     → engine inserts work_deliverable, state 'delivering' — which mechanically resolves any
+     'delivered'-threshold (verify) dependency gates watching this assignment (refs pinned
+     at the submitted version) and the manager's await gate (the 11a review wake)
 
 acceptance:
  13. manager session resumes with the deliverable in context → MCP accept(assignmentId, note)
      or reject(assignmentId, note [, revisedBrief])
      accept → assignment 'accepted'→'closed'; meter closed; memory entry written;
-              any dependency gates watching this assignment re-check and auto-resolve (§ work-model 3)
+              any 'accepted'-threshold (consume) dependency gates watching this assignment
+              re-check and auto-resolve (§ work-model 3)
      reject → 'rejected' → re-queue to 'planning'; rework funding per brief-version rule
  14. root assignment closed → intent completed → deliverable card + notification
 ```
@@ -77,6 +97,7 @@ One module (`engine/gates.py`) owns open/resolve, the owner chain, and resumptio
 
 - **Open**: insert row, move assignment to `gated`, snapshot `session_ref`, release node (directory → `gated`), notify owner (§7). Idempotent per (assignment, kind, reason-hash) — trigger sweeps never double-open.
 - **Resolve**: validate resolver (owner, or anyone up the owner's management chain, or operator), apply the resolution action (see table in `work-model.md` §3), write `resolution`, re-queue the assignment front-of-line with a `resume` envelope carrying the resolution payload. The adapter turns that payload into the next session input (`cli-runtime.md` §6).
+- **Two mechanical dependency hooks:** the resolution sweep runs at `finish` (upstream → `delivering`; resolves `delivered`-threshold watchers, refs pinned at the submitted version) and at `accept` (resolves `accepted`-threshold watchers). Same idempotent sweep, two entry points. The manager-await gate is a `delivered`-threshold watcher over the child set that re-arms after each review turn while children remain (§2 11a).
 - **Bounded auto-resolution (SC-4's attention scaler, minimal form):** a manager node may carry `autoResolve` policy in its role/extensions data — MVP ships exactly one: `topUpPct: 20, oncePerAssignment: true` for hard-stop interventions on its reports. The engine applies it without waking the operator, logs it to activity, and routes to the operator only beyond bounds. Everything else routes to its owner untouched.
 
 ## 4. Cadence scheduler
@@ -89,10 +110,10 @@ The engine's agent-facing surface. The MCP server (`cli-runtime.md` §4) is a th
 
 | Endpoint | Purpose |
 |---|---|
-| `GET  /dp/assignment/current` | the caller's active assignment: brief (latest version), refs, contract, directives, memory block |
+| `GET  /dp/assignment/current` | the caller's active assignment: brief (latest version), refs, contract, directives, memory block, undelivered notes (stamped `delivered_at` when served) |
 | `POST /dp/assignment/events` | runtime reports: `intake-complete`, `step` (usage + delta), `stage-update`, `awaiting-reports` (managers — see §2 11a), `delivering` |
 | `POST /dp/plan` / `PUT /dp/plan` | declare / revise the plan (revision bumps version; visible) |
-| `POST /dp/delegate` | managers: create child assignment (flow §2); body includes `dependsOn` sibling ids |
+| `POST /dp/delegate` | managers: create child assignment (flow §2); body includes `dependsOn` sibling ids; buffers as `proposed` when the caller's assignment is checkpointed (§2 step 2) |
 | `GET  /dp/reports/status` | R1: subtree telemetry (assignment states, plan cursors, meters, open gates of reports — recursive, sub-org-opaque) |
 | `POST /dp/gates` | open clarification / escalation / approval-request from the agent side |
 | `POST /dp/accept` / `POST /dp/reject` | managers: acceptance decisions on their reports' deliverables |
@@ -109,6 +130,8 @@ The engine's agent-facing surface. The MCP server (`cli-runtime.md` §4) is a th
 | `GET  /organizations/{id}/intents` · `GET /intents/{intentId}` | list / detail: assignment tree, states, spend rollup, deliverable card |
 | `GET  /organizations/{id}/assignments?node=&state=` | filterable assignment list |
 | `GET  /assignments/{id}` | full drill-down: brief versions, plan (stages + cursor), steps (with deltas), meter, gates, deliverable, directives |
+| `GET  /intents/{intentId}/plan` | the living-plan aggregate: assignment tree + per-node plans (stages, cursors, timestamps), brief versions, gates, meters, notes — one payload, three UI projections (`operator-experience.md` §4a) |
+| `POST /intents/{intentId}/notes` | leave an anchored, non-blocking note `{assignmentId?, stageIdx?, text}` — injected at the target's next turn boundary; never suspends |
 | `POST /assignments/{id}/intervene` | X1: open judgment intervention `{note}` |
 | `POST /gates/{id}/resolve` | the one resolution endpoint: `{action: resume|revise-brief|approve|deny|answer|constrain|reassign|top-up|cancel, ...payload}` |
 | `GET  /organizations/{id}/gates?state=open&owner=operator` | the approvals/attention inbox feed |
