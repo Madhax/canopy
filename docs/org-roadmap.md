@@ -42,6 +42,8 @@ Why this ordering beats a market-facing hero-archetype sequence:
 
 The same pod shape as MVP-1, re-roled: `tech-writer` + `editor` under a lead, reading GitHub issues labeled `docs`, proposing documentation PRs. No test suite to run, no compute beyond the workspace — but it forces the **entire external plumbing** the bigger rungs need, at minimum stakes: the GitHub grant pack via the `mcp` executor (`agent-envelope.md` §3.6, used exactly as designed — curated grants, proxy-brokered, credentials in the Secret Store), the remote-git extension of E4's executor (push branch, open PR — a **governed action**: every public PR is an ApprovalGate owned by the operator), and issue ingestion via a Cadence ("every morning, review new docs issues") — polling first, webhooks later. A wrong docs PR costs nothing; the plumbing it proves carries everything after it.
 
+**Seeded by `execution/mvp.md` E8** — the MVP capstone runs this org's first unit by hand (operator-curated issue in, human-pushed PR out) before any plumbing exists, so O2 proper starts from a proven flow and only adds the machinery: the GitHub pack, the remote-git executor, and the ingestion cadence.
+
 **Pulls:** GitHub MCP grant pack · remote git + PR-create executor (governed) · ingestion cadence. **Done when:** five docs PRs merged; cost per PR published.
 
 ### O3 — `canopy-maintenance` (the bug-close org — the rung this roadmap exists for)
