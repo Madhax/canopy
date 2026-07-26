@@ -40,12 +40,16 @@ class ReviewBody(BaseModel):
 
 class GateResolveBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: str  # approve | edit-draft | deny (E2a); the judgment actions land in E2b
+    action: str  # approve | edit-draft | deny | resume | revise-brief | answer |
+    #              top-up | reassign | cancel (work-model.md §3 resolution table)
     assignmentId: str | None = None  # edit-draft: which draft
-    brief: str | None = None  # edit-draft: the amended text
-    refs: list[str] | None = None  # edit-draft: amended granted refs
+    brief: str | None = None  # edit-draft / revise-brief: the (amended) text
+    refs: list[str] | None = None  # granted refs riding the resolution
     note: str = ""
     allowances: dict[str, int] | None = None  # approve: per-child allowance overrides
+    answer: str | None = None  # escalation answer
+    amount: int | None = None  # top-up
+    toNodeId: str | None = None  # reassign target
 
 
 def _assignment_detail(work_store, ledger, assignment) -> dict[str, Any]:
@@ -161,6 +165,128 @@ def operator_reject(
     return a.model_dump()
 
 
+class InterveneBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str
+
+
+class PriorityBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    priority: int
+
+
+class NoteBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str
+    assignmentId: str | None = None  # None ⇒ a note on the intent itself
+    stageIdx: int | None = None
+
+
+class NotificationsReadBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ids: list[str] | None = None  # None ⇒ mark all unread read
+
+
+@router.post("/assignments/{assignment_id}/intervene")
+def intervene(
+    assignment_id: str, body: InterveneBody, engine=Depends(get_engine),
+    work_store=Depends(get_work_store),
+) -> Any:
+    """X1: the operator's judgment suspends the assignment on an InterventionGate."""
+    if work_store.get_assignment(assignment_id) is None:
+        return _error(404, "NOT_FOUND", f"No assignment {assignment_id!r}")
+    try:
+        gate = engine.intervene(assignment_id, body.note, by="operator")
+    except WorkError as exc:
+        return _error(409, "WORK_STATE", str(exc))
+    return gate.model_dump()
+
+
+@router.post("/assignments/{assignment_id}/priority")
+def set_priority(
+    assignment_id: str, body: PriorityBody, engine=Depends(get_engine),
+    work_store=Depends(get_work_store),
+) -> Any:
+    if work_store.get_assignment(assignment_id) is None:
+        return _error(404, "NOT_FOUND", f"No assignment {assignment_id!r}")
+    return engine.set_priority(assignment_id, body.priority).model_dump()
+
+
+@router.post("/intents/{intent_id}/notes", status_code=201)
+def leave_note(
+    intent_id: str, body: NoteBody, work_store=Depends(get_work_store),
+) -> Any:
+    """Amendment D-5: an anchored, non-blocking note — injected at the target's next turn
+    boundary; opens no gate, revises no brief."""
+    intent = work_store.get_intent(intent_id)
+    if intent is None:
+        return _error(404, "NOT_FOUND", f"No intent {intent_id!r}")
+    if body.assignmentId is not None:
+        a = work_store.get_assignment(body.assignmentId)
+        if a is None or a.intentId != intent_id:
+            return _error(422, "BAD_ANCHOR", "assignmentId is not part of this intent")
+    note = work_store.create_note(
+        intent.orgId, intent_id, body.text, assignment_id=body.assignmentId,
+        stage_idx=body.stageIdx, author="operator",
+    )
+    return note.model_dump()
+
+
+@router.get("/intents/{intent_id}/plan")
+def intent_plan(
+    intent_id: str, work_store=Depends(get_work_store), ledger=Depends(get_ledger),
+) -> Any:
+    """The living-plan aggregate (amendment D-4): the whole engagement as one payload —
+    assignment tree with per-node plans (stages, cursors, timestamps), brief versions, open
+    gates, meters, and anchored notes. Read + act; this view stores nothing."""
+    intent = work_store.get_intent(intent_id)
+    if intent is None:
+        return _error(404, "NOT_FOUND", f"No intent {intent_id!r}")
+    assignments = work_store.list_assignments(intent_id=intent_id)
+    notes = work_store.list_notes(intent_id)
+    by_parent: dict[str | None, list] = {}
+    for a in assignments:
+        by_parent.setdefault(a.parentId, []).append(a)
+
+    def node_view(a) -> dict[str, Any]:
+        plan = work_store.get_plan(a.id)
+        meter = ledger.get_meter(a.meterId) if a.meterId else None
+        return {
+            "assignment": a.model_dump(),
+            "brief": (b := work_store.get_brief(a.id)) and b.model_dump(),
+            "briefVersions": a.briefVersion,
+            "plan": plan.model_dump() if plan else None,
+            "gates": [g.model_dump()
+                      for g in work_store.list_gates(assignment_id=a.id, state="open")],
+            "meter": meter.model_dump() if meter else None,
+            "notes": [n.model_dump() for n in notes if n.assignmentId == a.id],
+            "children": [node_view(c) for c in by_parent.get(a.id, [])],
+        }
+
+    roots = by_parent.get(None, [])
+    return {
+        "intent": intent.model_dump(),
+        "tree": [node_view(r) for r in roots],
+        "intentNotes": [n.model_dump() for n in notes if n.assignmentId is None],
+    }
+
+
+@router.get("/organizations/{org_id}/notifications")
+def list_notifications(
+    org_id: str, since: str | None = None, unread: bool = False,
+    work_store=Depends(get_work_store),
+) -> Any:
+    rows = work_store.list_notifications(org_id, since=since, unread_only=unread)
+    return {"notifications": [n.model_dump() for n in rows]}
+
+
+@router.post("/organizations/{org_id}/notifications/read")
+def mark_notifications_read(
+    org_id: str, body: NotificationsReadBody, work_store=Depends(get_work_store),
+) -> Any:
+    return {"marked": work_store.mark_notifications_read(org_id, body.ids)}
+
+
 @router.get("/organizations/{org_id}/gates")
 def list_gates(
     org_id: str, state: str | None = None, owner: str | None = None,
@@ -186,6 +312,12 @@ def resolve_gate(
         payload["refs"] = body.refs
     if body.allowances is not None:
         payload["allowances"] = body.allowances
+    if body.answer is not None:
+        payload["answer"] = body.answer
+    if body.amount is not None:
+        payload["amount"] = body.amount
+    if body.toNodeId is not None:
+        payload["toNodeId"] = body.toNodeId
     try:
         gate = engine.resolve_gate(
             gate_id, action=body.action, resolved_by="operator", payload=payload,
