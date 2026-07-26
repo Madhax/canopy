@@ -204,6 +204,21 @@ def _plan_for(brief_text: str) -> list[dict]:
     return [{"title": "implement", "completion": f"deliverable produced for: {brief_text[:60]}"}]
 
 
+_CHARTERS: dict[str, dict] = {}
+
+
+def _charter_for(client: httpx.Client, node_id: str) -> dict:
+    charter = _CHARTERS.get(node_id)
+    if charter is None:
+        try:
+            r = client.get("/api/dp/charter")
+            charter = r.json() if r.status_code == 200 else {}
+        except httpx.HTTPError:
+            charter = {}
+        _CHARTERS[node_id] = charter
+    return charter
+
+
 @runtime("loop")
 def loop_tick(client: httpx.Client, cfg: AgentConfig) -> str:
     """Advance the caller's assignment by one state; returns the heartbeat status."""
@@ -228,8 +243,47 @@ def loop_tick(client: httpx.Client, cfg: AgentConfig) -> str:
         brief_text = (cur.get("brief") or {}).get("text", "")
         client.post("/api/dp/plan", json={"assignmentId": aid, "stages": _plan_for(brief_text)})
     elif state == "executing":
-        _produce_and_finish(client, cfg, cur)
+        charter = _charter_for(client, cfg.node_id)
+        if charter.get("reportNodeIds"):
+            _manager_tick(client, cfg, cur, charter)
+        else:
+            _produce_and_finish(client, cfg, cur)
     return "engaged"
+
+
+def _manager_tick(client: httpx.Client, cfg: AgentConfig, cur: dict, charter: dict) -> None:
+    """The mock manager (amendments §3.3): fan out to every report (delegations may buffer as
+    ``proposed`` under the plan-review checkpoint — delegate returns without delivery), close
+    the turn with ``awaiting-reports``, then on each wake accept whatever delivered and re-arm;
+    when the child set drains, synthesize the deliverable."""
+    a = cur["assignment"]
+    aid = a["id"]
+    reports = client.get("/api/dp/reports/status").json().get("reports", [])
+
+    if not reports:  # first executing turn: the fan-out
+        brief_text = (cur.get("brief") or {}).get("text", "the work")
+        for node_id in charter["reportNodeIds"]:
+            client.post("/api/dp/delegate", json={
+                "assignmentId": aid, "reportNodeId": node_id,
+                "brief": f"As part of '{brief_text}': deliver your role's contribution.",
+            })
+        client.post("/api/dp/assignment/events",
+                    json={"assignmentId": aid, "kind": "awaiting-reports"})
+        return
+
+    delivered = [c for c in reports if c["state"] == "delivering"]
+    for child in delivered:  # review wake: accept what arrived (the mock manager approves)
+        client.post("/api/dp/accept", json={"assignmentId": child["assignmentId"]})
+
+    remaining = [c for c in reports
+                 if c["state"] not in ("accepted", "closed", "cancelled", "failed")]
+    still_open = [c for c in remaining
+                  if c["assignmentId"] not in {d["assignmentId"] for d in delivered}]
+    if still_open:
+        client.post("/api/dp/assignment/events",
+                    json={"assignmentId": aid, "kind": "awaiting-reports"})  # re-arm
+        return
+    _produce_and_finish(client, cfg, cur)  # child set drained: synthesize and deliver
 
 
 def _produce_and_finish(client: httpx.Client, cfg: AgentConfig, cur: dict) -> None:

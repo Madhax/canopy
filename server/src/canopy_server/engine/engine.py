@@ -54,14 +54,40 @@ class WorkError(Exception):
 class ExecutionEngine:
     def __init__(
         self, store: WorkStore, ledger: BudgetLedger, artifacts: ArtifactStore,
-        org_store: OrgStore, *, activity: ActivityLog | None = None,
+        org_store: OrgStore, *, activity: ActivityLog | None = None, bus=None,
     ):
         self.store = store
         self.ledger = ledger
         self.artifacts = artifacts
         self.orgs = org_store
         self.activity = activity
+        self.bus = bus  # optional: dispatch/resume wake-ups ride the A3 delivery workers
         self.gates = GateService(store, activity=activity)
+        # Gate resolutions wake the resumed node through the same delivery path as dispatch.
+        self.gates.on_resume = lambda a: self._publish_wake(a, "resume")
+
+    def _publish_wake(self, a: Assignment, kind: str, payload: dict | None = None) -> None:
+        """Publish a wake envelope to the node's inbox topic (engine.md §2 step 6 — A3
+        delivery). Runtimes also poll `assignment/current`, so the bus is the fast path, not
+        the only path; a missing bus (unit tests) degrades to polling."""
+        if self.bus is None:
+            return
+        from ..bus import Envelope
+        from ..ids import new_message_id
+        from ..router import inbox_topic
+
+        envelope = Envelope(
+            id=new_message_id(), actuationId=a.actuationId, fromNodeId="engine",
+            toNodeId=a.nodeId, kind=kind, a2aPayload=payload or {}, taskRef=a.id,
+            ts=now_iso(),
+        )
+        try:
+            self.bus.publish(
+                inbox_topic(a.actuationId, a.nodeId), envelope,
+                idempotency_key=f"{kind}:{a.id}:{a.updatedAt}",
+            )
+        except Exception:  # noqa: BLE001 - a wake is best-effort; polling still succeeds
+            pass
 
     # ----------------------------------------------------------- node resolution
     def _org(self, org_id: str) -> Organization:
@@ -210,9 +236,12 @@ class ExecutionEngine:
             self.gates.open_dependency(
                 self._require(aid), edges, suspend=not staged,
             )
+        child = self._require(aid)
+        if child.state == "briefed":  # direct dispatch: publish the delivery wake (A3)
+            self._publish_wake(child, "assignment")
         self._log("assignment.delegated", caller.orgId, [caller.id, aid, report.id],
                   {"staged": staged, "dependsOn": [e["upstreamId"] for e in edges]})
-        return self._require(aid)
+        return child
 
     def finish_turn(self, caller_assignment_id: str) -> Gate | None:
         """The manager's turn boundary after a fan-out (engine.md §2 9a / 11a).
@@ -623,6 +652,9 @@ class ExecutionEngine:
                     dep_gate, resolution={"action": "auto", "refs": granted},
                     resolved_by="system",
                 )
+        dispatched = self._require(child.id)
+        if dispatched.state == "briefed":
+            self._publish_wake(dispatched, "assignment")
 
     # ---------------------------------------------------------------- runtime reports
     def _require(self, assignment_id: str) -> Assignment:

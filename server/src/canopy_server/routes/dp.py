@@ -513,6 +513,37 @@ def reject_deliverable(
     return a.model_dump()
 
 
+@router.get("/reports/status")
+def reports_status(
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    ledger=Depends(get_ledger),
+) -> Any:
+    """R1: the caller's children under its current assignment — states, cursors, meters, open
+    gates (engine.md §5; the MCP `reports_status` tool serves the same view)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    if a is None:
+        return {"reports": []}
+    out = []
+    for c in work_store.list_children(a.id):
+        plan = work_store.get_plan(c.id)
+        cursor = next((s.idx for s in plan.stages if s.state == "active"), None) if plan else None
+        meter = ledger.get_meter(c.meterId) if c.meterId else None
+        gates = work_store.list_gates(assignment_id=c.id, state="open")
+        out.append({
+            "assignmentId": c.id, "nodeId": c.nodeId, "state": c.state,
+            "planCursor": cursor,
+            "meter": {"spent": meter.spent, "allowance": meter.allowance} if meter else None,
+            "openGates": [g.kind for g in gates],
+        })
+    return {"reports": out}
+
+
 @router.post("/gates")
 def open_gate(
     body: GateOpenBody,

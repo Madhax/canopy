@@ -178,6 +178,7 @@ def _engine_for(path_str: str, data_dir_str: str):
         _artifact_store_for(path_str, data_dir_str),
         get_store(),
         activity=_activity_for(path_str),
+        bus=_bus_for(path_str),  # dispatch/resume wake-ups ride the A3 delivery workers (E3)
     )
 
 
