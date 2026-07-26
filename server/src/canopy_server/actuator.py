@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +31,7 @@ from pydantic import BaseModel
 
 from .activity import ActivityLog
 from .charter import compile_charter
+from .config import get_allow_trusted_local, get_runtime_override
 from .db import Db, register_schema
 from .deps import now_iso
 from .directory import AgentDirectory
@@ -105,6 +108,24 @@ class ActuationView(BaseModel):
     nodes: list[ActuationNodeView]
 
 
+@lru_cache(maxsize=1)
+def _cli_available() -> bool:
+    """One probe per process (cli-runtime.md §2's PROFILE_UNREACHABLE analogue): is a working
+    `claude` (or the CANOPY_CLI_CMD override — the fake-CLI shim in CI) answering --version?"""
+    import shutil
+    import subprocess
+
+    raw = os.environ.get("CANOPY_CLI_CMD", "claude")
+    cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
+    if shutil.which(cmd[0]) is None and not Path(cmd[0]).exists():
+        return False
+    try:
+        r = subprocess.run([*cmd, "--version"], capture_output=True, timeout=15, check=False)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def enumerate_nodes(top: Organization) -> Iterator[tuple[list[str], Agent]]:
     """Yield ``(org_path, agent)`` for every agent at every nesting level, roots first per org."""
 
@@ -155,11 +176,50 @@ class Actuator:
         self.router = router
 
     # -- readiness ---------------------------------------------------------- #
+    def _role_for(self, org: Organization, agent: Agent):
+        role = None
+        if self.catalog:
+            role = next((r for r in self.catalog.roles if r.key == agent.role.key), None)
+        return role or next((r for r in org.customRoles if r.key == agent.role.key), None)
+
+    def _node_runtime(self, org: Organization, agent: Agent) -> str:
+        override = get_runtime_override()
+        if override:
+            return override
+        role = self._role_for(org, agent)
+        return getattr(role, "defaultRuntime", "loop") or "loop"
+
+    def _has_execute_grants(self, org: Organization) -> bool:
+        grants = {g.key: g for g in (self.catalog.toolGrants if self.catalog else [])}
+        for _path, agent in enumerate_nodes(org):
+            role = self._role_for(org, agent)
+            for gk in getattr(role, "toolGrants", []) or []:
+                g = grants.get(gk)
+                if g is not None and g.minSandboxTier >= 2:
+                    return True
+        return False
+
     def check_readiness(self, org: Organization) -> list[ValidationIssue]:
         issues = [
             i for i in validate_organization(org, "export", self.catalog) if i.severity == "error"
         ]
+        grant_keys = {g.key: g for g in (self.catalog.toolGrants if self.catalog else [])}
+        needs_cli = False
         for org_path, agent in enumerate_nodes(org):
+            role = self._role_for(org, agent)
+            for gk in getattr(role, "toolGrants", []) or []:
+                grant = grant_keys.get(gk)
+                if grant is None:
+                    issues.append(issue("GRANT_UNKNOWN", "error", agentIds=[agent.id],
+                                        orgPath=org_path))
+                elif grant.minSandboxTier >= 2 and not get_allow_trusted_local():
+                    # The subprocess provider is the trusted-local tier; execute-class grants
+                    # need a hard wall (envelope §3.1) unless the operator waives it loudly
+                    # (cli-runtime.md §8).
+                    issues.append(issue("TIER_UNSATISFIABLE", "error", agentIds=[agent.id],
+                                        orgPath=org_path))
+            if self._node_runtime(org, agent) == "cli-claude":
+                needs_cli = True
             binding = self.profiles.get_binding_for_node(org.id, agent.id, org_path)
             if binding is None:
                 issues.append(issue("BINDING_MISSING", "error", agentIds=[agent.id],
@@ -173,6 +233,8 @@ class Actuator:
             if profile.apiKeySecretId and self.secrets.get_meta(profile.apiKeySecretId) is None:
                 issues.append(issue("SECRET_DANGLING", "error", agentIds=[agent.id],
                                     orgPath=org_path))
+        if needs_cli and not _cli_available():
+            issues.append(issue("CLI_UNAVAILABLE", "error"))
         return issues
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -182,6 +244,14 @@ class Actuator:
         if issues:
             raise ActuationError(issues)
         actuation_id = new_actuation_id()
+        # The trusted-local waiver is loud, once, logged (cli-runtime.md §8).
+        if get_allow_trusted_local() and self._has_execute_grants(org):
+            self.activity.log(
+                "operator", "execution.trusted-local-waiver", org_id=org_id,
+                subject_ids=[actuation_id],
+                payload={"note": "execute-class grants running on the subprocess tier by "
+                                 "explicit canopy.toml waiver (execution.allow_trusted_local)"},
+            )
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
@@ -244,9 +314,11 @@ class Actuator:
             meter_id=meter.id, charter=json.dumps(charter.model_dump() if charter else {}),
         )
         workspace_root = self.sandboxes_root / actuation_id / agent.id / "workspace"
+        runtime_kind = self._node_runtime(top, agent)
         spec = SandboxSpec(
             actuation_id=actuation_id, node_id=agent.id, org_id=top.id,
-            workspace_root=workspace_root, env=self._build_env(token, agent.id, actuation_id),
+            workspace_root=workspace_root,
+            env=self._build_env(token, agent.id, actuation_id, runtime_kind=runtime_kind),
             a2a_port=None,
         )
         handle = await self.sandbox.create(spec)
@@ -259,9 +331,9 @@ class Actuator:
         self._set_node(actuation_id, agent.id, sub_state="ready" if ready else "failed",
                        error=None if ready else "boot timeout: agent did not register")
 
-    def _build_env(self, token: str, node_id: str, actuation_id: str) -> dict[str, str]:
-        import os
-
+    def _build_env(
+        self, token: str, node_id: str, actuation_id: str, *, runtime_kind: str = "loop",
+    ) -> dict[str, str]:
         env = {
             "CANOPY_CP_URL": self.cp_url,
             "CANOPY_RUN_TOKEN": token,
@@ -269,11 +341,18 @@ class Actuator:
             "CANOPY_ACTUATION_ID": actuation_id,
             "CANOPY_A2A_HOST": "127.0.0.1",
             "CANOPY_A2A_PORT": "0",  # bind ephemeral, report endpoint at register
+            "CANOPY_RUNTIME": runtime_kind,
         }
         if self.agent_pythonpath:
             env["PYTHONPATH"] = self.agent_pythonpath
         # Minimal host vars needed for the interpreter to start (Windows needs SystemRoot).
-        for key in ("PATH", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "PYTHONHOME"):
+        passthrough = ["PATH", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "PYTHONHOME"]
+        if runtime_kind == "cli-claude":
+            # The CLI needs its (operator-provisioned) auth/config dir and a home
+            # (cli-runtime.md §8: trusted-local, stated plainly), plus the shim override.
+            passthrough += ["CLAUDE_CONFIG_DIR", "CANOPY_CLI_CMD", "FAKE_CLAUDE_SCRIPT",
+                            "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA"]
+        for key in passthrough:
             if key in os.environ:
                 env[key] = os.environ[key]
         return env

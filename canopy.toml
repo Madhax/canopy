@@ -23,6 +23,17 @@ backend = "sqlite"
 # Local Fernet-encrypted store, master key in data/master.key (A1). Keychain/Vault/IAM later.
 backend = "local-encrypted"
 
+[execution]
+# The MVP trusted-local posture (docs/execution/cli-runtime.md §8): execute-class grants
+# (test.unit.run, test.run, …) require a hardened sandbox tier; on the v1 subprocess tier
+# actuation refuses with TIER_UNSATISFIABLE unless this waiver is set — loudly, once, logged
+# to the activity feed. The docker tier (A6) retires the waiver.
+allow_trusted_local = true
+# Force every node onto one runtime kind regardless of the role's defaultRuntime. "loop" keeps
+# keyless dev/CI actuations working without a logged-in `claude`; set to "" to let the three
+# pod roles run their real cli-claude sessions (needs the CLI on PATH and logged in).
+runtime_override = "loop"
+
 [gateway]
 # The default model provider. "mock" is the deterministic provider that makes CI green and demos
 # free with zero API spend and no keys (risk IM-2 — the mock provider is the testing spine).
