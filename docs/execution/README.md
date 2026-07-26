@@ -23,6 +23,8 @@ Read in this order:
 | `cli-runtime.md` | The `cli-claude` runtime kind: wrapping headless Claude Code sessions per assignment, the Canopy MCP tool plane, session-observed metering, budget gating between turns, suspend/resume across gates. Closes debt D9. |
 | `operator-experience.md` | The ongoing UX: mission control, the per-agent inspector (full introspection of any node), the cost explorer, the notification center and approvals inbox, the intent console. Routes, components, SSE. |
 | `mvp.md` | **MVP-1: the software team.** A three-role `product-engineering-pod` (lead / backend engineer / QA) building and testing code in a real local git repo. Role isolation by construction, salary in use end-to-end, build milestones E1–E7 for Claude Code. |
+| `target-app.md` | The MVP-1 work object, designed in full: the `examples/target-app` expense-reports service, the unit/acceptance suite split that makes the rework beat structural, the seeded CSV contract, grant→path mapping, salary calibration, and the PF-1 benchmark twin. Built in E4. |
+| `amendments-2026-07-26.md` | Amendment record: five settled decisions (verify/consume dependencies, staged delegation, wake-on-delivery, the living plan view, notes) with the per-doc change log and the code impact map. |
 
 ## Phase-3 definition of done (MVP-1)
 
