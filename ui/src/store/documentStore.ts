@@ -64,6 +64,7 @@ export interface DocStore {
 
   addDependency: (path: string[], from: string, to: string, note?: string) => void;
   updateDependencyNote: (path: string[], depId: string, note: string) => void;
+  setDependencyResolveOn: (path: string[], depId: string, resolveOn: Dependency["resolveOn"]) => void;
   removeDependency: (path: string[], depId: string) => void;
 
   stampFormation: (
@@ -167,7 +168,13 @@ export const useDocumentStore = create<DocStore>()(
       addDependency: (path, from, to, note) =>
         set((s) => {
           if (!s.doc) return {};
-          const dep: Dependency = { id: newDependencyId(), from, to, note: note ?? null };
+          const dep: Dependency = {
+            id: newDependencyId(),
+            from,
+            to,
+            resolveOn: "accepted",
+            note: note ?? null,
+          };
           return { doc: updateOrgAtPath(s.doc, path, (o) => void o.dependencies.push(dep)) };
         }),
 
@@ -178,6 +185,18 @@ export const useDocumentStore = create<DocStore>()(
                 doc: updateOrgAtPath(s.doc, path, (o) => {
                   const d = o.dependencies.find((x) => x.id === depId);
                   if (d) d.note = note;
+                }),
+              }
+            : {},
+        ),
+
+      setDependencyResolveOn: (path, depId, resolveOn) =>
+        set((s) =>
+          s.doc
+            ? {
+                doc: updateOrgAtPath(s.doc, path, (o) => {
+                  const d = o.dependencies.find((x) => x.id === depId);
+                  if (d) d.resolveOn = resolveOn;
                 }),
               }
             : {},

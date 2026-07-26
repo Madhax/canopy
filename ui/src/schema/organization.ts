@@ -37,6 +37,9 @@ export const dependencySchema = z
     id: z.string(),
     from: z.string(),
     to: z.string(),
+    // When the dependent unlocks: at the upstream's acceptance (consume, default)
+    // or at its delivery/submission (verify) — docs/domain-model.md §Dependency.
+    resolveOn: z.enum(["accepted", "delivered"]).default("accepted"),
     note: z.string().nullable().optional(),
   })
   .strict();

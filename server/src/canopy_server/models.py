@@ -106,6 +106,9 @@ class FormationDep(Strict):
     # slot references within the formation ("from" depends on "to")
     from_: str = Field(alias="from")
     to: str
+    # verify edges (`delivered`) unlock at the upstream's submission; consume edges
+    # (`accepted`, default) wait for sign-off — docs/domain-model.md §Dependency.
+    resolveOn: Literal["accepted", "delivered"] = "accepted"
 
 
 class Formation(Strict):
@@ -163,6 +166,9 @@ class Dependency(Strict):
     id: str
     from_: str = Field(alias="from")  # the dependent
     to: str  # the dependency ("from" depends on "to")
+    # When the dependent unlocks: at the upstream's acceptance (consume, default)
+    # or at its delivery/submission (verify) — docs/domain-model.md §Dependency.
+    resolveOn: Literal["accepted", "delivered"] = "accepted"
     note: str | None = None
 
 

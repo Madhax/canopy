@@ -65,7 +65,14 @@ export const catalogRoleSchema = z
 
 export const formationSlotSchema = z.object({ slot: z.string(), roleKey: z.string() }).strict();
 
-export const formationDepSchema = z.object({ from: z.string(), to: z.string() }).strict();
+export const formationDepSchema = z
+  .object({
+    from: z.string(),
+    to: z.string(),
+    // Verify edges (`delivered`) unlock at submission; consume (`accepted`, default) at sign-off.
+    resolveOn: z.enum(["accepted", "delivered"]).default("accepted"),
+  })
+  .strict();
 
 export const formationSchema = z
   .object({

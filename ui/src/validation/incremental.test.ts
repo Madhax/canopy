@@ -26,7 +26,7 @@ function doc(): OrganizationDoc {
       agent("c2", "l1"),
       agent("x", "l2"),
     ],
-    dependencies: [{ id: "d1", from: "c1", to: "c2", note: null }],
+    dependencies: [{ id: "d1", from: "c1", to: "c2", resolveOn: "accepted", note: null }],
     customRoles: [],
     childOrganizations: [],
     meta: {},

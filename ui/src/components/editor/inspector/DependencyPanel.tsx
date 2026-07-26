@@ -26,6 +26,36 @@ export function DependencyPanel({ dependency, org }: Props) {
         <span className="font-semibold text-ink">{label(dependency.to)}</span>
       </div>
 
+      <fieldset className="flex flex-col gap-1">
+        <legend className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Starts when
+        </legend>
+        <div className="flex gap-2" role="radiogroup" aria-label="Starts when">
+          {(
+            [
+              { value: "accepted", label: "work is accepted", hint: "consume — waits for sign-off" },
+              { value: "delivered", label: "work is submitted", hint: "verify — reviews the submission" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={(dependency.resolveOn ?? "accepted") === opt.value}
+              title={opt.hint}
+              onClick={() => store.setDependencyResolveOn(path, dependency.id, opt.value)}
+              className={`flex-1 rounded-md border px-2 py-1.5 text-sm ${
+                (dependency.resolveOn ?? "accepted") === opt.value
+                  ? "border-accent bg-surface-2 font-semibold text-ink"
+                  : "border-border bg-canvas text-ink-muted hover:border-accent"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
       <label className="flex flex-col gap-1">
         <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Note</span>
         <textarea

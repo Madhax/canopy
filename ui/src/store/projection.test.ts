@@ -22,7 +22,7 @@ function pod(): OrganizationDoc {
       { id: "a_lead", name: "Lead", role: { key: "engineering-lead", version: 1 }, managerId: null, extensions: { instructions: "", responsibilities: [] }, salary: { perAssignmentAllowance: 160000, warnThresholdPct: 80, hardStop: true }, position: { x: 0, y: 0 } },
       { id: "a_be", name: "BE", role: { key: "backend-engineer", version: 1 }, managerId: "a_lead", extensions: { instructions: "", responsibilities: [] }, salary: { perAssignmentAllowance: 150000, warnThresholdPct: 80, hardStop: true }, position: { x: 0, y: 100 } },
     ],
-    dependencies: [{ id: "d1", from: "a_be", to: "a_lead", note: null }],
+    dependencies: [{ id: "d1", from: "a_be", to: "a_lead", resolveOn: "accepted", note: null }],
     customRoles: [],
     childOrganizations: [],
     meta: {},
