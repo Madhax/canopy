@@ -18,6 +18,7 @@ Design documentation for Canopy: a framework for building AI-agent organizations
 | `execution/` | Phase-3 design suite: the work layer made executable (Assignments, five Gates, Plans/Steps, assignment-bound meters, memory, cadences), the Claude-CLI-wrapped agent runtime (no API key), the ongoing operator experience (mission control, agent inspector, cost explorer, inbox), and the MVP-1 software-team plan. Start at `execution/README.md`. | executing work through the chart |
 | `risks/` | Risk register and derisking strategy across seven contexts (problem-fit, usefulness, marketing, design, architecture, implementation, scalability). Start at `risks/README.md`. | keeping the project alive |
 | `testing.md` | The consolidated testing strategy: four pillars, the current test estate, standing coverage rules, the milestone-by-milestone gap plan, CI topology, and the manual live path | keeping every other row true |
+| `org-roadmap.md` | The milestone sequence in organizations, not features: the self-hosting ladder (docs → bug-close → feature → catalog → voice → frontdesk → Canopy Inc.), the trust/recursion rules, and the capabilities each rung pulls | what should be *running* on all of the above |
 
 The layering is strict: **use cases** are satisfied by **archetypes**, which compose **formations**, which compose **roles**, which are constrained by the **domain model**. Anything expressible in the lower layers but not deliverable through the upper ones is a catalog gap, not a user error.
 
