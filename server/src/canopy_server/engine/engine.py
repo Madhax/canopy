@@ -22,12 +22,14 @@ from pydantic import BaseModel
 
 from ..activity import ActivityLog
 from ..artifacts import ArtifactMeta, ArtifactStore
-from ..ids import new_assignment_id
+from ..config import get_rework_grant_pct
+from ..ids import new_assignment_id, new_step_id
 from ..ledger import BudgetLedger
 from ..models import Agent, Organization
 from ..sqlite_store import SqliteOrgStore
 from ..store import JsonFileStore
-from .models import Assignment, Deliverable, Intent, Plan
+from .gates import GateService
+from .models import ASSIGNMENT_TERMINAL_STATES, Assignment, Deliverable, Gate, Intent, Plan
 from .store import WorkStore
 
 OrgStore = SqliteOrgStore | JsonFileStore
@@ -57,6 +59,7 @@ class ExecutionEngine:
         self.artifacts = artifacts
         self.orgs = org_store
         self.activity = activity
+        self.gates = GateService(store, activity=activity)
 
     # ----------------------------------------------------------- node resolution
     def _org(self, org_id: str) -> Organization:
@@ -120,6 +123,253 @@ class ExecutionEngine:
         self._log("intent.submitted", org_id, [intent.id, aid, agent.id],
                   {"actuationId": actuation_id, "meterId": meter.id})
         return RootAssignmentResult(intent=self.store.get_intent(intent.id), assignment=assignment)
+
+    # ------------------------------------------------------------------ delegation
+    @staticmethod
+    def _reports_of(org: Organization, node_id: str) -> list[Agent]:
+        return [a for a in org.agents if a.managerId == node_id]
+
+    @staticmethod
+    def _dep_resolve_on(org: Organization, from_node: str, to_node: str) -> str:
+        """The formation-declared resolution policy for the (dependent → upstream) edge; consume
+        (``accepted``) when the chart declares no edge (work-model.md §3)."""
+        for d in org.dependencies:
+            if d.from_ == from_node and d.to == to_node:
+                return d.resolveOn
+        return "accepted"
+
+    @staticmethod
+    def _checkpointed(assignment: Assignment) -> bool:
+        """Does the X3 plan-review checkpoint govern this assignment's fan-out? Default policy:
+        root assignments (operator-issued), per manager-responsibilities X3 / engine.md §2."""
+        return assignment.parentId is None
+
+    def delegate(
+        self, caller_assignment_id: str, report_node_id: str, brief: str, *,
+        refs: list[str] | None = None, contract_kind: str | None = None,
+        contract_type: str | None = None, depends_on: list[dict] | None = None,
+    ) -> Assignment:
+        """Create a child assignment on a direct report (engine.md §2 steps 1–6).
+
+        Checkpointed callers get the STAGED branch: the child is a ``proposed`` draft — no meter,
+        nothing published — until the plan-review approval dispatches the batch. Direct callers
+        get fund-and-dispatch immediately. ``depends_on`` items: ``{"assignmentId", "resolveOn"?}``
+        — sibling assignment ids; resolveOn defaults to the chart's edge policy.
+        """
+        caller = self._require(caller_assignment_id)
+        if caller.state != "executing":
+            raise WorkError(f"delegate invalid from state {caller.state!r}")
+        org = self._org(caller.orgId)
+        report = next(
+            (a for a in self._reports_of(org, caller.nodeId) if a.id == report_node_id), None,
+        )
+        if report is None:  # invariant 4: delegation only travels manager → direct report
+            raise WorkError(f"node {report_node_id!r} is not a report of {caller.nodeId!r}")
+
+        edges: list[dict] = []
+        for dep in depends_on or []:
+            up = self._require(dep["assignmentId"])
+            if up.parentId != caller.id:
+                raise WorkError(f"dependsOn target {up.id!r} is not a sibling assignment")
+            edges.append({
+                "upstreamId": up.id,
+                "resolveOn": dep.get("resolveOn")
+                or self._dep_resolve_on(org, report.id, up.nodeId),
+            })
+
+        ckind = contract_kind or self._contract_for(report)[0]
+        ctype = contract_type or self._contract_for(report)[1]
+        staged = self._checkpointed(caller)
+        aid = new_assignment_id()
+
+        if staged:
+            self.store.create_assignment(
+                assignment_id=aid, org_id=caller.orgId, actuation_id=caller.actuationId,
+                intent_id=caller.intentId, parent_id=caller.id, node_id=report.id,
+                issued_by=caller.nodeId, contract_kind=ckind, contract_type=ctype,
+                meter_id=None, state="proposed",
+            )
+        else:
+            meter = self.ledger.open_meter(
+                caller.actuationId, report.id, report.salary.perAssignmentAllowance,
+                warn_threshold_pct=report.salary.warnThresholdPct,
+                hard_stop=report.salary.hardStop, task_id=aid,
+            )
+            self.store.create_assignment(
+                assignment_id=aid, org_id=caller.orgId, actuation_id=caller.actuationId,
+                intent_id=caller.intentId, parent_id=caller.id, node_id=report.id,
+                issued_by=caller.nodeId, contract_kind=ckind, contract_type=ctype,
+                meter_id=meter.id, state="briefed",
+            )
+        self.store.add_brief(aid, brief, artifact_refs=refs, revised_by=caller.nodeId)
+        if edges:
+            # Dependency tracking starts now for both branches; only live (dispatched) children
+            # are actually suspended — a proposed draft is not live work yet.
+            self.gates.open_dependency(
+                self._require(aid), edges, suspend=not staged,
+            )
+        self._log("assignment.delegated", caller.orgId, [caller.id, aid, report.id],
+                  {"staged": staged, "dependsOn": [e["upstreamId"] for e in edges]})
+        return self._require(aid)
+
+    def finish_turn(self, caller_assignment_id: str) -> Gate | None:
+        """The manager's turn boundary after a fan-out (engine.md §2 9a / 11a).
+
+        Proposed batch pending → open the plan-review ApprovalGate with the batch as payload.
+        Otherwise, children outstanding → arm (or re-arm) the await gate; children already
+        delivered sweep it immediately, so a wake is never missed. No children → no-op."""
+        caller = self._require(caller_assignment_id)
+        if caller.state != "executing":
+            raise WorkError(f"finish-turn invalid from state {caller.state!r}")
+
+        proposed = self.store.list_children(caller.id, state="proposed")
+        if proposed:
+            owner = "operator" if caller.issuedBy == "operator" else caller.issuedBy
+            batch = [self._draft_summary(c) for c in proposed]
+            gate = self.gates.open(
+                caller, "approval", opened_by="system", owner=owner,
+                reason="plan-review:" + ",".join(sorted(c.id for c in proposed)),
+                payload={"batch": batch},
+            )
+            self._log("gate.plan-review", caller.orgId, [caller.id, gate.id],
+                      {"batch": [c.id for c in proposed]})
+            return gate
+
+        outstanding = [
+            c.id for c in self.store.list_children(caller.id)
+            if c.state not in ASSIGNMENT_TERMINAL_STATES
+        ]
+        if not outstanding:
+            return None
+        gate = self.gates.open_await(caller, outstanding)
+        # A child may have delivered while the manager was reviewing — sweep immediately.
+        pending, _ = self.gates.await_status(outstanding)
+        if pending:
+            delivered = self._require(pending[0]["assignmentId"])
+            self.gates.sweep(delivered, "delivered", pending[0]["refs"])
+        return self.store.get_gate(gate.id)
+
+    def _draft_summary(self, c: Assignment) -> dict:
+        brief = self.store.get_brief(c.id)
+        org = self._org(c.orgId)
+        node = self._node(org, c.nodeId)
+        dep_gate = self.gates.open_gate_for(c.id, "dependency")
+        return {
+            "assignmentId": c.id,
+            "nodeId": c.nodeId,
+            "brief": brief.text if brief else "",
+            "refs": brief.artifactRefs if brief else [],
+            "contract": {"kind": c.contractKind, "type": c.contractType},
+            "dependsOn": dep_gate.payload.get("edges", []) if dep_gate else [],
+            "allowance": node.salary.perAssignmentAllowance,
+        }
+
+    # ------------------------------------------------------------- gate resolution
+    def resolve_gate(
+        self, gate_id: str, *, action: str, resolved_by: str = "operator",
+        payload: dict | None = None,
+    ) -> Gate:
+        """The one resolution surface (engine.md §6, ``POST /gates/{id}/resolve``). E2a implements
+        the plan-review approval actions; the judgment-gate actions land in E2b."""
+        gate = self.store.get_gate(gate_id)
+        if gate is None:
+            raise WorkError(f"no gate {gate_id!r}")
+        if gate.state != "open":
+            raise WorkError(f"gate {gate_id} is already {gate.state}")
+        body = payload or {}
+
+        if gate.kind == "approval" and action == "edit-draft":
+            # Amend one draft brief pre-dispatch; the gate stays open for the actual verdict.
+            child = self._require(body["assignmentId"])
+            if child.state != "proposed":
+                raise WorkError(f"cannot edit brief of state {child.state!r}")
+            self.store.amend_draft_brief(child.id, body["brief"], artifact_refs=body.get("refs"))
+            batch = [s for s in gate.payload.get("batch", [])]
+            for s in batch:
+                if s["assignmentId"] == child.id:
+                    s["brief"] = body["brief"]
+                    if body.get("refs") is not None:
+                        s["refs"] = body["refs"]
+            self.store.update_gate_payload(gate.id, {**gate.payload, "batch": batch})
+            return self.store.get_gate(gate.id)  # type: ignore[return-value]
+
+        if gate.kind == "approval" and action == "approve":
+            manager = self._require(gate.assignmentId)
+            dispatched = []
+            for summary in gate.payload.get("batch", []):
+                child = self._require(summary["assignmentId"])
+                if child.state != "proposed":
+                    continue  # cancelled or already handled — approval is idempotent per child
+                allowance = (body.get("allowances") or {}).get(child.id)
+                self._dispatch_child(child, allowance_override=allowance)
+                dispatched.append(child.id)
+            self.gates.resolve(
+                gate, resolution={"action": "approve", "dispatched": dispatched},
+                resolved_by=resolved_by,
+                # The manager's suspension continues directly as its await gate — no wasted wake.
+                resume_state="executing",
+            )
+            outstanding = [
+                c.id for c in self.store.list_children(manager.id)
+                if c.state not in ASSIGNMENT_TERMINAL_STATES
+            ]
+            if outstanding:
+                self.gates.open_await(self._require(manager.id), outstanding)
+            self._log("gate.batch-approved", manager.orgId, [manager.id, gate.id],
+                      {"dispatched": dispatched})
+            return self.store.get_gate(gate.id)  # type: ignore[return-value]
+
+        if gate.kind == "approval" and action == "deny":
+            # Denial is a prohibition: drafts cancelled, the manager re-plans (engine.md §2 9a).
+            manager = self._require(gate.assignmentId)
+            cancelled = []
+            for summary in gate.payload.get("batch", []):
+                child = self._require(summary["assignmentId"])
+                if child.state == "proposed":
+                    self.store.set_assignment_state(child.id, "cancelled")
+                    cancelled.append(child.id)
+            self.gates.resolve(
+                gate, resolution={"action": "deny", "note": body.get("note", ""),
+                                  "cancelled": cancelled},
+                resolved_by=resolved_by,
+            )
+            self._log("gate.batch-denied", manager.orgId, [manager.id, gate.id],
+                      {"cancelled": cancelled})
+            return self.store.get_gate(gate.id)  # type: ignore[return-value]
+
+        raise WorkError(f"unsupported resolution {action!r} for {gate.kind!r} gate")
+
+    def _dispatch_child(self, child: Assignment, *, allowance_override: int | None = None) -> None:
+        """Fund and dispatch one approved draft: ``proposed → briefed`` with a fresh meter; a
+        child whose dependency gate still has unresolved edges goes straight to ``gated``
+        (engine.md §2 step 5 — genuinely idle, consuming nothing)."""
+        org = self._org(child.orgId)
+        node = self._node(org, child.nodeId)
+        allowance = allowance_override or node.salary.perAssignmentAllowance
+        meter = self.ledger.open_meter(
+            child.actuationId, child.nodeId, allowance,
+            warn_threshold_pct=node.salary.warnThresholdPct, hard_stop=node.salary.hardStop,
+            task_id=child.id,
+        )
+        self.store.set_assignment_meter(child.id, meter.id)
+        self.store.set_assignment_state(child.id, "briefed")
+        dep_gate = self.gates.open_gate_for(child.id, "dependency")
+        if dep_gate and not dep_gate.payload.get("await"):
+            edges = dep_gate.payload.get("edges", [])
+            if not all(e["resolved"] for e in edges):
+                # Activate the pre-recorded gate: now that the child is live, it suspends.
+                self.store.update_gate_payload(
+                    dep_gate.id, {**dep_gate.payload, "priorState": "briefed"},
+                )
+                self.store.set_assignment_state(child.id, "gated")
+            else:
+                granted = [r for e in edges for r in e["refs"]]
+                if granted:
+                    self.store.append_brief_refs(child.id, granted)
+                self.gates.resolve(
+                    dep_gate, resolution={"action": "auto", "refs": granted},
+                    resolved_by="system",
+                )
 
     # ---------------------------------------------------------------- runtime reports
     def _require(self, assignment_id: str) -> Assignment:
@@ -191,22 +441,32 @@ class ExecutionEngine:
         )
         self.store.set_deliverable_ref(assignment_id, deliverable.id)
         self.store.set_assignment_state(assignment_id, "delivering")
+        # First dependency hook (work-model.md §3): resolve 'delivered'-threshold (verify)
+        # watchers and wake any manager awaiting this child, refs pinned at the submitted version.
+        self.gates.sweep(self._require(assignment_id), "delivered", deliverable.artifactRefs)
         self._log("assignment.delivering", a.orgId, [assignment_id, deliverable.id],
                   {"refs": deliverable.artifactRefs})
         return deliverable
 
     # ------------------------------------------------------------------ acceptance
     def accept(self, assignment_id: str, note: str | None = None) -> Assignment:
-        """Accept the deliverable: close the assignment + meter, write memory, and — for a root
-        assignment — complete its intent."""
+        """Accept the deliverable — the final verdict, informed by verification (amendment D-1):
+        close the assignment + meter, write memory, resolve 'accepted'-threshold (consume)
+        watchers, and — for a root assignment — complete its intent."""
         a = self._require(assignment_id)
         if a.deliverableId is None:
             raise WorkError(f"assignment {assignment_id} has no deliverable to accept")
+        deliverable = self.store.get_deliverable(a.deliverableId)
         self.store.review_deliverable(a.deliverableId, True, note)
         self.store.set_assignment_state(assignment_id, "accepted")
-        self.ledger.close_meter(a.meterId)
+        if a.meterId is not None:
+            self.ledger.close_meter(a.meterId)
         self._write_memory(a, outcome="accepted")
         self.store.set_assignment_state(assignment_id, "closed")
+        # Second dependency hook: 'accepted'-threshold (consume) watchers auto-resolve, and any
+        # manager awaiting this child sees it reach a terminal state.
+        refs = deliverable.artifactRefs if deliverable else []
+        self.gates.sweep(self._require(assignment_id), "accepted", refs)
         if a.parentId is None:
             self.store.close_intent(a.intentId, "completed")
             self._log("intent.completed", a.orgId, [a.intentId, assignment_id], {})
@@ -215,23 +475,64 @@ class ExecutionEngine:
     def reject(
         self, assignment_id: str, note: str, *, revised_brief: str | None = None,
     ) -> Assignment:
-        """Reject the deliverable and re-queue to ``planning`` for rework. The brief-version rework
-        funding rule is E2; here a revised brief is simply recorded if supplied."""
+        """Reject the deliverable and re-queue to ``planning`` for rework — on the *still-open*
+        assignment (amendment D-1: verification precedes acceptance, so a rejection lands while
+        the assignment is ``delivering``).
+
+        Rework funding follows the brief version (work-model.md §2.2): unchanged brief → the same
+        meter keeps burning (a quality failure stays the report's visible cost); revised brief →
+        the meter is topped up by the configured rework grant, debited from the parent
+        assignment's meter — re-scoping is the manager's failure and surfaces one level up."""
         a = self._require(assignment_id)
         if a.deliverableId is None:
             raise WorkError(f"assignment {assignment_id} has no deliverable to reject")
         self.store.review_deliverable(a.deliverableId, False, note)
         if revised_brief is not None:
             self.store.add_brief(assignment_id, revised_brief, revised_by=a.issuedBy)
+            self._fund_rework(a)
         self.store.set_assignment_state(assignment_id, "rejected")
         self.store.set_assignment_state(assignment_id, "planning")
-        self._log("assignment.rejected", a.orgId, [assignment_id], {"note": note})
+        self._log("assignment.rejected", a.orgId, [assignment_id],
+                  {"note": note, "revisedBrief": revised_brief is not None})
         return self._require(assignment_id)
+
+    def _fund_rework(self, a: Assignment) -> None:
+        """Revised-brief rework: top the child's meter up from the parent's, as a visible
+        ``transfer`` SpendEvent (provider='canopy', model='meter-transfer') so rollups show it.
+        The root's parent is the intent — its "meter" is the operator's explicit top-up approval,
+        so no transfer happens here (the operator raises the meter via the gate resolution)."""
+        if a.parentId is None or a.meterId is None:
+            return
+        parent = self._require(a.parentId)
+        if parent.meterId is None:
+            return
+        meter = self.ledger.get_meter(a.meterId)
+        if meter is None:
+            return
+        grant = int(meter.allowance * get_rework_grant_pct() / 100)
+        if grant <= 0:
+            return
+        # Debit the parent (reserve → record keeps every invariant + warn/hard-stop honest),
+        # then raise the child. BudgetExhausted propagates: an unfundable rework surfaces up.
+        reservation = self.ledger.reserve(parent.meterId, grant)
+        try:
+            self.ledger.record(
+                parent.meterId, step_id=new_step_id(), org_id=a.orgId, node_id=parent.nodeId,
+                actuation_id=a.actuationId, provider="canopy", model="meter-transfer",
+                input_tokens=grant, output_tokens=0, est_cost_micros=0,
+                reserved=reservation.amount, task_id=parent.id,
+            )
+        except Exception:
+            self.ledger.release(reservation)
+            raise
+        self.ledger.raise_meter(a.meterId, grant)
+        self._log("meter.transfer", a.orgId, [parent.id, a.id],
+                  {"grant": grant, "from": parent.meterId, "to": a.meterId})
 
     # --------------------------------------------------------------------- helpers
     def _write_memory(self, a: Assignment, *, outcome: str) -> None:
         intent = self.store.get_intent(a.intentId)
-        meter = self.ledger.get_meter(a.meterId)
+        meter = self.ledger.get_meter(a.meterId) if a.meterId else None
         deliverable = self.store.get_deliverable(a.deliverableId) if a.deliverableId else None
         self.store.append_memory(a.orgId, a.nodeId, {
             "assignmentId": a.id,

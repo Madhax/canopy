@@ -124,6 +124,85 @@ def test_data_plane_rejects_foreign_assignment(client, make_org, mint_session):
     assert missing.status_code == 404
 
 
+def test_staged_fanout_and_rework_over_http(client, make_org, mint_session):
+    """The E2a slice of the mvp §3 demo, all via API: staged fan-out with a verify-dependency,
+    plan-review approval from the operator surface, delivery resolving the dependency, and a
+    rejection funding rework on the same still-open assignment."""
+    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead = next(a for a in org["agents"] if a["role"]["key"] == "engineering-lead")
+    be_node = next(a for a in org["agents"] if a["role"]["key"] == "backend-engineer")
+    qa_node = next(a for a in org["agents"] if a["role"]["key"] == "qa-engineer")
+    s_lead = mint_session(org["id"], node_id=lead["id"])
+    s_be = mint_session(org["id"], node_id=be_node["id"], actuation_id=s_lead["actuationId"])
+    s_qa = mint_session(org["id"], node_id=qa_node["id"], actuation_id=s_lead["actuationId"])
+    _seed_live_actuation(s_lead["actuationId"], org["id"])
+
+    # Intent → root; the lead plans and fans out (staged: root assignments are checkpointed).
+    root = client.post(
+        f"/api/organizations/{org['id']}/intents",
+        json={"text": "Add CSV export; all tests must pass", "targetNodeId": lead["id"]},
+    ).json()["assignment"]
+    client.post("/api/dp/assignment/events", headers=_h(s_lead["token"]),
+                json={"assignmentId": root["id"], "kind": "intake-complete"})
+    client.post("/api/dp/plan", headers=_h(s_lead["token"]),
+                json={"assignmentId": root["id"], "stages": [{"title": "decompose"}]})
+
+    be = client.post("/api/dp/delegate", headers=_h(s_lead["token"]), json={
+        "assignmentId": root["id"], "reportNodeId": be_node["id"],
+        "brief": "implement CSV export", "contractType": "PullRequest",
+    }).json()
+    qa = client.post("/api/dp/delegate", headers=_h(s_lead["token"]), json={
+        "assignmentId": root["id"], "reportNodeId": qa_node["id"],
+        "brief": "verify the export", "contractType": "TestReport",
+        "dependsOn": [{"assignmentId": be["id"]}],
+    }).json()
+    assert be["state"] == "proposed" and be["meterId"] is None
+
+    r = client.post("/api/dp/assignment/events", headers=_h(s_lead["token"]),
+                    json={"assignmentId": root["id"], "kind": "awaiting-reports"})
+    assert r.status_code == 200
+
+    # The operator inbox shows the plan-review gate; approval funds + dispatches the batch.
+    gates = client.get(f"/api/organizations/{org['id']}/gates?state=open&owner=operator").json()
+    gate = next(g for g in gates["gates"] if g["kind"] == "approval")
+    assert [b["assignmentId"] for b in gate["payload"]["batch"]] == [be["id"], qa["id"]]
+    rr = client.post(f"/api/gates/{gate['id']}/resolve", json={"action": "approve"})
+    assert rr.status_code == 200, rr.text
+
+    be_now = client.get(f"/api/assignments/{be['id']}").json()["assignment"]
+    qa_now = client.get(f"/api/assignments/{qa['id']}").json()["assignment"]
+    assert be_now["state"] == "briefed" and be_now["meterId"]
+    assert qa_now["state"] == "gated"  # the padlock on the chart, burning nothing
+
+    # The engineer works and submits; the verify-dependency resolves at SUBMISSION.
+    cur = client.get("/api/dp/assignment/current", headers=_h(s_be["token"])).json()
+    assert cur["assignment"]["id"] == be["id"]
+    client.post("/api/dp/assignment/events", headers=_h(s_be["token"]),
+                json={"assignmentId": be["id"], "kind": "intake-complete"})
+    client.post("/api/dp/plan", headers=_h(s_be["token"]),
+                json={"assignmentId": be["id"], "stages": [{"title": "implement"}]})
+    client.post("/api/dp/finish", headers=_h(s_be["token"]),
+                json={"assignmentId": be["id"], "refs": ["org://acme/be/pr@1"],
+                      "summary": "PR v1"})
+    qa_cur = client.get("/api/dp/assignment/current", headers=_h(s_qa["token"])).json()
+    assert qa_cur["assignment"]["id"] == qa["id"]
+    assert "org://acme/be/pr@1" in qa_cur["brief"]["artifactRefs"]  # refs pinned + granted
+
+    # The lead (woken by the delivery) rejects the still-open deliverable, citing QA's red run.
+    meter_before = client.get(f"/api/assignments/{be['id']}").json()["meter"]
+    rj = client.post("/api/dp/reject", headers=_h(s_lead["token"]),
+                     json={"assignmentId": be["id"], "note": "edge-case test fails"})
+    assert rj.status_code == 200, rj.text
+    after = client.get(f"/api/assignments/{be['id']}").json()
+    assert after["assignment"]["state"] == "planning"
+    assert after["meter"]["id"] == meter_before["id"]  # rework burns the same meter
+
+    # A sibling cannot review another node's work.
+    steal = client.post("/api/dp/accept", headers=_h(s_qa["token"]),
+                        json={"assignmentId": be["id"]})
+    assert steal.status_code == 403 and steal.json()["error"]["code"] == "NOT_YOUR_REPORT"
+
+
 @pytest.mark.xfail(
     strict=True,
     reason="grant enforcement lands in E3 (testing.md §4): GET /dp/artifacts checks org "

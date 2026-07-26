@@ -64,6 +64,7 @@ _DEFAULTS: dict[str, Any] = {
         "default_provider": "mock",
         "concurrency": {"anthropic": 4, "gemini": 4, "mock": 64},
     },
+    "work": {"rework_grant_pct": 20},
     "prices": {},
 }
 
@@ -125,6 +126,12 @@ def get_secrets_backend() -> str:
 
 def get_default_provider() -> str:
     return str(_raw_config()["gateway"]["default_provider"])
+
+
+def get_rework_grant_pct() -> int:
+    """Revised-brief rework top-up, as a percentage of the child's original allowance — debited
+    from the parent assignment's meter (work-model.md §2.2)."""
+    return int(_raw_config()["work"]["rework_grant_pct"])
 
 
 def get_provider_concurrency() -> dict[str, int]:
