@@ -104,6 +104,8 @@ class PlanStage(BaseModel):
     sizing: Sizing
     envelopeTokens: int | None
     state: PlanStageState
+    startedAt: str | None = None  # stamped on first transition to 'active' (plan timeline, D-4)
+    completedAt: str | None = None  # stamped on 'done' | 'dropped'
 
 
 class Plan(BaseModel):
@@ -139,6 +141,35 @@ class Deliverable(BaseModel):
     reviewNote: str | None
     createdAt: str
     reviewedAt: str | None = None
+
+
+class Note(BaseModel):
+    """The advice channel (amendment D-5): anchored, non-blocking, injected at the next turn
+    boundary. Opens no gate, revises no brief, constrains nothing."""
+
+    id: str
+    orgId: str
+    intentId: str
+    assignmentId: str | None = None  # None ⇒ a note on the intent itself
+    stageIdx: int | None = None
+    author: str
+    text: str
+    createdAt: str
+    deliveredAt: str | None = None
+
+
+NotificationSeverity = Literal["attention", "warning", "info"]
+
+
+class Notification(BaseModel):
+    id: str
+    orgId: str
+    severity: NotificationSeverity
+    kind: str  # gate-waiting | budget-warn | hard-stop | stall | intent-completed | ...
+    subjectIds: list[str]
+    text: str
+    createdAt: str
+    readAt: str | None = None
 
 
 class Gate(BaseModel):

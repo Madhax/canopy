@@ -64,7 +64,7 @@ _DEFAULTS: dict[str, Any] = {
         "default_provider": "mock",
         "concurrency": {"anthropic": 4, "gemini": 4, "mock": 64},
     },
-    "work": {"rework_grant_pct": 20},
+    "work": {"rework_grant_pct": 20, "stall_minutes": 10, "stall_none_steps": 5},
     "prices": {},
 }
 
@@ -132,6 +132,16 @@ def get_rework_grant_pct() -> int:
     """Revised-brief rework top-up, as a percentage of the child's original allowance — debited
     from the parent assignment's meter (work-model.md §2.2)."""
     return int(_raw_config()["work"]["rework_grant_pct"])
+
+
+def get_stall_minutes() -> int:
+    """No Step for this long while ``executing`` opens a stall InterventionGate."""
+    return int(_raw_config()["work"]["stall_minutes"])
+
+
+def get_stall_none_steps() -> int:
+    """This many consecutive ``delta_kind='none'`` steps opens a stall InterventionGate."""
+    return int(_raw_config()["work"]["stall_none_steps"])
 
 
 def get_provider_concurrency() -> dict[str, int]:

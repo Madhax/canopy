@@ -17,12 +17,14 @@ still fires before dispatch. The engine never touches the provider path itself.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from pydantic import BaseModel
 
 from ..activity import ActivityLog
 from ..artifacts import ArtifactMeta, ArtifactStore
-from ..config import get_rework_grant_pct
+from ..config import get_rework_grant_pct, get_stall_minutes, get_stall_none_steps
+from ..deps import now_iso
 from ..ids import new_assignment_id, new_step_id
 from ..ledger import BudgetLedger
 from ..models import Agent, Organization
@@ -233,6 +235,11 @@ class ExecutionEngine:
             )
             self._log("gate.plan-review", caller.orgId, [caller.id, gate.id],
                       {"batch": [c.id for c in proposed]})
+            self.store.notify(
+                caller.orgId, "attention", "plan-review-waiting",
+                f"{caller.nodeId}'s fan-out ({len(proposed)} delegations) awaits review",
+                subject_ids=[caller.id, gate.id], dedupe_key=gate.id,
+            )
             return gate
 
         outstanding = [
@@ -337,7 +344,253 @@ class ExecutionEngine:
                       {"cancelled": cancelled})
             return self.store.get_gate(gate.id)  # type: ignore[return-value]
 
+        if gate.kind in ("clarification", "escalation", "intervention"):
+            return self._resolve_judgment_gate(gate, action=action, resolved_by=resolved_by,
+                                               body=body)
+
         raise WorkError(f"unsupported resolution {action!r} for {gate.kind!r} gate")
+
+    def _resolve_judgment_gate(
+        self, gate: Gate, *, action: str, resolved_by: str, body: dict,
+    ) -> Gate:
+        """Resolutions for the judgment gates (work-model.md §3 table). The resolution payload is
+        recorded on the gate; the runtime renders it as the next session input on resume."""
+        a = self._require(gate.assignmentId)
+        resolution: dict = {"action": action, "note": body.get("note", "")}
+
+        if action == "resume" and gate.kind == "intervention":
+            self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by)
+
+        elif action == "revise-brief" and gate.kind in ("clarification", "intervention"):
+            # Clarification: the manager answers with a revised brief; the node re-intakes.
+            # Intervention redirect: same mechanics, back through planning.
+            if "brief" not in body:
+                raise WorkError("revise-brief needs a brief")
+            self.store.add_brief(a.id, body["brief"], artifact_refs=body.get("refs"),
+                                 revised_by=resolved_by)
+            resolution["briefVersion"] = self.store.get_brief(a.id).version
+            resume = "briefed" if gate.kind == "clarification" else "planning"
+            self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by,
+                               resume_state=resume)
+
+        elif action == "answer" and gate.kind == "escalation":
+            resolution["answer"] = body.get("answer", body.get("note", ""))
+            refs = body.get("refs") or []
+            if refs:  # granted refs travel with the answer, as a system brief revision
+                self.store.append_brief_refs(a.id, refs)
+                resolution["refs"] = refs
+            self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by)
+
+        elif action == "top-up" and gate.kind == "intervention":
+            amount = int(body.get("amount", 0))
+            if amount <= 0:
+                raise WorkError("top-up needs a positive amount")
+            if a.meterId is None:
+                raise WorkError("assignment has no meter to top up")
+            self.ledger.raise_meter(a.meterId, amount)
+            resolution["amount"] = amount
+            self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by)
+            self._log("meter.topped-up", a.orgId, [a.id, a.meterId], {"amount": amount})
+
+        elif action == "reassign" and gate.kind == "intervention":
+            to_node = body.get("toNodeId")
+            if not to_node:
+                raise WorkError("reassign needs toNodeId")
+            replacement = self._reassign(a, to_node, by=resolved_by)
+            resolution["reassignedTo"] = replacement.id
+            self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by,
+                               resume_state="cancelled")
+
+        elif action == "cancel":
+            self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by,
+                               resume_state=a.state if a.state != "gated" else None)
+            self.cancel_assignment(a.id, by=resolved_by, reason=body.get("note", ""))
+
+        else:
+            raise WorkError(f"unsupported resolution {action!r} for {gate.kind!r} gate")
+
+        return self.store.get_gate(gate.id)  # type: ignore[return-value]
+
+    # ---------------------------------------------------------------- judgment gates
+    def open_clarification(self, assignment_id: str, question: str) -> Gate:
+        """The assigned agent's intake feasibility check failed (work-model.md §3): suspend on a
+        clarification gate owned by the issuing manager (operator for the root)."""
+        a = self._require(assignment_id)
+        if a.state not in ("briefed", "intake", "planning"):
+            raise WorkError(f"clarification invalid from state {a.state!r}")
+        gate = self.gates.open(
+            a, "clarification", opened_by=a.nodeId, owner=a.issuedBy,
+            reason=f"clarification:{question[:80]}", payload={"question": question},
+        )
+        self._notify_gate_waiting(a, gate)
+        return gate
+
+    def open_escalation(
+        self, assignment_id: str, question: str, *, refs: list[str] | None = None,
+    ) -> Gate:
+        """The agent asks above its pay grade mid-execution; the answer is injected on resume."""
+        a = self._require(assignment_id)
+        if a.state != "executing":
+            raise WorkError(f"escalation invalid from state {a.state!r}")
+        gate = self.gates.open(
+            a, "escalation", opened_by=a.nodeId, owner=a.issuedBy,
+            reason=f"escalation:{question[:80]}",
+            payload={"question": question, "refs": refs or []},
+        )
+        self._notify_gate_waiting(a, gate)
+        return gate
+
+    def intervene(self, assignment_id: str, note: str, *, by: str = "operator") -> Gate:
+        """X1: an authority's judgment suspends the assignment (halt lands at the next turn
+        boundary — the same place the meter check sits)."""
+        a = self._require(assignment_id)
+        if a.state not in ("briefed", "intake", "planning", "executing", "delivering"):
+            raise WorkError(f"intervene invalid from state {a.state!r}")
+        gate = self.gates.open(
+            a, "intervention", opened_by=by, owner="operator",
+            reason=f"intervention:{by}:{note[:80]}", payload={"note": note},
+        )
+        self._notify_gate_waiting(a, gate)
+        return gate
+
+    # ------------------------------------------------------- triggers (work-model §6)
+    def check_budget_triggers(self, assignment_id: str) -> None:
+        """Evaluated on every step report: budget warn (notification, once) and hard-stop
+        (InterventionGate, `opened_by='trigger:hard-stop'`)."""
+        a = self.store.get_assignment(assignment_id)
+        if a is None or a.meterId is None:
+            return
+        meter = self.ledger.get_meter(a.meterId)
+        if meter is None:
+            return
+        if meter.warned and meter.state != "exhausted":
+            self.store.notify(
+                a.orgId, "warning", "budget-warn",
+                f"{a.nodeId} crossed {int(meter.warnThresholdPct)}% of its allowance",
+                subject_ids=[a.id, meter.id], dedupe_key=f"{a.id}:{meter.allowance}",
+            )
+        if meter.state == "exhausted" and a.state in ("executing", "delivering"):
+            gate = self.gates.open(
+                a, "intervention", opened_by="trigger:hard-stop", owner="operator",
+                # The allowance in the reason means a post-top-up re-exhaustion opens a NEW gate.
+                reason=f"hard-stop:{meter.id}:{meter.allowance}",
+                payload={"meterId": meter.id, "spent": meter.spent,
+                         "allowance": meter.allowance},
+            )
+            self.store.notify(
+                a.orgId, "attention", "hard-stop",
+                f"{a.nodeId} exhausted its meter ({meter.spent}/{meter.allowance} tokens)",
+                subject_ids=[a.id, gate.id], dedupe_key=f"{a.id}:{meter.allowance}",
+            )
+
+    def sweep_triggers(self) -> list[Gate]:
+        """The 30 s sweep (engine.md §1): stall detection over every ``executing`` assignment —
+        no Step for ``stall_minutes``, or K consecutive no-delta steps. Idempotent via the gate
+        dedupe (keyed on the newest step id, so a fresh stall after progress re-fires)."""
+        opened: list[Gate] = []
+        stall_after = get_stall_minutes() * 60
+        k = get_stall_none_steps()
+        now = datetime.fromisoformat(now_iso())
+        for a in self.store.list_assignments(state="executing"):
+            steps = self.store.list_steps(a.id)
+            last_id = steps[-1].id if steps else "none"
+            reason = None
+            anchor = steps[-1].createdAt if steps else a.updatedAt
+            age = (now - datetime.fromisoformat(anchor)).total_seconds()
+            if age >= stall_after:
+                reason = f"stall:quiet:{a.id}:{last_id}"
+                detail = f"no step for {int(age // 60)} min"
+            elif len(steps) >= k and all(s.deltaKind == "none" for s in steps[-k:]):
+                reason = f"stall:no-delta:{a.id}:{last_id}"
+                detail = f"{k} consecutive steps with no delta"
+            if reason is None:
+                continue
+            gate = self.gates.open(
+                a, "intervention", opened_by="trigger:stall", owner="operator",
+                reason=reason, payload={"detail": detail},
+            )
+            if self.store.notify(
+                a.orgId, "warning", "stall", f"{a.nodeId} stalled: {detail}",
+                subject_ids=[a.id, gate.id], dedupe_key=reason,
+            ) is not None:
+                opened.append(gate)
+        return opened
+
+    # ------------------------------------------------- reassign / cancel / priority
+    def _reassign(self, a: Assignment, to_node_id: str, *, by: str) -> Assignment:
+        """R2: cancel the assignment and re-issue it to another of the issuer's reports, carrying
+        ``reassigned_from`` and the meter's remaining balance."""
+        org = self._org(a.orgId)
+        if a.issuedBy != "operator":
+            reports = {r.id for r in self._reports_of(org, a.issuedBy)}
+            if to_node_id not in reports:
+                raise WorkError(f"node {to_node_id!r} is not a report of {a.issuedBy!r}")
+        target = self._node(org, to_node_id)
+        remaining = 0
+        if a.meterId is not None:
+            meter = self.ledger.get_meter(a.meterId)
+            if meter is not None:
+                remaining = max(0, meter.allowance - meter.spent - meter.reserved)
+                self.ledger.close_meter(meter.id)
+        brief = self.store.get_brief(a.id)
+        self.store.set_assignment_state(a.id, "cancelled")
+
+        aid = new_assignment_id()
+        new_meter = self.ledger.open_meter(
+            a.actuationId, to_node_id, remaining or target.salary.perAssignmentAllowance,
+            warn_threshold_pct=target.salary.warnThresholdPct,
+            hard_stop=target.salary.hardStop, task_id=aid,
+        )
+        replacement = self.store.create_assignment(
+            assignment_id=aid, org_id=a.orgId, actuation_id=a.actuationId,
+            intent_id=a.intentId, parent_id=a.parentId, node_id=to_node_id,
+            issued_by=a.issuedBy, contract_kind=a.contractKind, contract_type=a.contractType,
+            meter_id=new_meter.id, state="briefed", reassigned_from=a.id,
+        )
+        self.store.add_brief(
+            aid, brief.text if brief else "", artifact_refs=brief.artifactRefs if brief else [],
+            revised_by=by,
+        )
+        self._log("assignment.reassigned", a.orgId, [a.id, aid, to_node_id],
+                  {"remaining": remaining})
+        return replacement
+
+    def cancel_assignment(self, assignment_id: str, *, by: str = "operator",
+                          reason: str = "") -> Assignment:
+        """Cancel an assignment and cascade: children cancelled depth-first, meters closed, open
+        gates expired — no orphans (testing.md §4 vector). A cancelled root cancels its intent."""
+        a = self._require(assignment_id)
+        if a.state in ASSIGNMENT_TERMINAL_STATES:
+            return a
+        for child in self.store.list_children(a.id):
+            if child.state not in ASSIGNMENT_TERMINAL_STATES:
+                self.cancel_assignment(child.id, by=by, reason=f"parent cancelled: {reason}")
+        for gate in self.store.list_gates(assignment_id=a.id, state="open"):
+            self.store.resolve_gate(
+                gate.id, resolution={"action": "expired", "note": "assignment cancelled"},
+                resolved_by=by, state="expired",
+            )
+        if a.meterId is not None:
+            self.ledger.close_meter(a.meterId)
+        self.store.set_assignment_state(a.id, "cancelled")
+        if a.parentId is None:
+            self.store.close_intent(a.intentId, "cancelled")
+        self._log("assignment.cancelled", a.orgId, [a.id], {"by": by, "reason": reason})
+        return self._require(assignment_id)
+
+    def set_priority(self, assignment_id: str, priority: int) -> Assignment:
+        """R3: manager- or operator-set priority (higher first; FIFO within equal)."""
+        self._require(assignment_id)
+        self.store.set_assignment_priority(assignment_id, priority)
+        return self._require(assignment_id)
+
+    def _notify_gate_waiting(self, a: Assignment, gate: Gate) -> None:
+        severity = "attention" if gate.owner == "operator" else "warning"
+        self.store.notify(
+            a.orgId, severity, "gate-waiting",
+            f"{gate.kind} gate on {a.nodeId} awaits {gate.owner}",
+            subject_ids=[a.id, gate.id], dedupe_key=gate.id,
+        )
 
     def _dispatch_child(self, child: Assignment, *, allowance_override: int | None = None) -> None:
         """Fund and dispatch one approved draft: ``proposed → briefed`` with a fresh meter; a
@@ -403,11 +656,14 @@ class ExecutionEngine:
         """Record an observable Step. Money was already metered by the gateway when it made the
         model call (shared ``step_id``); this row carries the delta taxonomy for introspection."""
         self._require(assignment_id)
-        return self.store.add_step(
+        step = self.store.add_step(
             assignment_id, input_tokens=input_tokens, output_tokens=output_tokens,
             duration_ms=duration_ms, kind=kind, stage_idx=stage_idx, delta_kind=delta_kind,
             delta_ref=delta_ref, step_id=step_id, session_span_id=session_span_id,
         )
+        # Trigger evaluation rides every step report (work-model.md §6): warn + hard-stop.
+        self.check_budget_triggers(assignment_id)
+        return step
 
     def update_stage(self, assignment_id: str, idx: int, state: str) -> None:
         """Advance a plan stage (the runtime's ``stage-update`` report). No-op if no plan yet."""
@@ -470,6 +726,10 @@ class ExecutionEngine:
         if a.parentId is None:
             self.store.close_intent(a.intentId, "completed")
             self._log("intent.completed", a.orgId, [a.intentId, assignment_id], {})
+            self.store.notify(
+                a.orgId, "info", "intent-completed", "Intent completed — deliverable ready",
+                subject_ids=[a.intentId, assignment_id], dedupe_key=a.intentId,
+            )
         return self._require(assignment_id)
 
     def reject(
@@ -494,6 +754,11 @@ class ExecutionEngine:
         self.store.set_assignment_state(assignment_id, "planning")
         self._log("assignment.rejected", a.orgId, [assignment_id],
                   {"note": note, "revisedBrief": revised_brief is not None})
+        self.store.notify(
+            a.orgId, "warning", "deliverable-rejected",
+            f"{a.nodeId}'s deliverable rejected: {note[:120]}",
+            subject_ids=[assignment_id], dedupe_key=f"{assignment_id}:{a.deliverableId}",
+        )
         return self._require(assignment_id)
 
     def _fund_rework(self, a: Assignment) -> None:
