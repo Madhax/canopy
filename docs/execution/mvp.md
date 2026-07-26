@@ -27,7 +27,7 @@ Non-overlap is enforced the envelope way, all five layers: the tools don't exist
 
 ## 2. The work target — a real repository
 
-A sample project ships in-repo at `examples/target-app/`: a small TypeScript (or Python — implementer's choice, one language) service with an existing test suite, a `README`, and two or three plausible feature seams (e.g. a CSV-export endpoint — use-case #1's literal example). At actuation the repo is initialized as a **git repository under platform control** (`data/repos/<orgId>/target-app`, `main` protected by convention):
+A sample project ships in-repo at `examples/target-app/` — **designed in full in `target-app.md`**: a small Python/FastAPI expense-reports service with a split test suite (`tests/unit` engineer-runnable, `tests/acceptance` QA-only — the split that makes first-attempt failure structural), seeded adversarial data, a pinned CSV seam (`?format=csv`), and two further seams for reruns and the E7 cadence. At actuation the repo is initialized as a **git repository under platform control** (`data/repos/<orgId>/target-app`, `main` protected by convention):
 
 - The **engineer's** intake materializes a worktree on a fresh `canopy/<assignmentId>` branch (the `code.repo.write` executor in its v1, git-mediated form: local worktree + branch, no remotes). Its `PullRequest` artifact = `{branch, baseSha, diff, testOutput}` produced by the adapter from the worktree state at `finish`.
 - The **QA** intake materializes a read-only checkout at the PR's head and runs the suite; its `TestReport` artifact = structured pass/fail + log excerpts + verdict.
