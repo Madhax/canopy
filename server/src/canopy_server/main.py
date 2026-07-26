@@ -22,6 +22,7 @@ from .routes import actuations as actuation_routes
 from .routes import catalog as catalog_routes
 from .routes import dp as dp_routes
 from .routes import health as health_routes
+from .routes import mcp as mcp_routes
 from .routes import operations as operations_routes
 from .routes import organizations as organization_routes
 from .routes import profiles as profiles_routes
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     api.include_router(operations_routes.router)  # spend rollups + activity feed (A1)
     api.include_router(actuation_routes.router)  # actuate / deactuate / current (A2)
     api.include_router(dp_routes.router)  # data plane /api/dp/* (gateway + charter/register/hb)
+    api.include_router(mcp_routes.router)  # Canopy MCP server /api/dp/mcp (E3, cli-runtime §4)
     api.include_router(work_routes.router)  # operator work API: intents + assignments (E1)
     app.mount("/api", api)
 
