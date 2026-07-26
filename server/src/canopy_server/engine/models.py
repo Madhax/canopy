@@ -19,10 +19,12 @@ IntentKind = Literal["episodic", "standing"]
 IntentState = Literal["open", "completed", "failed", "cancelled"]
 
 AssignmentState = Literal[
-    "created", "briefed", "intake", "planning", "executing", "delivering",
+    "created", "proposed", "briefed", "intake", "planning", "executing", "delivering",
     "accepted", "rejected", "closed", "gated", "paused", "cancelled", "failed",
 ]
 #: Assignment is live work — a runtime may be driving it or it may be waiting on a gate/hold.
+#: ``proposed`` is deliberately NOT active: an unfunded draft is invisible to its node until
+#: the plan-review approval dispatches it (work-model.md §2.1, staged delegation).
 ASSIGNMENT_ACTIVE_STATES: frozenset[str] = frozenset({
     "created", "briefed", "intake", "planning", "executing", "delivering", "rejected",
     "gated", "paused",
@@ -31,6 +33,9 @@ ASSIGNMENT_ACTIVE_STATES: frozenset[str] = frozenset({
 ASSIGNMENT_TERMINAL_STATES: frozenset[str] = frozenset({
     "accepted", "closed", "cancelled", "failed",
 })
+
+GateKind = Literal["clarification", "dependency", "approval", "escalation", "intervention"]
+GateState = Literal["open", "resolved", "expired"]
 
 ContractKind = Literal["artifact", "attestation"]
 DeliverableKind = Literal["artifact", "attestation"]
@@ -72,7 +77,7 @@ class Assignment(BaseModel):
     briefVersion: int
     contractKind: ContractKind
     contractType: str
-    meterId: str
+    meterId: str | None  # NULL only while 'proposed' — funded at dispatch (work-model.md §2)
     priority: int
     deliverableId: str | None = None
     reassignedFrom: str | None = None
@@ -134,6 +139,21 @@ class Deliverable(BaseModel):
     reviewNote: str | None
     createdAt: str
     reviewedAt: str | None = None
+
+
+class Gate(BaseModel):
+    id: str
+    assignmentId: str
+    kind: GateKind
+    openedBy: str  # 'system' | 'trigger:<name>' | node id | 'operator'
+    owner: str  # who may resolve: node id or 'operator' ('system' for mechanical gates)
+    reason: str
+    payload: dict[str, Any]
+    state: GateState
+    resolution: dict[str, Any] | None = None
+    resolvedBy: str | None = None
+    createdAt: str
+    resolvedAt: str | None = None
 
 
 class MemoryEntry(BaseModel):

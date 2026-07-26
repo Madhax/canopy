@@ -20,6 +20,40 @@ def _assignment(store: WorkStore, **kw):
     return store.create_assignment(**defaults)
 
 
+# ---------------------------------------------------------------- migration
+def test_pre_e2_meter_not_null_migrates_without_data_loss(tmp_path):
+    """An E1-era DB (meter_id NOT NULL) is rebuilt nullable on first WorkStore construction;
+    existing rows survive byte-for-byte and proposed (NULL-meter) inserts work afterwards."""
+    import sqlite3
+
+    path = tmp_path / "canopy.db"
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE work_assignment (
+            id TEXT PRIMARY KEY, org_id TEXT NOT NULL, actuation_id TEXT NOT NULL,
+            intent_id TEXT NOT NULL, parent_id TEXT, node_id TEXT NOT NULL,
+            issued_by TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'created',
+            brief_version INTEGER NOT NULL DEFAULT 1, contract_kind TEXT NOT NULL,
+            contract_type TEXT NOT NULL, meter_id TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0, deliverable_id TEXT, reassigned_from TEXT,
+            session_ref TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, closed_at TEXT
+        )""")
+    conn.execute(
+        "INSERT INTO work_assignment (id, org_id, actuation_id, intent_id, node_id, issued_by, "
+        "state, contract_kind, contract_type, meter_id, created_at, updated_at) "
+        "VALUES ('as_old', 'o1', 'act_1', 'in_x', 'a_be', 'operator', 'briefed', "
+        "'artifact', 'PullRequest', 'mt_old', 't0', 't0')"
+    )
+    conn.commit()
+    conn.close()
+
+    store = _store(tmp_path)
+    old = store.get_assignment("as_old")
+    assert old is not None and old.meterId == "mt_old" and old.state == "briefed"
+    proposed = _assignment(store, assignment_id=None, meter_id=None, state="proposed")
+    assert store.get_assignment(proposed.id).meterId is None
+
+
 # ------------------------------------------------------------------- intents
 def test_intent_roundtrip_and_root_link(tmp_path):
     store = _store(tmp_path)
