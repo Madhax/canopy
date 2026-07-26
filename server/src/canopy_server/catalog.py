@@ -17,6 +17,8 @@ from .models import ORG_SECTIONS, Catalog
 _CATALOG_PATH = Path(__file__).resolve().parents[3] / "catalog" / "catalog.json"
 
 _KEY_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# Grant keys are dotted kebab (agent-envelope.md §3.1): e.g. workspace.rw, code.repo.write.
+_GRANT_KEY_RE = re.compile(r"^[a-z0-9]+(?:[.-][a-z0-9]+)*$")
 
 
 class CatalogIntegrityError(Exception):
@@ -69,12 +71,23 @@ def check_integrity(catalog: Catalog) -> list[str]:
             if d.to not in slots:
                 problems.append(f"formation {f.key!r} dependency to unknown slot {d.to!r}")
 
+    grant_keys: set[str] = set()
+    for g in catalog.toolGrants:
+        if not _GRANT_KEY_RE.match(g.key):
+            problems.append(f"toolGrant key not dotted-kebab: {g.key!r}")
+        if g.key in grant_keys:
+            problems.append(f"duplicate toolGrant key: {g.key!r}")
+        grant_keys.add(g.key)
+
     for r in catalog.roles:
         s = r.defaultSalary
         if not (isinstance(s.perAssignmentAllowance, int) and s.perAssignmentAllowance > 0):
             problems.append(f"role {r.key!r} defaultSalary allowance must be a positive int")
         if not (0 < s.warnThresholdPct <= 100):
             problems.append(f"role {r.key!r} defaultSalary warn threshold out of range")
+        for gk in r.toolGrants:
+            if gk not in grant_keys:
+                problems.append(f"role {r.key!r} -> unknown toolGrant {gk!r}")
 
     return problems
 

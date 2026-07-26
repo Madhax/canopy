@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import base64
 
-import pytest
-
 
 def _h(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
@@ -203,14 +201,9 @@ def test_staged_fanout_and_rework_over_http(client, make_org, mint_session):
     assert steal.status_code == 403 and steal.json()["error"]["code"] == "NOT_YOUR_REPORT"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="grant enforcement lands in E3 (testing.md §4): GET /dp/artifacts checks org "
-    "scope but not grants — any agent in the org can fetch any org artifact today. "
-    "E3's grant check turns this green; strict=True forces the marker off in that PR.",
-)
 def test_artifact_fetch_requires_grant(client, make_org, mint_session):
-    """An agent must not fetch a ref outside its brief's granted set (isolation invariant)."""
+    """An agent must not fetch a ref outside its brief's granted set (isolation invariant).
+    Landed red-first pre-E2 (testing.md §4); E3's grant check turned it green."""
     org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
     root = _root_of(org)
     s = mint_session(org["id"], node_id=root["id"])
@@ -229,9 +222,25 @@ def test_artifact_fetch_requires_grant(client, make_org, mint_session):
     })
     ref = put.json()["ref"]
 
-    # A sibling node in the SAME org, with no brief granting it this ref.
-    intruder = mint_session(org["id"], node_id="a_intruder")
+    # The producer reads its own output.
+    own = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(s["token"]))
+    assert own.status_code == 200
+
+    # A sibling node in the SAME org, with no brief granting it this ref: refused.
+    intruder = mint_session(org["id"], node_id="a_intruder",
+                            actuation_id=s["actuationId"])
     got = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(intruder["token"]))
-    assert got.status_code in (403, 404), (
-        f"ungranted fetch must be refused, got {got.status_code}"
+    assert got.status_code == 403 and got.json()["error"]["code"] == "GRANT_DENIED"
+
+    # A brief-granted ref IS readable: delegation grants travel as brief artifact_refs.
+    from canopy_server.deps import get_work_store
+
+    ws = get_work_store()
+    granted = ws.create_assignment(
+        org_id=org["id"], actuation_id=s["actuationId"], intent_id=a["intentId"],
+        node_id="a_intruder", issued_by=root["id"], contract_kind="artifact",
+        contract_type="Deliverable", meter_id="mt_x", state="briefed",
     )
+    ws.add_brief(granted.id, "review this", artifact_refs=[ref], revised_by=root["id"])
+    ok = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(intruder["token"]))
+    assert ok.status_code == 200

@@ -616,6 +616,7 @@ def fetch_artifact(
     authorization: str | None = Header(default=None),
     runtokens=Depends(get_runtokens),
     artifacts=Depends(get_artifact_store),
+    work_store=Depends(get_work_store),
 ) -> Any:
     token = _bearer(authorization)
     rec = runtokens.resolve(token) if token else None
@@ -625,6 +626,13 @@ def fetch_artifact(
     if meta is None or meta.orgId != rec.orgId:
         return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                             "message": f"no artifact {ref}"}})
+    # Grant check (workspace.md §2, the E3 wall): a node reads its OWN outputs and refs
+    # explicitly granted via its briefs — nothing else, even inside its org.
+    if meta.nodeId != rec.nodeId and ref not in work_store.refs_granted_to(
+        rec.actuationId, rec.nodeId
+    ):
+        return JSONResponse(status_code=403, content={"error": {"code": "GRANT_DENIED",
+                            "message": f"ref {ref} is not in the caller's granted set"}})
     content = artifacts.read(ref)
     return {"meta": meta.model_dump(),
             "contentBase64": base64.b64encode(content).decode() if content else None}

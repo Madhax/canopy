@@ -60,6 +60,22 @@ export const catalogRoleSchema = z
     responsibilities: z.array(responsibilitySchema).default([]),
     isManager: z.boolean().default(false),
     defaultSalary: salarySchema,
+    toolGrants: z.array(z.string()).default([]), // grant keys (agent-envelope.md §3.2)
+    defaultRuntime: z.string().default("loop"), // runtime kind (envelope §4)
+  })
+  .strict();
+
+// One capability the platform can hand to an agent (agent-envelope.md §3.1).
+export const toolGrantSchema = z
+  .object({
+    key: z.string(),
+    title: z.string(),
+    riskClass: z.enum(["inert", "read", "write", "execute", "consequential"]),
+    minSandboxTier: z.number().default(0),
+    executor: z.string().default(""),
+    credentialKind: z.string().nullable().optional(),
+    governedActions: z.array(z.string()).default([]),
+    params: z.record(z.unknown()).default({}),
   })
   .strict();
 
@@ -105,6 +121,7 @@ export const catalogSchema = z
     organizationTypes: z.array(orgTypeSchema).default([]),
     roles: z.array(catalogRoleSchema).default([]),
     formations: z.array(formationSchema).default([]),
+    toolGrants: z.array(toolGrantSchema).default([]),
   })
   .strict();
 
@@ -112,6 +129,7 @@ export type Deliverable = z.infer<typeof deliverableSchema>;
 export type Responsibility = z.infer<typeof responsibilitySchema>;
 export type Salary = z.infer<typeof salarySchema>;
 export type CatalogRole = z.infer<typeof catalogRoleSchema>;
+export type ToolGrant = z.infer<typeof toolGrantSchema>;
 export type Formation = z.infer<typeof formationSchema>;
 export type OrgType = z.infer<typeof orgTypeSchema>;
 export type Catalog = z.infer<typeof catalogSchema>;

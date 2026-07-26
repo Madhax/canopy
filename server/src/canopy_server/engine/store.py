@@ -434,6 +434,23 @@ class WorkStore:
             ).fetchone()
         return _assignment(r) if r else None
 
+    def refs_granted_to(self, actuation_id: str, node_id: str) -> set[str]:
+        """Every artifact ref granted to the node via any brief version of any of its
+        assignments in this actuation — the grant set the artifact fetch checks against
+        (workspace.md §2: a manager can grant only refs it can itself read, so brief refs are
+        transitively legitimate)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT b.artifact_refs FROM work_brief b "
+                "JOIN work_assignment a ON a.id = b.assignment_id "
+                "WHERE a.actuation_id=? AND a.node_id=?",
+                (actuation_id, node_id),
+            ).fetchall()
+        refs: set[str] = set()
+        for r in rows:
+            refs.update(json.loads(r["artifact_refs"]))
+        return refs
+
     def list_children(self, parent_id: str, *, state: str | None = None) -> list[Assignment]:
         params: list = [parent_id]
         extra = ""

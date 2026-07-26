@@ -635,6 +635,8 @@
     {
       "key": "engineering-lead",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read", "repo.merge"],
+      "defaultRuntime": "cli-claude",
       "title": "Engineering Lead",
       "group": "software-engineering",
       "purpose": "Technical decomposition and code quality for a pod",
@@ -671,6 +673,8 @@
     {
       "key": "backend-engineer",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read", "code.repo.write", "test.unit.run"],
+      "defaultRuntime": "cli-claude",
       "title": "Backend Engineer",
       "group": "software-engineering",
       "purpose": "Server-side implementation",
@@ -787,6 +791,8 @@
     {
       "key": "qa-engineer",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read", "test.run"],
+      "defaultRuntime": "cli-claude",
       "title": "QA Engineer",
       "group": "software-engineering",
       "purpose": "Verification and acceptance evidence",
@@ -3565,6 +3571,58 @@
       ],
       "dependencies": [],
       "artifactFlow": "FundraisingPlan → parallel GrantProposals + donor MeetingAttestations + VolunteerRoster → quarterly StatusReport rollup"
+    }
+  ],
+  "toolGrants": [
+    {
+      "key": "workspace.rw",
+      "title": "Workspace read/write",
+      "riskClass": "inert",
+      "minSandboxTier": 0,
+      "executor": "workspace",
+      "params": {}
+    },
+    {
+      "key": "repo.read",
+      "title": "Repository read access",
+      "riskClass": "read",
+      "minSandboxTier": 1,
+      "executor": "git-mediated",
+      "params": {}
+    },
+    {
+      "key": "code.repo.write",
+      "title": "Repository write access",
+      "riskClass": "write",
+      "minSandboxTier": 2,
+      "executor": "git-mediated",
+      "credentialKind": "scm-token",
+      "params": { "branchPattern": "canopy/*" }
+    },
+    {
+      "key": "test.unit.run",
+      "title": "Run the unit test suite",
+      "riskClass": "execute",
+      "minSandboxTier": 2,
+      "executor": "local-test",
+      "params": { "suite": "tests/unit" }
+    },
+    {
+      "key": "test.run",
+      "title": "Run the full test suite",
+      "riskClass": "execute",
+      "minSandboxTier": 2,
+      "executor": "local-test",
+      "params": { "suite": "tests" }
+    },
+    {
+      "key": "repo.merge",
+      "title": "Merge to the protected branch",
+      "riskClass": "write",
+      "minSandboxTier": 1,
+      "executor": "git-mediated",
+      "governedActions": ["merge"],
+      "params": { "targetBranch": "main" }
     }
   ]
 }
