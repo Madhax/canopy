@@ -1,0 +1,372 @@
+"""The ``cli-claude`` runtime (cli-runtime.md): wraps one headless Claude Code session per
+assignment. The session is the agent's brain and loop; this adapter observes, meters, gates,
+and reports.
+
+Per assignment: INTAKE (materialize ``brief/``) → CONFIG (settings.json permissions compiled
+from the charter's grants, ``.mcp.json`` with exactly the canopy server, ``CLAUDE.md`` teaching
+the assignment protocol) → RUN (``claude -p … --output-format stream-json``) → OBSERVE (events →
+settled Step reports; ``init``'s session id → the assignment's resume handle) → GATE (budget
+checked as usage accumulates; overshoot kills the process tree at the event boundary — debt
+E-D1) → DISCHARGE (the session itself calls MCP ``finish``). Resume after a gate resolution is
+``claude --resume <sessionRef>`` — a gated assignment is a suspended conversation.
+
+``CANOPY_CLI_CMD`` overrides the CLI command (a JSON array or a bare name; the fake-CLI shim in
+CI points it at a python script). httpx + stdlib only, like the rest of ``canopy_agent``.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+import httpx
+
+from .runtime import AgentConfig, _log, runtime
+
+MAX_TURNS_DEFAULT = 30
+
+# Grant key -> Claude Code permission entries (cli-runtime.md §2's table, path-concrete in
+# target-app.md §5). Generated permissions are defense-in-depth; the MCP server's per-call
+# grant checks are the real wall on the subprocess tier.
+GRANT_PERMISSIONS: dict[str, list[str]] = {
+    "workspace.rw": ["Read", "Edit", "Write", "Glob", "Grep"],
+    "repo.read": ["Bash(git log*)", "Bash(git diff*)", "Bash(git show*)", "Bash(git status*)"],
+    "code.repo.write": ["Bash(git *)"],
+    "test.unit.run": ["Bash(uv run pytest tests/unit*)"],
+    "test.run": ["Bash(uv run pytest tests*)"],
+    # repo.merge is governed — it travels through MCP as an approval-gated action (E4),
+    # never as a session permission.
+}
+ALWAYS_DENY = ["WebFetch", "WebSearch"]
+
+
+def _compile_permissions(tool_grants: list[str]) -> tuple[list[str], list[str]]:
+    allow: list[str] = ["mcp__canopy"]  # the canopy tool plane is always the agent's surface
+    for key in tool_grants:
+        allow.extend(GRANT_PERMISSIONS.get(key, []))
+    deny = list(ALWAYS_DENY)
+    if not any(k in GRANT_PERMISSIONS and GRANT_PERMISSIONS[k] and
+               GRANT_PERMISSIONS[k][0].startswith("Bash") for k in tool_grants):
+        pass  # no blanket Bash denial needed: unlisted tools are simply not allowed
+    return allow, deny
+
+
+PROTOCOL = """\
+## The assignment protocol (Canopy)
+
+You have exactly one assignment; its brief is in `../brief/`. Work only through the `canopy`
+MCP tools:
+
+1. Call `get_assignment` first — it carries your brief, contract, budget meter, durable
+   memory, and any operator notes (advisory context, not brief changes).
+2. Declare a plan with `declare_plan` BEFORE working; keep the cursor honest with
+   `update_stage` as you go.
+3. Ship results only via `produce_artifact` and end with `finish` citing those refs. The
+   deliverable contract is exactly what is accepted — nothing else.
+4. If the brief is defective, `open_clarification` — do not guess. If you need a decision
+   above your pay grade, `escalate` — asking is cheaper than guessing.
+"""
+
+MANAGER_PROTOCOL = """\
+### Managers
+
+Decompose the brief; one `delegate` per child with a self-contained brief, cited refs, an
+explicit deliverable contract, and `dependsOn` for sequencing. Delegations may be staged for
+plan review — after your fan-out, call `finish_turn` and end your turn; approval, edits, or
+denial arrive when you are resumed. When resumed with completed child work, check
+`reports_status`, review each deliverable against its contract, and `accept`/`reject` with a
+note (a rejection with an unchanged brief funds rework from the report's own meter). Synthesize
+accepted refs into your own deliverable via `finish`. You never do your reports' work — you
+have no tools for it.
+"""
+
+
+def _write_session_config(
+    workdir: Path, cfg: AgentConfig, charter: dict, brief: dict | None, memory: list,
+) -> None:
+    (workdir / ".claude").mkdir(parents=True, exist_ok=True)
+    allow, deny = _compile_permissions(charter.get("toolGrants", []))
+    (workdir / ".claude" / "settings.json").write_text(json.dumps({
+        "permissions": {"allow": allow, "deny": deny},
+    }, indent=2), encoding="utf-8")
+    (workdir / ".mcp.json").write_text(json.dumps({
+        "mcpServers": {
+            "canopy": {
+                "type": "http",
+                "url": f"{cfg.cp_url}/api/dp/mcp",
+                "headers": {"Authorization": f"Bearer {cfg.run_token}"},
+            }
+        }
+    }, indent=2), encoding="utf-8")
+
+    parts = [charter.get("instructions", ""), PROTOCOL]
+    if charter.get("reportNodeIds"):
+        parts.append(MANAGER_PROTOCOL)
+        reports = ", ".join(charter["reportNodeIds"])
+        parts.append(f"Your direct reports (delegation targets): {reports}")
+    if memory:
+        lines = ["## Your recent work"]
+        for m in memory[-5:]:
+            lines.append(f"- [{m.get('outcome', '?')}] {m.get('intentText', '')[:80]} "
+                         f"({m.get('costTokens', 0)} tokens)")
+        parts.append("\n".join(lines))
+    if brief:
+        refs = brief.get("artifactRefs") or []
+        if refs:
+            parts.append("## Granted artifact refs\n" + "\n".join(f"- {r}" for r in refs))
+    (workdir / "CLAUDE.md").write_text("\n\n".join(p for p in parts if p), encoding="utf-8")
+
+
+def _cli_command() -> list[str]:
+    raw = os.environ.get("CANOPY_CLI_CMD", "claude")
+    if raw.strip().startswith("["):
+        return json.loads(raw)
+    return [raw]
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Interrupt the session at the event boundary (cli-runtime.md §6). Windows needs the
+    process-group kill (sandbox.md); POSIX gets the group signal."""
+    if proc.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           capture_output=True, check=False)
+        else:
+            import signal
+
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except OSError:
+        proc.kill()
+
+
+class _Session:
+    """One live headless session and the observer thread consuming its stream."""
+
+    def __init__(self, assignment_id: str):
+        self.assignment_id = assignment_id
+        self.thread: threading.Thread | None = None
+        self.proc: subprocess.Popen | None = None
+
+    @property
+    def alive(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+
+_SESSIONS: dict[str, _Session] = {}
+
+
+def _observe_stream(
+    client: httpx.Client, proc: subprocess.Popen, assignment_id: str, *,
+    budget_remaining: int, is_manager: bool,
+) -> None:
+    """Parse stream-json → settled Step reports; kill the tree when spend crosses the budget."""
+    session_id: str | None = None
+    spent = 0
+    last_event = time.monotonic()
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        etype = event.get("type")
+
+        if etype == "system" and event.get("subtype") == "init":
+            session_id = event.get("session_id")
+            if session_id:
+                client.post("/api/dp/assignment/events", json={
+                    "assignmentId": assignment_id, "kind": "session-ref",
+                    "sessionRef": session_id,
+                })
+                _log("session_init", assignment=assignment_id, session=session_id)
+
+        elif etype == "assistant":
+            msg = event.get("message") or {}
+            usage = msg.get("usage") or {}
+            in_tok = int(usage.get("input_tokens", 0))
+            out_tok = int(usage.get("output_tokens", 0))
+            content = msg.get("content") or []
+            tools = [c.get("name", "") for c in content if c.get("type") == "tool_use"]
+            delta = "tool-effect" if tools else "none"
+            if any(t.endswith("produce_artifact") for t in tools):
+                delta = "artifact"
+            elif any(t.endswith(("delegate", "escalate", "finish_turn")) for t in tools):
+                delta = "message"
+            now = time.monotonic()
+            client.post("/api/dp/assignment/events", json={
+                "assignmentId": assignment_id, "kind": "step",
+                "stepKind": "coordination" if is_manager else "production",
+                "inputTokens": in_tok, "outputTokens": out_tok,
+                "durationMs": int((now - last_event) * 1000),
+                "deltaKind": delta, "deltaRef": tools[0] if tools else None,
+                "sessionSpanId": session_id, "settle": True,
+            })
+            last_event = now
+            spent += in_tok + out_tok
+            if spent >= budget_remaining:
+                # The turn boundary (invariant 7, coarsened per debt E-D1): the settled step
+                # above already tripped the engine's hard-stop trigger; stop burning.
+                _log("budget_boundary_halt", assignment=assignment_id, spent=spent)
+                _kill_tree(proc)
+                break
+
+        elif etype == "result":
+            _log("session_result", assignment=assignment_id,
+                 cost_usd=event.get("total_cost_usd"), turns=event.get("num_turns"))
+
+    proc.wait()
+    _log("session_exit", assignment=assignment_id, code=proc.returncode)
+
+
+def _materialize_brief(client: httpx.Client, workroot: Path, brief: dict | None) -> None:
+    brief_dir = workroot / "brief"
+    brief_dir.mkdir(parents=True, exist_ok=True)
+    if not brief:
+        return
+    (brief_dir / "BRIEF.md").write_text(brief.get("text", ""), encoding="utf-8")
+    for ref in brief.get("artifactRefs") or []:
+        try:
+            r = client.get("/api/dp/artifacts", params={"ref": ref})
+            if r.status_code != 200:
+                _log("brief_ref_fetch_failed", ref=ref, status=r.status_code)
+                continue
+            body = r.json()
+            name = (body.get("meta") or {}).get("name", "artifact")
+            content = body.get("contentBase64")
+            if content:
+                import base64
+
+                (brief_dir / f"{name}.bin").write_bytes(base64.b64decode(content))
+        except httpx.HTTPError as exc:
+            _log("brief_ref_fetch_error", ref=ref, error=str(exc))
+
+
+def _start_session(
+    client: httpx.Client, cfg: AgentConfig, charter: dict, cur: dict, *, resume: bool,
+) -> None:
+    a = cur["assignment"]
+    aid = a["id"]
+    workroot = Path.cwd() / "assignments" / aid
+    workdir = workroot / "work"
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workroot / "out").mkdir(parents=True, exist_ok=True)
+    _materialize_brief(client, workroot, cur.get("brief"))
+    _write_session_config(workdir, cfg, charter, cur.get("brief"), cur.get("memory") or [])
+
+    meter = cur.get("meter") or {}
+    remaining = max(0, int(meter.get("allowance", 0)) - int(meter.get("spent", 0)))
+    if remaining <= 0 and meter:
+        _log("session_not_started_exhausted", assignment=aid)
+        return
+
+    brief_text = (cur.get("brief") or {}).get("text", "")
+    if resume and a.get("sessionRef"):
+        prompt = ("You have been resumed. Call the canopy `get_assignment` tool to see the "
+                  "current state (resolutions, notes, deliveries), then continue the protocol.")
+        extra = ["--resume", a["sessionRef"]]
+    else:
+        prompt = (f"Begin your assignment. Brief:\n\n{brief_text}\n\n"
+                  "Follow the assignment protocol in CLAUDE.md.")
+        extra = []
+
+    max_turns = int(os.environ.get("CANOPY_MAX_TURNS", str(MAX_TURNS_DEFAULT)))
+    cmd = _cli_command() + [
+        "-p", prompt, "--output-format", "stream-json", "--verbose",
+        "--max-turns", str(max_turns), "--permission-mode", "default",
+        "--mcp-config", ".mcp.json", "--strict-mcp-config", *extra,
+    ]
+    popen_kw: dict = {
+        "cwd": str(workdir), "stdout": subprocess.PIPE, "stderr": subprocess.DEVNULL,
+        "text": True, "encoding": "utf-8",
+    }
+    if sys.platform == "win32":
+        popen_kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kw["start_new_session"] = True
+    try:
+        proc = subprocess.Popen(cmd, **popen_kw)  # noqa: S603 - compiled command, no shell
+    except OSError as exc:
+        _log("session_spawn_failed", assignment=aid, error=str(exc))
+        return
+
+    session = _Session(aid)
+    session.proc = proc
+    is_manager = bool(charter.get("reportNodeIds"))
+    session.thread = threading.Thread(
+        target=_observe_stream, args=(client, proc, aid),
+        kwargs={"budget_remaining": remaining or 10**9, "is_manager": is_manager},
+        daemon=True,
+    )
+    session.thread.start()
+    _SESSIONS[aid] = session
+    _log("session_started", assignment=aid, resume=resume, cmd=cmd[0])
+
+
+def probe_cli() -> bool:
+    """Actuation-readiness probe: is the CLI on PATH and answering ``--version``?"""
+    cmd = _cli_command()
+    exe = cmd[0]
+    if shutil.which(exe) is None and not Path(exe).exists():
+        return False
+    try:
+        r = subprocess.run([*cmd, "--version"], capture_output=True, timeout=15, check=False)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+_CHARTERS: dict[str, dict] = {}
+
+
+@runtime("cli-claude")
+def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
+    """One adapter tick: keep the session aligned with the assignment's engine state."""
+    charter = _CHARTERS.get(cfg.node_id)
+    if charter is None:
+        r = client.get("/api/dp/charter")
+        if r.status_code != 200:
+            return "idle"
+        charter = r.json()
+        _CHARTERS[cfg.node_id] = charter
+
+    try:
+        r = client.get("/api/dp/assignment/current")
+    except httpx.HTTPError as exc:
+        _log("work_poll_error", error=str(exc))
+        return "idle"
+    if r.status_code != 200 or r.json() is None:
+        return "idle"
+    cur = r.json()
+    a = cur["assignment"]
+    aid, state = a["id"], a["state"]
+
+    session = _SESSIONS.get(aid)
+    if session and session.alive:
+        if state in ("gated", "paused"):
+            # The engine suspended the assignment (X1 halt flag, hard-stop) — interrupt at
+            # the boundary; the session id survives for resume.
+            _kill_tree(session.proc)  # type: ignore[arg-type]
+            return "engaged"
+        return "engaged"  # session is driving; nothing for the adapter to do
+
+    if state in ("briefed", "intake"):
+        _materialize_brief(client, Path.cwd() / "assignments" / aid, cur.get("brief"))
+        client.post("/api/dp/assignment/events",
+                    json={"assignmentId": aid, "kind": "intake-complete"})
+        return "engaged"
+    if state in ("planning", "executing"):
+        _start_session(client, cfg, charter, cur,
+                       resume=bool(a.get("sessionRef")) and state == "executing")
+        return "engaged"
+    return "idle"  # delivering / gated / terminal: awaiting review or resolution

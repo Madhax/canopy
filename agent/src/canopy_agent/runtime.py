@@ -283,6 +283,8 @@ def _produce_and_finish(client: httpx.Client, cfg: AgentConfig, cur: dict) -> No
 
 
 def main() -> None:
+    from . import cli_runtime  # noqa: F401 - registers the 'cli-claude' runtime kind
+
     cfg = load_config()
     _log("boot", node=cfg.node_id, actuation=cfg.actuation_id)
     client = httpx.Client(

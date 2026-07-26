@@ -651,16 +651,30 @@ class ExecutionEngine:
         self, assignment_id: str, *, input_tokens: int, output_tokens: int, duration_ms: int,
         kind: str = "production", stage_idx: int | None = None, delta_kind: str = "none",
         delta_ref: str | None = None, step_id: str | None = None,
-        session_span_id: str | None = None,
+        session_span_id: str | None = None, settle: bool = False, model: str = "claude-cli",
     ):
-        """Record an observable Step. Money was already metered by the gateway when it made the
-        model call (shared ``step_id``); this row carries the delta taxonomy for introspection."""
-        self._require(assignment_id)
+        """Record an observable Step.
+
+        ``settle=False`` (the loop runtime): money was already metered by the gateway when it
+        made the model call — the shared ``step_id`` ties the two rows. ``settle=True`` (the
+        cli-claude adapter, cli-runtime.md §5): the session's usage is CLI-reported, so this
+        report ALSO lands the SpendEvent in the ledger (``provider='claude-cli'``, step-id
+        idempotent — a redelivered report never double-charges). Overshoot past the allowance is
+        accepted and immediately trips the hard-stop trigger (debt E-D1: enforcement is
+        per-turn, not per-call)."""
+        a = self._require(assignment_id)
         step = self.store.add_step(
             assignment_id, input_tokens=input_tokens, output_tokens=output_tokens,
             duration_ms=duration_ms, kind=kind, stage_idx=stage_idx, delta_kind=delta_kind,
             delta_ref=delta_ref, step_id=step_id, session_span_id=session_span_id,
         )
+        if settle and a.meterId is not None:
+            self.ledger.record(
+                a.meterId, step_id=step.id, org_id=a.orgId, node_id=a.nodeId,
+                actuation_id=a.actuationId, provider="claude-cli", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens, est_cost_micros=0,
+                reserved=0, task_id=assignment_id,
+            )
         # Trigger evaluation rides every step report (work-model.md §6): warn + hard-stop.
         self.check_budget_triggers(assignment_id)
         return step

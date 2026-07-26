@@ -221,6 +221,9 @@ class EventBody(BaseModel):
     stepId: str | None = None
     sessionSpanId: str | None = None
     stageState: str | None = None
+    sessionRef: str | None = None  # 'session-ref' events: the CLI resume handle
+    settle: bool = False  # session steps: also land the SpendEvent (cli-runtime.md §5)
+    model: str = "claude-cli"
 
 
 class DependsOnIn(BaseModel):
@@ -399,7 +402,7 @@ def assignment_events(
                 body.assignmentId, input_tokens=body.inputTokens, output_tokens=body.outputTokens,
                 duration_ms=body.durationMs, kind=body.stepKind, stage_idx=body.stageIdx,
                 delta_kind=body.deltaKind, delta_ref=body.deltaRef, step_id=body.stepId,
-                session_span_id=body.sessionSpanId,
+                session_span_id=body.sessionSpanId, settle=body.settle, model=body.model,
             )
         elif body.kind == "stage-update":
             if body.stageIdx is None or body.stageState is None:
@@ -409,6 +412,12 @@ def assignment_events(
             # The manager's turn boundary after a fan-out (engine.md §2 9a/11a): closes any
             # proposed batch into its plan-review gate, or arms/re-arms the await gate.
             engine.finish_turn(body.assignmentId)
+        elif body.kind == "session-ref":
+            # The cli-claude adapter stores the stream-json init session id as the resume
+            # handle (cli-runtime.md §1) — a gated assignment is a suspended conversation.
+            if not body.sessionRef:
+                return _work_conflict(WorkError("session-ref needs sessionRef"))
+            work_store.set_session_ref(body.assignmentId, body.sessionRef)
         elif body.kind == "delivering":
             pass  # advisory; the deliverable is submitted via /dp/finish
         else:
