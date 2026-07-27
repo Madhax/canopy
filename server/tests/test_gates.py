@@ -366,3 +366,26 @@ def test_mvp_demo_ordering(pod):
     meters = [ledger.get_meter(m) for m in
               {root.meterId, be3.meterId, qa3.meterId} if m]
     assert total_events == sum(m.spent for m in meters)
+
+
+def test_spend_rollup_by_intent_with_split(pod, client):
+    """The E5 cost-explorer feed: groupBy=intent attributes every SpendEvent to its intent via
+    the assignment; split=true separates coordination from production (SC-1)."""
+    eng, root = pod["engine"], pod["root"]
+    be = eng.delegate(root.id, pod["backend"]["id"], "implement")
+    gate = eng.finish_turn(root.id)
+    eng.resolve_gate(gate.id, action="approve")
+    eng.mark_intake_complete(be.id)
+    eng.declare_plan(be.id, [{"title": "work"}])
+    eng.record_step(be.id, input_tokens=100, output_tokens=20, duration_ms=5,
+                    settle=True, kind="production", step_id="st_prod1")
+    eng.record_step(root.id, input_tokens=40, output_tokens=10, duration_ms=5,
+                    settle=True, kind="coordination", step_id="st_coord1")
+
+    r = client.get(f"/api/organizations/{root.orgId}/spend?groupBy=intent&split=true").json()
+    row = next(x for x in r["rows"] if x["key"] == root.intentId)
+    assert row["coordination_tokens"] == 50 and row["production_tokens"] == 120
+    by_assignment = client.get(
+        f"/api/organizations/{root.orgId}/spend?groupBy=assignment"
+    ).json()["rows"]
+    assert {x["key"] for x in by_assignment} >= {root.id, be.id}
