@@ -18,6 +18,7 @@ import {
 import { apiGet } from "../api/client";
 import { useQuery } from "@tanstack/react-query";
 import { Button, CenteredSpinner, EmptyState } from "../components/common";
+import { CostSection } from "../components/execute/CostExplorer";
 import { GateCard } from "../components/execute/GateCard";
 import { PlanOutline } from "../components/execute/PlanOutline";
 
@@ -43,6 +44,7 @@ export function ExecutePage() {
   const effectiveOrg = orgId ?? orgs.data?.[0]?.id ?? null;
   const [intentId, setIntentId] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [view, setView] = useState<"work" | "costs">("work");
 
   const intents = useIntents(effectiveOrg);
   const gates = useOperatorGates(effectiveOrg);
@@ -71,26 +73,45 @@ export function ExecutePage() {
             Phase 3 · Execute — give the organization work and govern it through gates
           </p>
         </div>
-        <select
-          value={effectiveOrg ?? ""}
-          onChange={(e) => {
-            setOrgId(e.target.value || null);
-            setIntentId(null);
-          }}
-          className="rounded-md border border-border bg-canvas px-2 py-1 text-sm outline-none focus:border-accent"
-        >
-          {(orgs.data ?? []).map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-md border border-border bg-canvas p-0.5 text-xs">
+            {(["work", "costs"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded px-2.5 py-1 capitalize ${
+                  view === v ? "bg-surface font-medium text-ink shadow-sm" : "text-ink-muted"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <select
+            value={effectiveOrg ?? ""}
+            onChange={(e) => {
+              setOrgId(e.target.value || null);
+              setIntentId(null);
+            }}
+            className="rounded-md border border-border bg-canvas px-2 py-1 text-sm outline-none focus:border-accent"
+          >
+            {(orgs.data ?? []).map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       {orgs.isLoading ? (
         <CenteredSpinner label="Loading organizations…" />
       ) : !effectiveOrg ? (
         <EmptyState title="No organizations yet">Build one in the editor first.</EmptyState>
+      ) : view === "costs" ? (
+        <main className="mx-auto max-w-6xl px-6 py-6">
+          <CostSection orgId={effectiveOrg} nodeName={nodeName} />
+        </main>
       ) : (
         <main className="mx-auto grid max-w-6xl grid-cols-[1fr_320px] gap-6 px-6 py-6">
           <div className="flex flex-col gap-6">
