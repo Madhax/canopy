@@ -10,6 +10,8 @@
 
 `canopy-agent` gains a runtime-kind registry (envelope §4); `cli-claude` is the second kind after `loop`. One adapter process per node (same sandbox contract, same env, same boot: charter → register → heartbeat). Per assignment, the adapter runs one **headless Claude Code session**:
 
+**Runtime-kind selection (as built in E3).** Each catalog role declares `defaultRuntime` (`loop` | `cli-claude`); the actuator stamps the resolved kind into the agent's environment as `CANOPY_RUNTIME` at provisioning. `canopy.toml`'s `[execution] runtime_override` globally overrides every role's choice — `"loop"` (the shipped default) keeps keyless dev/CI actuations on the mock spine even though the pod roles declare `cli-claude`; `""` restores per-role selection and is *the* switch to real CLI sessions (it also arms the `CLI_UNAVAILABLE` readiness probe: `claude --version` must succeed, overridable to the fake-CLI shim via `CANOPY_CLI_CMD`). Because the kind is stamped at provisioning, flipping the override requires a deactuate → re-actuate to take effect.
+
 ```
 adapter (python, the sandboxed process)
   ├─ boot: fetch charter, register, heartbeat (unchanged from A2)

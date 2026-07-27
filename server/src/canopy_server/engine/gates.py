@@ -35,6 +35,9 @@ class GateService:
     def __init__(self, store: WorkStore, *, activity: ActivityLog | None = None):
         self.store = store
         self.activity = activity
+        # Set by the engine: called with the assignment after a resolution restores it —
+        # the wake-up ride on the delivery bus (best-effort; runtimes also poll).
+        self.on_resume = None
 
     # ----------------------------------------------------------------- open
     def open(
@@ -74,6 +77,8 @@ class GateService:
         a = self.store.get_assignment(gate.assignmentId)
         if target and a is not None and a.state == "gated":
             self.store.set_assignment_state(a.id, target)
+            if self.on_resume is not None:
+                self.on_resume(self.store.get_assignment(a.id))
         if a is not None:
             self._log("gate.resolved", a.orgId, [a.id, gate.id],
                       {"kind": gate.kind, "action": resolution.get("action", "")})

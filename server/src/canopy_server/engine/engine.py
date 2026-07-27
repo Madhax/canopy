@@ -54,14 +54,44 @@ class WorkError(Exception):
 class ExecutionEngine:
     def __init__(
         self, store: WorkStore, ledger: BudgetLedger, artifacts: ArtifactStore,
-        org_store: OrgStore, *, activity: ActivityLog | None = None,
+        org_store: OrgStore, *, activity: ActivityLog | None = None, bus=None,
+        executors: dict | None = None,
     ):
         self.store = store
         self.ledger = ledger
         self.artifacts = artifacts
         self.orgs = org_store
         self.activity = activity
+        self.bus = bus  # optional: dispatch/resume wake-ups ride the A3 delivery workers
+        # Governed-action executors (envelope §3.4): action name -> callable(payload) -> result.
+        # The engine runs one ONLY from a resolved ApprovalGate (invariant 9).
+        self.executors = executors or {}
         self.gates = GateService(store, activity=activity)
+        # Gate resolutions wake the resumed node through the same delivery path as dispatch.
+        self.gates.on_resume = lambda a: self._publish_wake(a, "resume")
+
+    def _publish_wake(self, a: Assignment, kind: str, payload: dict | None = None) -> None:
+        """Publish a wake envelope to the node's inbox topic (engine.md §2 step 6 — A3
+        delivery). Runtimes also poll `assignment/current`, so the bus is the fast path, not
+        the only path; a missing bus (unit tests) degrades to polling."""
+        if self.bus is None:
+            return
+        from ..bus import Envelope
+        from ..ids import new_message_id
+        from ..router import inbox_topic
+
+        envelope = Envelope(
+            id=new_message_id(), actuationId=a.actuationId, fromNodeId="engine",
+            toNodeId=a.nodeId, kind=kind, a2aPayload=payload or {}, taskRef=a.id,
+            ts=now_iso(),
+        )
+        try:
+            self.bus.publish(
+                inbox_topic(a.actuationId, a.nodeId), envelope,
+                idempotency_key=f"{kind}:{a.id}:{a.updatedAt}",
+            )
+        except Exception:  # noqa: BLE001 - a wake is best-effort; polling still succeeds
+            pass
 
     # ----------------------------------------------------------- node resolution
     def _org(self, org_id: str) -> Organization:
@@ -210,9 +240,12 @@ class ExecutionEngine:
             self.gates.open_dependency(
                 self._require(aid), edges, suspend=not staged,
             )
+        child = self._require(aid)
+        if child.state == "briefed":  # direct dispatch: publish the delivery wake (A3)
+            self._publish_wake(child, "assignment")
         self._log("assignment.delegated", caller.orgId, [caller.id, aid, report.id],
                   {"staged": staged, "dependsOn": [e["upstreamId"] for e in edges]})
-        return self._require(aid)
+        return child
 
     def finish_turn(self, caller_assignment_id: str) -> Gate | None:
         """The manager's turn boundary after a fan-out (engine.md §2 9a / 11a).
@@ -285,6 +318,10 @@ class ExecutionEngine:
             raise WorkError(f"gate {gate_id} is already {gate.state}")
         body = payload or {}
 
+        if gate.kind == "approval" and gate.payload.get("governedAction"):
+            return self._resolve_governed_action(gate, action=action, resolved_by=resolved_by,
+                                                 body=body)
+
         if gate.kind == "approval" and action == "edit-draft":
             # Amend one draft brief pre-dispatch; the gate stays open for the actual verdict.
             child = self._require(body["assignmentId"])
@@ -349,6 +386,52 @@ class ExecutionEngine:
                                                body=body)
 
         raise WorkError(f"unsupported resolution {action!r} for {gate.kind!r} gate")
+
+    def open_governed_action(
+        self, assignment_id: str, action_name: str, payload: dict, *, owner: str = "operator",
+    ) -> Gate:
+        """An agent reached a governed action: suspend on an ApprovalGate carrying the action
+        (work-model.md §3 approval row). Approval executes it; denial is a prohibition."""
+        a = self._require(assignment_id)
+        gate = self.gates.open(
+            a, "approval", opened_by=a.nodeId, owner=owner,
+            reason=f"governed:{action_name}:{a.id}",
+            payload={"governedAction": action_name, **payload},
+        )
+        self._notify_gate_waiting(a, gate)
+        return gate
+
+    def _resolve_governed_action(
+        self, gate: Gate, *, action: str, resolved_by: str, body: dict,
+    ) -> Gate:
+        """Consented, then evidenced (invariant 9): approval runs the registered executor and
+        the result — the ActionAttestation's substance — is recorded on the gate resolution and
+        the activity log, linked to the gate. Denial is a prohibition: the agent resumes and
+        must re-plan around it, never treat it as a rework request."""
+        a = self._require(gate.assignmentId)
+        name = gate.payload["governedAction"]
+        if action == "deny":
+            self.gates.resolve(
+                gate, resolution={"action": "deny", "note": body.get("note", "")},
+                resolved_by=resolved_by,
+            )
+            return self.store.get_gate(gate.id)  # type: ignore[return-value]
+        if action != "approve":
+            raise WorkError(f"unsupported resolution {action!r} for a governed action")
+        executor = self.executors.get(name)
+        if executor is None:
+            raise WorkError(f"no executor registered for governed action {name!r}")
+        result = executor(dict(gate.payload))
+        self.gates.resolve(
+            gate,
+            resolution={"action": "approve", "executed": name, "result": result,
+                        "attestation": {"claim": f"{name} executed under gate {gate.id}",
+                                        "gateId": gate.id, "approvedBy": resolved_by}},
+            resolved_by=resolved_by,
+        )
+        self._log("governed.executed", a.orgId, [a.id, gate.id],
+                  {"action": name, "result": result})
+        return self.store.get_gate(gate.id)  # type: ignore[return-value]
 
     def _resolve_judgment_gate(
         self, gate: Gate, *, action: str, resolved_by: str, body: dict,
@@ -623,6 +706,9 @@ class ExecutionEngine:
                     dep_gate, resolution={"action": "auto", "refs": granted},
                     resolved_by="system",
                 )
+        dispatched = self._require(child.id)
+        if dispatched.state == "briefed":
+            self._publish_wake(dispatched, "assignment")
 
     # ---------------------------------------------------------------- runtime reports
     def _require(self, assignment_id: str) -> Assignment:
@@ -651,16 +737,30 @@ class ExecutionEngine:
         self, assignment_id: str, *, input_tokens: int, output_tokens: int, duration_ms: int,
         kind: str = "production", stage_idx: int | None = None, delta_kind: str = "none",
         delta_ref: str | None = None, step_id: str | None = None,
-        session_span_id: str | None = None,
+        session_span_id: str | None = None, settle: bool = False, model: str = "claude-cli",
     ):
-        """Record an observable Step. Money was already metered by the gateway when it made the
-        model call (shared ``step_id``); this row carries the delta taxonomy for introspection."""
-        self._require(assignment_id)
+        """Record an observable Step.
+
+        ``settle=False`` (the loop runtime): money was already metered by the gateway when it
+        made the model call — the shared ``step_id`` ties the two rows. ``settle=True`` (the
+        cli-claude adapter, cli-runtime.md §5): the session's usage is CLI-reported, so this
+        report ALSO lands the SpendEvent in the ledger (``provider='claude-cli'``, step-id
+        idempotent — a redelivered report never double-charges). Overshoot past the allowance is
+        accepted and immediately trips the hard-stop trigger (debt E-D1: enforcement is
+        per-turn, not per-call)."""
+        a = self._require(assignment_id)
         step = self.store.add_step(
             assignment_id, input_tokens=input_tokens, output_tokens=output_tokens,
             duration_ms=duration_ms, kind=kind, stage_idx=stage_idx, delta_kind=delta_kind,
             delta_ref=delta_ref, step_id=step_id, session_span_id=session_span_id,
         )
+        if settle and a.meterId is not None:
+            self.ledger.record(
+                a.meterId, step_id=step.id, org_id=a.orgId, node_id=a.nodeId,
+                actuation_id=a.actuationId, provider="claude-cli", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens, est_cost_micros=0,
+                reserved=0, task_id=assignment_id,
+            )
         # Trigger evaluation rides every step report (work-model.md §6): warn + hard-stop.
         self.check_budget_triggers(assignment_id)
         return step

@@ -73,3 +73,73 @@ def test_loop_runtime_drives_intent_to_deliverable(client, make_org, mint_sessio
             "SELECT step_id FROM ledger_spend_event WHERE step_id=?", (art_step["id"],)
         ).fetchone()
     assert row is not None  # work_step.id == ledger SpendEvent.step_id (one Step, two views)
+
+
+def test_loop_manager_fans_out_and_synthesizes(client, make_org, mint_session):
+    """The E3.6 mock-manager tick (amendments §3.3): a whole pod runs the delegation flow on
+    the loop spine — staged fan-out, operator approval, IC work, per-delivery review wakes,
+    and the lead's synthesized deliverable closing the intent."""
+    from canopy_agent.runtime import AgentConfig, loop_tick
+
+    from canopy_server.deps import get_engine
+    from canopy_server.main import app
+
+    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    by_role = {a["role"]["key"]: a for a in org["agents"]}
+    lead = by_role["engineering-lead"]
+    ics = [by_role["backend-engineer"], by_role["frontend-engineer"], by_role["qa-engineer"]]
+    s_lead = mint_session(org["id"], node_id=lead["id"])
+    sessions = {lead["id"]: s_lead}
+    for ic in ics:
+        sessions[ic["id"]] = mint_session(org["id"], node_id=ic["id"],
+                                          actuation_id=s_lead["actuationId"])
+    # Charters over HTTP need actuation rows; the loop's charter fetch tolerates a 404 and
+    # would treat the lead as an IC — so seed real charters for everyone.
+    from test_cli_runtime import _seed_charter
+
+    for node_id in sessions:
+        _seed_charter(org, s_lead["actuationId"], node_id)
+
+    eng = get_engine()
+    root = eng.submit_intent(org["id"], s_lead["actuationId"],
+                             "ship the CSV export feature", target_node=lead["id"]).assignment
+
+    def agent(node_id):
+        return TestClient(app, headers={"Authorization":
+                                        f"Bearer {sessions[node_id]['token']}"})
+
+    def cfg(node_id):
+        return AgentConfig(cp_url="http://cp", run_token=sessions[node_id]["token"],
+                           node_id=node_id, actuation_id=s_lead["actuationId"],
+                           a2a_host="127.0.0.1", a2a_port=0)
+
+    def tick_all():
+        loop_tick(agent(lead["id"]), cfg(lead["id"]))
+        for ic in ics:
+            loop_tick(agent(ic["id"]), cfg(ic["id"]))
+
+    # Drive the org; approve the lead's staged fan-out when the plan-review gate appears.
+    for _ in range(20):
+        tick_all()
+        gates = client.get(
+            f"/api/organizations/{org['id']}/gates?state=open&owner=operator"
+        ).json()["gates"]
+        for g in gates:
+            if g["kind"] == "approval":
+                client.post(f"/api/gates/{g['id']}/resolve", json={"action": "approve"})
+        if client.get(f"/api/assignments/{root.id}").json()["assignment"]["state"] \
+                == "delivering":
+            break
+
+    detail = client.get(f"/api/assignments/{root.id}").json()
+    assert detail["assignment"]["state"] == "delivering"  # the lead synthesized and finished
+    children = client.get(
+        f"/api/organizations/{org['id']}/assignments"
+    ).json()["assignments"]
+    child_rows = [c for c in children if c["parentId"] == root.id]
+    assert len(child_rows) == 3 and all(c["state"] == "closed" for c in child_rows)
+
+    # Operator accepts the root: intent completed, every meter accounted.
+    client.post(f"/api/assignments/{root.id}/accept", json={"note": "ship it"})
+    intent = client.get(f"/api/intents/{root.intentId}").json()["intent"]
+    assert intent["state"] == "completed"

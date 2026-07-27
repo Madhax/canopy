@@ -65,6 +65,7 @@ _DEFAULTS: dict[str, Any] = {
         "concurrency": {"anthropic": 4, "gemini": 4, "mock": 64},
     },
     "work": {"rework_grant_pct": 20, "stall_minutes": 10, "stall_none_steps": 5},
+    "execution": {"allow_trusted_local": False, "runtime_override": ""},
     "prices": {},
 }
 
@@ -132,6 +133,18 @@ def get_rework_grant_pct() -> int:
     """Revised-brief rework top-up, as a percentage of the child's original allowance — debited
     from the parent assignment's meter (work-model.md §2.2)."""
     return int(_raw_config()["work"]["rework_grant_pct"])
+
+
+def get_allow_trusted_local() -> bool:
+    """The MVP waiver (cli-runtime.md §8): execute-class grants on the subprocess tier are
+    refused (TIER_UNSATISFIABLE) unless explicitly waived — loudly, once, logged."""
+    return bool(_raw_config()["execution"]["allow_trusted_local"])
+
+
+def get_runtime_override() -> str:
+    """Force every node onto one runtime kind (e.g. 'loop' for keyless CI/dev); empty means
+    each role's ``defaultRuntime`` decides (envelope §4)."""
+    return str(_raw_config()["execution"]["runtime_override"])
 
 
 def get_stall_minutes() -> int:

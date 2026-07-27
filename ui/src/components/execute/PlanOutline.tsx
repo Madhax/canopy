@@ -1,0 +1,148 @@
+// The living plan, outline projection (amendment D-4): the whole engagement as one nested
+// document — states, stage cursors, meters, padlocks, notes — with every line a handle:
+// leave a note (D-5) or intervene (X1) inline. Read + act; the view stores nothing.
+import { useState } from "react";
+import type { PlanNode } from "../../api/work";
+import { Button } from "../common";
+
+interface Props {
+  node: PlanNode;
+  nodeName: (id: string) => string;
+  onNote: (assignmentId: string, stageIdx: number | null, text: string) => void;
+  onIntervene: (assignmentId: string, note: string) => void;
+  onAccept: (assignmentId: string) => void;
+  onReject: (assignmentId: string, note: string) => void;
+  depth?: number;
+}
+
+const STATE_TONE: Record<string, string> = {
+  executing: "text-accent",
+  delivering: "text-warn",
+  gated: "text-warn",
+  closed: "text-ink-muted",
+  cancelled: "text-ink-muted line-through",
+  proposed: "text-ink-muted italic",
+};
+
+function MeterArc({ spent, allowance }: { spent: number; allowance: number }) {
+  const pct = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
+  const tone = pct >= 100 ? "bg-danger" : pct >= 80 ? "bg-warn" : "bg-accent";
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-ink-muted" title={`${spent}/${allowance} tokens`}>
+      <span className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-surface-2">
+        <span className={`block h-full ${tone}`} style={{ width: `${pct}%` }} />
+      </span>
+      {pct}%
+    </span>
+  );
+}
+
+export function PlanOutline(props: Props) {
+  const { node, nodeName, depth = 0 } = props;
+  const [composer, setComposer] = useState<null | { stageIdx: number | null }>(null);
+  const [text, setText] = useState("");
+  const a = node.assignment;
+  const openGates = node.gates.filter((g) => g.state === "open");
+  const cursor = node.plan?.stages.find((s) => s.state === "active");
+
+  return (
+    <div className={depth > 0 ? "ml-5 border-l border-border pl-4" : ""}>
+      <div className="group flex flex-wrap items-center gap-2 py-1">
+        <span className="text-sm font-medium text-ink">{nodeName(a.nodeId)}</span>
+        <span className={`text-xs font-semibold ${STATE_TONE[a.state] ?? "text-ink"}`}>
+          {a.state}
+        </span>
+        {openGates.map((g) => (
+          <span key={g.id} className="rounded bg-warn/15 px-1.5 text-[11px] text-warn" title={g.reason}>
+            🔒 {g.kind}
+          </span>
+        ))}
+        {node.meter && <MeterArc spent={node.meter.spent} allowance={node.meter.allowance} />}
+        {a.briefVersion > 1 && (
+          <span className="text-[11px] text-ink-muted">brief v{a.briefVersion}</span>
+        )}
+        <span className="hidden gap-1 group-hover:inline-flex">
+          <button
+            className="text-[11px] text-accent hover:underline"
+            onClick={() => setComposer(composer ? null : { stageIdx: null })}
+          >
+            note
+          </button>
+          {a.state === "delivering" && (
+            <>
+              <button className="text-[11px] text-accent hover:underline"
+                      onClick={() => props.onAccept(a.id)}>
+                accept
+              </button>
+              <button className="text-[11px] text-danger hover:underline"
+                      onClick={() => props.onReject(a.id, "rejected from the plan view")}>
+                reject
+              </button>
+            </>
+          )}
+          {["briefed", "planning", "executing"].includes(a.state) && (
+            <button className="text-[11px] text-danger hover:underline"
+                    onClick={() => props.onIntervene(a.id, "operator intervention")}>
+              intervene
+            </button>
+          )}
+        </span>
+      </div>
+
+      {node.brief && depth === 0 && (
+        <p className="mb-1 text-xs text-ink-muted">{node.brief.text}</p>
+      )}
+
+      {node.plan && (
+        <ol className="mb-1 flex flex-col">
+          {node.plan.stages.map((s) => (
+            <li key={s.idx} className="flex items-center gap-2 text-xs">
+              <span className={s.state === "done" ? "text-ink-muted" : s.state === "active" ? "text-accent" : "text-ink-muted/60"}>
+                {s.state === "done" ? "✓" : s.state === "active" ? "▶" : "○"}
+              </span>
+              <span className={s.state === "active" ? "font-medium text-ink" : "text-ink-muted"}>
+                {s.title}
+              </span>
+              {s === cursor && <span className="text-[10px] text-accent">← cursor</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {node.notes.map((n) => (
+        <div key={n.id} className="mb-1 rounded bg-accent/10 px-2 py-1 text-xs text-ink">
+          📝 {n.text}
+          <span className="ml-2 text-[10px] text-ink-muted">
+            {n.deliveredAt ? "delivered" : "pending injection"}
+          </span>
+        </div>
+      ))}
+
+      {composer && (
+        <div className="mb-2 flex gap-2">
+          <input
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Anchored, non-blocking advice — reaches the session next turn…"
+            className="flex-1 rounded-md border border-border bg-canvas px-2 py-1 text-xs outline-none focus:border-accent"
+          />
+          <Button
+            onClick={() => {
+              props.onNote(a.id, composer.stageIdx, text);
+              setText("");
+              setComposer(null);
+            }}
+            disabled={!text}
+          >
+            Leave note
+          </Button>
+        </div>
+      )}
+
+      {node.children.map((c) => (
+        <PlanOutline key={c.assignment.id} {...props} node={c} depth={depth + 1} />
+      ))}
+    </div>
+  );
+}

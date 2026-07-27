@@ -26,6 +26,7 @@ from ..ids import (
     new_notification_id,
     new_plan_id,
     new_step_id,
+    new_tool_event_id,
 )
 from .models import (
     ASSIGNMENT_TERMINAL_STATES,
@@ -203,6 +204,21 @@ CREATE INDEX IF NOT EXISTS ix_gate_assignment ON work_gate (assignment_id, state
 -- Trigger sweeps never double-open (engine.md §3): one open gate per (assignment, kind, reason).
 CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_open_dedupe
     ON work_gate (assignment_id, kind, reason_hash) WHERE state = 'open';
+
+CREATE TABLE IF NOT EXISTS work_tool_event (
+    id            TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL,
+    actuation_id  TEXT NOT NULL,
+    node_id       TEXT NOT NULL,
+    assignment_id TEXT,
+    tool          TEXT NOT NULL,
+    params_hash   TEXT NOT NULL DEFAULT '',
+    outcome       TEXT NOT NULL,               -- ok | denied | error
+    detail        TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_tool_event_node ON work_tool_event (actuation_id, node_id,
+    created_at);
 """
 register_schema(SCHEMA)
 
@@ -433,6 +449,23 @@ class WorkStore:
                 (actuation_id, node_id, *hidden),
             ).fetchone()
         return _assignment(r) if r else None
+
+    def refs_granted_to(self, actuation_id: str, node_id: str) -> set[str]:
+        """Every artifact ref granted to the node via any brief version of any of its
+        assignments in this actuation — the grant set the artifact fetch checks against
+        (workspace.md §2: a manager can grant only refs it can itself read, so brief refs are
+        transitively legitimate)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT b.artifact_refs FROM work_brief b "
+                "JOIN work_assignment a ON a.id = b.assignment_id "
+                "WHERE a.actuation_id=? AND a.node_id=?",
+                (actuation_id, node_id),
+            ).fetchall()
+        refs: set[str] = set()
+        for r in rows:
+            refs.update(json.loads(r["artifact_refs"]))
+        return refs
 
     def list_children(self, parent_id: str, *, state: str | None = None) -> list[Assignment]:
         params: list = [parent_id]
@@ -950,3 +983,30 @@ class WorkStore:
                     (ts, org_id),
                 )
         return cur.rowcount
+
+    # ------------------------------------------------------------- tool events
+    def record_tool_event(
+        self, *, org_id: str, actuation_id: str, node_id: str, tool: str, outcome: str,
+        assignment_id: str | None = None, params_hash: str = "", detail: str = "",
+    ) -> str:
+        """The observability record for every MCP/tool invocation (envelope §3.4) — including
+        the denied ones, which is the point: a hallucinated call is visible, not silent."""
+        tid = new_tool_event_id()
+        with self.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO work_tool_event (id, org_id, actuation_id, node_id, assignment_id, "
+                "tool, params_hash, outcome, detail, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (tid, org_id, actuation_id, node_id, assignment_id, tool, params_hash, outcome,
+                 detail, now_iso()),
+            )
+        return tid
+
+    def list_tool_events(self, actuation_id: str, node_id: str) -> list[dict]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_tool_event WHERE actuation_id=? AND node_id=? "
+                "ORDER BY created_at, id",
+                (actuation_id, node_id),
+            ).fetchall()
+        return [dict(r) for r in rows]

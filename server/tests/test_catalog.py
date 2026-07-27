@@ -58,6 +58,45 @@ def test_formation_verify_edges_match_teams_doc():
     }
 
 
+def test_tool_grants_resolve_and_cover_the_mvp_roles():
+    """E3: the minimal toolGrants vocabulary (envelope §3.1) exists, every role reference
+    resolves, and the three MVP roles carry exactly the grants mvp.md §1's table needs."""
+    catalog = get_catalog()
+    grants = {g.key: g for g in catalog.toolGrants}
+    assert set(grants) == {
+        "workspace.rw", "repo.read", "code.repo.write", "test.unit.run", "test.run",
+        "repo.merge",
+    }
+    # Execute-class grants carry the hard tier floor (envelope §3.1); merge is governed.
+    assert grants["test.run"].riskClass == "execute" and grants["test.run"].minSandboxTier == 2
+    assert "merge" in grants["repo.merge"].governedActions
+    assert grants["code.repo.write"].params["branchPattern"] == "canopy/*"
+
+    roles = {r.key: r for r in catalog.roles}
+    assert roles["backend-engineer"].toolGrants == [
+        "workspace.rw", "repo.read", "code.repo.write", "test.unit.run",
+    ]
+    assert roles["qa-engineer"].toolGrants == ["workspace.rw", "repo.read", "test.run"]
+    assert roles["engineering-lead"].toolGrants == ["workspace.rw", "repo.read", "repo.merge"]
+    for k in ("backend-engineer", "qa-engineer", "engineering-lead"):
+        assert roles[k].defaultRuntime == "cli-claude"
+    # Non-overlap is enforced the envelope way: the engineer cannot run the full suite,
+    # QA cannot write code, the lead can do neither (austerity is the design).
+    assert "test.run" not in roles["backend-engineer"].toolGrants
+    assert "code.repo.write" not in roles["qa-engineer"].toolGrants
+    assert not {"code.repo.write", "test.unit.run", "test.run"} & set(
+        roles["engineering-lead"].toolGrants
+    )
+
+
+def test_integrity_catches_dangling_tool_grant():
+    catalog = get_catalog()
+    broken = catalog.model_copy(deep=True)
+    broken.roles[0].toolGrants.append("no.such.grant")
+    problems = check_integrity(broken)
+    assert any("unknown toolGrant" in p for p in problems)
+
+
 def test_integrity_catches_dangling_palette():
     catalog = get_catalog()
     broken = catalog.model_copy(deep=True)

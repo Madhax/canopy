@@ -1,0 +1,244 @@
+"""E4 — the repo executors: worktree materialization, read-only checkout, PR assembly, and the
+governed merge with its attestation (mvp.md E4, testing.md §4 E4 rows).
+
+Adversarial cases per doctrine: QA cannot take a rw worktree, the merge refuses without a
+resolved ApprovalGate (there is no other path to it), and denial is a prohibition.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+
+def _node(org: dict, role_key: str) -> dict:
+    return next(a for a in org["agents"] if a["role"]["key"] == role_key)
+
+
+def _h(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ------------------------------------------------------------------ RepoManager (unit)
+def test_repo_manager_lifecycle(tmp_path):
+    from canopy_server.repos import RepoError, RepoManager
+
+    mgr = RepoManager(tmp_path / "repos")
+    repo = mgr.ensure_repo("org1")
+    assert (repo / ".git").exists() and (repo / "app" / "main.py").exists()
+    assert mgr.ensure_repo("org1") == repo  # idempotent
+
+    wt = mgr.materialize_worktree("org1", "as_1")
+    assert wt["branch"] == "canopy/as_1"
+    path = Path(wt["path"])
+    assert (path / "app" / "main.py").exists()
+    assert mgr.materialize_worktree("org1", "as_1")["branch"] == wt["branch"]  # idempotent
+
+    # Work happens in the worktree; the PR pins exactly what exists on disk.
+    (path / "app" / "export.py").write_text("CSV = 'soon'\n", encoding="utf-8")
+    pr = mgr.assemble_pr("org1", "as_1", test_output="9 passed")
+    assert pr["branch"] == "canopy/as_1" and pr["baseSha"] != pr["headSha"]
+    assert "app/export.py" in pr["diff"] and pr["testOutput"] == "9 passed"
+
+    ro = mgr.readonly_checkout("org1", pr["headSha"], tag="qa_1")
+    assert (Path(ro["path"]) / "app" / "export.py").exists()
+    assert ro["sha"] == pr["headSha"]
+
+    merged = mgr.merge("org1", "canopy/as_1")
+    assert merged["mergedSha"]
+    assert (repo / "app" / "export.py").exists()  # main advanced under governance
+
+    with pytest.raises(RepoError, match="non-canopy"):
+        mgr.merge("org1", "main")
+    with pytest.raises(RepoError, match="no worktree"):
+        mgr.assemble_pr("org1", "as_missing")
+
+
+# --------------------------------------------------------------- dp surface + grants
+@pytest.fixture()
+def pod(client, make_org, mint_session):
+    from canopy_server.deps import get_engine
+    from test_cli_runtime import _seed_charter
+
+    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead, be, qa = (_node(org, k) for k in
+                    ("engineering-lead", "backend-engineer", "qa-engineer"))
+    s_lead = mint_session(org["id"], node_id=lead["id"])
+    s_be = mint_session(org["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
+    s_qa = mint_session(org["id"], node_id=qa["id"], actuation_id=s_lead["actuationId"])
+    for node in (lead, be, qa):
+        _seed_charter(org, s_lead["actuationId"], node["id"])
+    eng = get_engine()
+    root = eng.submit_intent(org["id"], s_lead["actuationId"],
+                             "Add CSV export; all tests must pass",
+                             target_node=lead["id"]).assignment
+    eng.mark_intake_complete(root.id)
+    eng.declare_plan(root.id, [{"title": "decompose"}])
+    be_a = eng.delegate(root.id, be["id"], "implement CSV", contract_type="PullRequest")
+    qa_a = eng.delegate(root.id, qa["id"], "verify", contract_type="TestReport",
+                        depends_on=[{"assignmentId": be_a.id}])
+    gate = eng.finish_turn(root.id)
+    eng.resolve_gate(gate.id, action="approve")
+    return {"org": org, "engine": eng, "root": root, "be_a": be_a, "qa_a": qa_a,
+            "s_lead": s_lead, "s_be": s_be, "s_qa": s_qa}
+
+
+def test_engineer_worktree_pr_and_qa_checkout_flow(client, pod):
+    from canopy_server.deps import get_engine
+
+    eng = pod["engine"]
+    be_a = pod["be_a"]
+    eng.mark_intake_complete(be_a.id)
+    eng.declare_plan(be_a.id, [{"title": "implement"}])
+
+    # Engineer takes the rw worktree (code.repo.write) and does the work.
+    wt = client.post("/api/dp/repo/checkout", headers=_h(pod["s_be"]["token"]),
+                     json={"assignmentId": be_a.id}).json()
+    assert wt["branch"] == f"canopy/{be_a.id}"
+    Path(wt["path"], "app", "export.py").write_text("CSV = 'v1'\n", encoding="utf-8")
+
+    pr_resp = client.post("/api/dp/repo/pr", headers=_h(pod["s_be"]["token"]),
+                          json={"assignmentId": be_a.id, "testOutput": "unit: 9 passed"})
+    assert pr_resp.status_code == 200, pr_resp.text
+    ref, pr = pr_resp.json()["ref"], pr_resp.json()["pr"]
+    assert "app/export.py" in pr["diff"]
+
+    # finish citing the PR ref resolves QA's verify dependency (E2) with the ref granted.
+    eng.finish(be_a.id, artifact_refs=[ref], summary="PR v1")
+    qa_a = eng.store.get_assignment(pod["qa_a"].id)
+    assert qa_a.state == "briefed"
+    eng.mark_intake_complete(qa_a.id)
+
+    # QA fetches the PR artifact (brief-granted), then checks out the submitted head ro.
+    got = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(pod["s_qa"]["token"]))
+    assert got.status_code == 200
+    ro = client.post("/api/dp/repo/checkout", headers=_h(pod["s_qa"]["token"]),
+                     json={"assignmentId": qa_a.id, "ref": pr["headSha"]}).json()
+    assert Path(ro["path"], "app", "export.py").exists()
+    assert ro["sha"] == pr["headSha"]
+
+    # Adversarial: QA has no code.repo.write — a rw worktree is refused AND audited.
+    steal = client.post("/api/dp/repo/checkout", headers=_h(pod["s_qa"]["token"]),
+                        json={"assignmentId": qa_a.id})
+    assert steal.status_code == 403
+    assert steal.json()["error"]["code"] == "GRANT_DENIED"
+    events = get_engine().store.list_tool_events(pod["s_qa"]["actuationId"],
+                                                 pod["s_qa"]["nodeId"])
+    assert events[-1]["outcome"] == "denied" and events[-1]["tool"] == "repo_checkout"
+
+
+def test_governed_merge_needs_the_gate(client, pod):
+    """The merge executor is reachable ONLY through a resolved ApprovalGate; approval runs it
+    and the attestation links the gate; denial is a prohibition."""
+    from canopy_server.deps import get_repos
+
+    eng = pod["engine"]
+    be_a, root = pod["be_a"], pod["root"]
+    eng.mark_intake_complete(be_a.id)
+    eng.declare_plan(be_a.id, [{"title": "implement"}])
+    wt = client.post("/api/dp/repo/checkout", headers=_h(pod["s_be"]["token"]),
+                     json={"assignmentId": be_a.id}).json()
+    Path(wt["path"], "app", "export.py").write_text("CSV = 'v1'\n", encoding="utf-8")
+    pr = client.post("/api/dp/repo/pr", headers=_h(pod["s_be"]["token"]),
+                     json={"assignmentId": be_a.id}).json()["pr"]
+
+    # The engineer cannot even ask for a merge (no repo.merge grant).
+    r = client.post("/api/dp/repo/merge-request", headers=_h(pod["s_be"]["token"]),
+                    json={"assignmentId": be_a.id, "branch": pr["branch"]})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "GRANT_DENIED"
+
+    # The lead requests it — a governed action: gate opens, nothing merges yet.
+    r = client.post("/api/dp/repo/merge-request", headers=_h(pod["s_lead"]["token"]),
+                    json={"assignmentId": root.id, "branch": pr["branch"]})
+    assert r.status_code == 200, r.text
+    gate = r.json()
+    assert gate["kind"] == "approval" and gate["payload"]["governedAction"] == "repo-merge"
+    repo = get_repos().repo_path(pod["org"]["id"])
+    assert not (repo / "app" / "export.py").exists()  # main untouched pre-approval
+
+    # Operator approves: the executor merges and the attestation links the gate.
+    rr = client.post(f"/api/gates/{gate['id']}/resolve", json={"action": "approve"})
+    assert rr.status_code == 200, rr.text
+    resolution = rr.json()["resolution"]
+    assert resolution["executed"] == "repo-merge"
+    assert resolution["attestation"]["gateId"] == gate["id"]
+    assert resolution["result"]["mergedSha"]
+    assert (repo / "app" / "export.py").exists()  # consented, then done
+    # The lead is STILL gated — on its await gate (children outstanding), not the resolved
+    # approval gate: resolving one gate never tramples another's suspension.
+    assert eng.store.get_assignment(root.id).state == "gated"
+    awaits = [g for g in eng.store.list_gates(assignment_id=root.id, state="open")
+              if g.payload.get("await")]
+    assert len(awaits) == 1
+
+
+def test_governed_merge_denial_is_a_prohibition(client, pod):
+    from canopy_server.deps import get_repos
+
+    eng, root = pod["engine"], pod["root"]
+    be_a = pod["be_a"]
+    eng.mark_intake_complete(be_a.id)
+    eng.declare_plan(be_a.id, [{"title": "implement"}])
+    wt = client.post("/api/dp/repo/checkout", headers=_h(pod["s_be"]["token"]),
+                     json={"assignmentId": be_a.id}).json()
+    Path(wt["path"], "app", "export.py").write_text("CSV = 'v1'\n", encoding="utf-8")
+    pr = client.post("/api/dp/repo/pr", headers=_h(pod["s_be"]["token"]),
+                     json={"assignmentId": be_a.id}).json()["pr"]
+
+    gate = client.post("/api/dp/repo/merge-request", headers=_h(pod["s_lead"]["token"]),
+                       json={"assignmentId": root.id, "branch": pr["branch"]}).json()
+    rr = client.post(f"/api/gates/{gate['id']}/resolve",
+                     json={"action": "deny", "note": "not until QA is green"})
+    assert rr.status_code == 200
+    repo = get_repos().repo_path(pod["org"]["id"])
+    assert not (repo / "app" / "export.py").exists()  # nothing merged
+    g = eng.store.get_gate(gate["id"])
+    assert g.state == "resolved" and g.resolution["action"] == "deny"  # a prohibition
+
+
+def test_mcp_repo_tools_are_grant_filtered(client, pod):
+    def tools_for(session):
+        r = client.post("/api/dp/mcp", headers=_h(session["token"]),
+                        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        return {t["name"] for t in r.json()["result"]["tools"]}
+
+    be_tools = tools_for(pod["s_be"])
+    qa_tools = tools_for(pod["s_qa"])
+    lead_tools = tools_for(pod["s_lead"])
+    assert {"repo_checkout", "repo_pr"} <= be_tools and "repo_merge_request" not in be_tools
+    assert "repo_checkout" in qa_tools and "repo_pr" not in qa_tools  # ro only
+    assert "repo_merge_request" in lead_tools and "repo_pr" not in lead_tools
+
+    # Server-side re-check: QA calling repo_pr is denied and audited.
+    from canopy_server.deps import get_work_store
+
+    r = client.post("/api/dp/mcp", headers=_h(pod["s_qa"]["token"]),
+                    json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                          "params": {"name": "repo_pr", "arguments": {}}})
+    assert "error" in r.json()
+    events = get_work_store().list_tool_events(pod["s_qa"]["actuationId"],
+                                               pod["s_qa"]["nodeId"])
+    assert events[-1]["tool"] == "repo_pr" and events[-1]["outcome"] == "denied"
+
+
+def test_pr_artifact_content_round_trips(client, pod):
+    """The stored PullRequest artifact is the §8 shape, fetchable by its producer."""
+    eng = pod["engine"]
+    be_a = pod["be_a"]
+    eng.mark_intake_complete(be_a.id)
+    eng.declare_plan(be_a.id, [{"title": "implement"}])
+    wt = client.post("/api/dp/repo/checkout", headers=_h(pod["s_be"]["token"]),
+                     json={"assignmentId": be_a.id}).json()
+    Path(wt["path"], "app", "export.py").write_text("CSV = 'v1'\n", encoding="utf-8")
+    resp = client.post("/api/dp/repo/pr", headers=_h(pod["s_be"]["token"]),
+                       json={"assignmentId": be_a.id, "testOutput": "unit: 9 passed"}).json()
+
+    import base64
+
+    got = client.get(f"/api/dp/artifacts?ref={resp['ref']}",
+                     headers=_h(pod["s_be"]["token"])).json()
+    body = json.loads(base64.b64decode(got["contentBase64"]))
+    assert set(body) == {"branch", "baseSha", "headSha", "diff", "testOutput"}
+    assert got["meta"]["type"] == "PullRequest"

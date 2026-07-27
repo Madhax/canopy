@@ -121,6 +121,10 @@ def new_note_id() -> str:
     return _prefixed("no")
 
 
+def new_tool_event_id() -> str:
+    return _prefixed("te")
+
+
 def new_artifact_id() -> str:
     return _prefixed("art")
 

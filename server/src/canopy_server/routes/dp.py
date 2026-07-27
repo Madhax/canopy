@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header
@@ -24,6 +25,7 @@ from ..deps import (
     get_engine,
     get_gateway,
     get_ledger,
+    get_repos,
     get_router,
     get_runtokens,
     get_work_store,
@@ -31,6 +33,7 @@ from ..deps import (
 from ..engine.engine import WorkError
 from ..gateway.base import CompletionRequest, Message, StepKind, ToolSpec
 from ..gateway.service import GatewayBudgetExhausted, GatewayError
+from ..repos import RepoError
 from ..router import ChannelForbidden
 
 router = APIRouter(prefix="/dp")
@@ -221,6 +224,9 @@ class EventBody(BaseModel):
     stepId: str | None = None
     sessionSpanId: str | None = None
     stageState: str | None = None
+    sessionRef: str | None = None  # 'session-ref' events: the CLI resume handle
+    settle: bool = False  # session steps: also land the SpendEvent (cli-runtime.md §5)
+    model: str = "claude-cli"
 
 
 class DependsOnIn(BaseModel):
@@ -399,7 +405,7 @@ def assignment_events(
                 body.assignmentId, input_tokens=body.inputTokens, output_tokens=body.outputTokens,
                 duration_ms=body.durationMs, kind=body.stepKind, stage_idx=body.stageIdx,
                 delta_kind=body.deltaKind, delta_ref=body.deltaRef, step_id=body.stepId,
-                session_span_id=body.sessionSpanId,
+                session_span_id=body.sessionSpanId, settle=body.settle, model=body.model,
             )
         elif body.kind == "stage-update":
             if body.stageIdx is None or body.stageState is None:
@@ -409,6 +415,12 @@ def assignment_events(
             # The manager's turn boundary after a fan-out (engine.md §2 9a/11a): closes any
             # proposed batch into its plan-review gate, or arms/re-arms the await gate.
             engine.finish_turn(body.assignmentId)
+        elif body.kind == "session-ref":
+            # The cli-claude adapter stores the stream-json init session id as the resume
+            # handle (cli-runtime.md §1) — a gated assignment is a suspended conversation.
+            if not body.sessionRef:
+                return _work_conflict(WorkError("session-ref needs sessionRef"))
+            work_store.set_session_ref(body.assignmentId, body.sessionRef)
         elif body.kind == "delivering":
             pass  # advisory; the deliverable is submitted via /dp/finish
         else:
@@ -502,6 +514,192 @@ def reject_deliverable(
     except WorkError as exc:
         return _work_conflict(exc)
     return a.model_dump()
+
+
+class RepoCheckoutBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str
+    ref: str | None = None  # None => rw worktree (code.repo.write); set => ro checkout at ref
+
+
+class RepoPrBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str
+    testOutput: str = ""
+
+
+class RepoMergeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str
+    branch: str
+
+
+def _effective_grants(rec, actuator, engine) -> set[str]:
+    """The caller's grant keys: from the compiled charter when actuated; pre-charter, from the
+    chart's role via the catalog (same fallback the MCP surface uses)."""
+    charter = actuator.get_charter(rec.actuationId, rec.nodeId)
+    if charter is not None:
+        return set(charter.get("toolGrants") or [])
+    try:
+        from ..catalog import get_catalog
+
+        org = engine.orgs.read(rec.orgId)
+        agent = next((a for a in org.agents if a.id == rec.nodeId), None)
+        role = next((r for r in get_catalog().roles if agent and r.key == agent.role.key), None)
+        return set(getattr(role, "toolGrants", []) or [])
+    except Exception:  # noqa: BLE001 - no chart => no grants
+        return set()
+
+
+def _grant_denied(work_store, rec, tool: str, need: str, assignment_id: str | None):
+    work_store.record_tool_event(
+        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        assignment_id=assignment_id, tool=tool, outcome="denied",
+        detail=f"missing grant {need}",
+    )
+    return JSONResponse(status_code=403, content={"error": {
+        "code": "GRANT_DENIED", "message": f"this action needs the {need!r} grant"}})
+
+
+@router.post("/repo/checkout")
+def repo_checkout(
+    body: RepoCheckoutBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+    actuator=Depends(get_actuator),
+    repos=Depends(get_repos),
+) -> Any:
+    """The repo executors' intake surface (mvp.md §2): rw materializes a worktree on a
+    canopy/<assignmentId> branch (code.repo.write); ro checks out a submitted head
+    (repo.read)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    a, err = _owned(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    grants = _effective_grants(rec, actuator, engine)
+    try:
+        if body.ref is None:
+            if "code.repo.write" not in grants:
+                return _grant_denied(work_store, rec, "repo_checkout", "code.repo.write", a.id)
+            result = repos.materialize_worktree(a.orgId, a.id)
+        else:
+            if "repo.read" not in grants:
+                return _grant_denied(work_store, rec, "repo_checkout", "repo.read", a.id)
+            result = repos.readonly_checkout(a.orgId, body.ref, tag=a.id)
+    except RepoError as exc:
+        return _work_conflict(WorkError(str(exc)))
+    work_store.record_tool_event(
+        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        assignment_id=a.id, tool="repo_checkout", outcome="ok",
+        detail=body.ref or "rw-worktree",
+    )
+    return result
+
+
+@router.post("/repo/pr")
+def repo_pr(
+    body: RepoPrBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+    actuator=Depends(get_actuator),
+    repos=Depends(get_repos),
+) -> Any:
+    """Assemble the PullRequest artifact from the worktree state (the engineer's finish)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    a, err = _owned(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    grants = _effective_grants(rec, actuator, engine)
+    if "code.repo.write" not in grants:
+        return _grant_denied(work_store, rec, "repo_pr", "code.repo.write", a.id)
+    try:
+        pr = repos.assemble_pr(a.orgId, a.id, test_output=body.testOutput)
+    except RepoError as exc:
+        return _work_conflict(WorkError(str(exc)))
+    meta = engine.put_artifact(
+        a.id, "pull-request", "PullRequest",
+        json.dumps(pr, indent=2).encode("utf-8"), filename="pull-request.json",
+    )
+    work_store.record_tool_event(
+        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        assignment_id=a.id, tool="repo_pr", outcome="ok", detail=pr["headSha"],
+    )
+    return {"ref": meta.ref, "pr": pr}
+
+
+@router.post("/repo/merge-request")
+def repo_merge_request(
+    body: RepoMergeBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+    actuator=Depends(get_actuator),
+) -> Any:
+    """The governed action (repo.merge grant): opens an ApprovalGate carrying the merge; the
+    operator's approval runs the merge executor and records the attestation (invariant 9)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    a, err = _owned(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    grants = _effective_grants(rec, actuator, engine)
+    if "repo.merge" not in grants:
+        return _grant_denied(work_store, rec, "repo_merge_request", "repo.merge", a.id)
+    try:
+        gate = engine.open_governed_action(
+            a.id, "repo-merge", {"orgId": a.orgId, "branch": body.branch},
+        )
+    except WorkError as exc:
+        return _work_conflict(exc)
+    work_store.record_tool_event(
+        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        assignment_id=a.id, tool="repo_merge_request", outcome="ok", detail=body.branch,
+    )
+    return gate.model_dump()
+
+
+@router.get("/reports/status")
+def reports_status(
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    ledger=Depends(get_ledger),
+) -> Any:
+    """R1: the caller's children under its current assignment — states, cursors, meters, open
+    gates (engine.md §5; the MCP `reports_status` tool serves the same view)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    if a is None:
+        return {"reports": []}
+    out = []
+    for c in work_store.list_children(a.id):
+        plan = work_store.get_plan(c.id)
+        cursor = next((s.idx for s in plan.stages if s.state == "active"), None) if plan else None
+        meter = ledger.get_meter(c.meterId) if c.meterId else None
+        gates = work_store.list_gates(assignment_id=c.id, state="open")
+        out.append({
+            "assignmentId": c.id, "nodeId": c.nodeId, "state": c.state,
+            "planCursor": cursor,
+            "meter": {"spent": meter.spent, "allowance": meter.allowance} if meter else None,
+            "openGates": [g.kind for g in gates],
+        })
+    return {"reports": out}
 
 
 @router.post("/gates")
@@ -616,6 +814,7 @@ def fetch_artifact(
     authorization: str | None = Header(default=None),
     runtokens=Depends(get_runtokens),
     artifacts=Depends(get_artifact_store),
+    work_store=Depends(get_work_store),
 ) -> Any:
     token = _bearer(authorization)
     rec = runtokens.resolve(token) if token else None
@@ -625,6 +824,13 @@ def fetch_artifact(
     if meta is None or meta.orgId != rec.orgId:
         return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                             "message": f"no artifact {ref}"}})
+    # Grant check (workspace.md §2, the E3 wall): a node reads its OWN outputs and refs
+    # explicitly granted via its briefs — nothing else, even inside its org.
+    if meta.nodeId != rec.nodeId and ref not in work_store.refs_granted_to(
+        rec.actuationId, rec.nodeId
+    ):
+        return JSONResponse(status_code=403, content={"error": {"code": "GRANT_DENIED",
+                            "message": f"ref {ref} is not in the caller's granted set"}})
     content = artifacts.read(ref)
     return {"meta": meta.model_dump(),
             "contentBase64": base64.b64encode(content).decode() if content else None}

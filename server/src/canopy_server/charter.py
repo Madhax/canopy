@@ -34,6 +34,8 @@ class Charter(BaseModel):
     reportNodeIds: list[str]
     salary: Salary
     workspaceLayout: WorkspaceLayout = WorkspaceLayout()
+    toolGrants: list[str] = []  # effective grant keys (envelope §3.2; role set in E3)
+    defaultRuntime: str = "loop"  # the role's runtime kind (envelope §4)
 
 
 def org_at_path(top: Organization, org_path: list[str]) -> Organization | None:
@@ -122,4 +124,6 @@ def compile_charter(
         managerNodeId=agent.managerId,
         reportNodeIds=report_ids,
         salary=agent.salary,
+        toolGrants=list(getattr(role, "toolGrants", []) or []),
+        defaultRuntime=getattr(role, "defaultRuntime", "loop") or "loop",
     )

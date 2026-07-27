@@ -6,7 +6,7 @@ import { OrganizationListPage } from "./pages/OrganizationListPage";
 import { NewOrganizationWizard } from "./pages/NewOrganizationWizard";
 import { EditorPage } from "./pages/EditorPage";
 import { ActuatePage } from "./pages/ActuatePage";
-import { ExecutePage } from "./pages/PhasePlaceholderPage";
+import { ExecutePage } from "./pages/ExecutePage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },

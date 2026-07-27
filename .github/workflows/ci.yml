@@ -29,6 +29,13 @@ jobs:
         run: uv run --project server ruff check server/src
       - name: Test
         run: uv run --project server pytest server/tests -q
+      # The E4 fixture can't rot (target-app.md §11): its unit suite runs green standalone.
+      # tests/acceptance is EXCLUDED by design — it pins the finished CSV feature and is red
+      # against the shipped app; it exists for QA's runtime use in the MVP demo.
+      - name: Target-app fixture
+        run: |
+          uv sync --project examples/target-app
+          uv run --project examples/target-app pytest examples/target-app/tests/unit -q
 
   ui:
     strategy:

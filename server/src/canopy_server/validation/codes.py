@@ -40,12 +40,20 @@ CODE_MESSAGES: dict[str, str] = {
     "PROFILE_DANGLING": "This node's binding points at a profile that no longer exists.",
     "SECRET_DANGLING": "This node's profile references an API key secret that no longer exists.",
     "PROFILE_UNREACHABLE": "The profile's provider could not be reached with its configured key.",
+    # Phase-3 (E3) actuation readiness — the cli-claude runtime + tool-grant checks.
+    "GRANT_UNKNOWN": "This node's role references a tool grant the catalog does not define.",
+    "CLI_UNAVAILABLE": "A node needs the cli-claude runtime but no working `claude` CLI was "
+                       "found on this machine.",
+    "TIER_UNSATISFIABLE": "This node holds execute-class grants that require a hardened sandbox "
+                          "tier; the subprocess tier is refused unless "
+                          "execution.allow_trusted_local is explicitly waived in canopy.toml.",
 }
 
 # Actuation-readiness codes are checked at actuate time, not against a document, so they have no
 # phase-1 document golden vectors — the coverage test excludes them.
 ACTUATION_CODES = frozenset(
-    {"BINDING_MISSING", "PROFILE_DANGLING", "SECRET_DANGLING", "PROFILE_UNREACHABLE"}
+    {"BINDING_MISSING", "PROFILE_DANGLING", "SECRET_DANGLING", "PROFILE_UNREACHABLE",
+     "GRANT_UNKNOWN", "CLI_UNAVAILABLE", "TIER_UNSATISFIABLE"}
 )
 
 

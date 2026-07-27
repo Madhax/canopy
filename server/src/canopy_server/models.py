@@ -86,6 +86,21 @@ class Point(Strict):
 # --------------------------------------------------------------------------- #
 # Catalog
 # --------------------------------------------------------------------------- #
+class ToolGrant(Strict):
+    """One capability the platform can hand to an agent (agent-envelope.md §3.1). E3 ships the
+    minimal vocabulary the MVP table needs; params are grant-level defaults, narrowable per
+    role/node, never widenable."""
+
+    key: str
+    title: str
+    riskClass: Literal["inert", "read", "write", "execute", "consequential"]
+    minSandboxTier: int = 0
+    executor: str = ""
+    credentialKind: str | None = None
+    governedActions: list[str] = Field(default_factory=list)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 class CatalogRole(Strict):
     key: str
     version: int = 1
@@ -95,6 +110,8 @@ class CatalogRole(Strict):
     responsibilities: list[Responsibility] = Field(default_factory=list)
     isManager: bool = False
     defaultSalary: Salary
+    toolGrants: list[str] = Field(default_factory=list)  # grant keys (envelope §3.2)
+    defaultRuntime: str = "loop"  # runtime kind driving this role's sessions (envelope §4)
 
 
 class FormationSlot(Strict):
@@ -137,6 +154,7 @@ class Catalog(Strict):
     organizationTypes: list[OrgType] = Field(default_factory=list)
     roles: list[CatalogRole] = Field(default_factory=list)
     formations: list[Formation] = Field(default_factory=list)
+    toolGrants: list[ToolGrant] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
