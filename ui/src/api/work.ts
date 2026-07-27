@@ -5,6 +5,7 @@ import { apiGet, apiSend } from "./client";
 
 export interface Assignment {
   id: string;
+  intentId: string;
   nodeId: string;
   parentId: string | null;
   state: string;
@@ -76,6 +77,30 @@ export interface Intent {
   rootAssignmentId: string | null;
 }
 
+export interface Step {
+  id: string;
+  assignmentId: string;
+  stageIdx: number | null;
+  kind: "coordination" | "production";
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  deltaKind: string;
+  deltaRef: string | null;
+  createdAt: string;
+}
+
+// One row of the spend rollup (operations.py); split columns present when split=true.
+export interface SpendRow {
+  key: string;
+  input_tokens: number;
+  output_tokens: number;
+  est_cost_micros: number;
+  steps: number;
+  coordination_tokens?: number;
+  production_tokens?: number;
+}
+
 export interface Notification {
   id: string;
   severity: "attention" | "warning" | "info";
@@ -110,6 +135,47 @@ export function useIntentPlan(intentId: string | null) {
   });
 }
 
+export function useSpend(
+  orgId: string | null,
+  groupBy: "node" | "intent" | "assignment",
+  split = true,
+) {
+  return useQuery({
+    queryKey: ["spend", orgId, groupBy, split],
+    queryFn: () =>
+      apiGet<{ rows: SpendRow[]; costsAreEstimates: boolean }>(
+        `/organizations/${orgId}/spend?groupBy=${groupBy}&split=${split}`,
+      ),
+    enabled: !!orgId,
+    refetchInterval: POLL,
+    select: (d) => d.rows,
+  });
+}
+
+export function useAssignments(orgId: string | null) {
+  return useQuery({
+    queryKey: ["assignments", orgId],
+    queryFn: () =>
+      apiGet<{ assignments: Assignment[] }>(`/organizations/${orgId}/assignments`),
+    enabled: !!orgId,
+    refetchInterval: POLL,
+    select: (d) => d.assignments,
+  });
+}
+
+// The money-end drill-down (operator-experience.md §6): one assignment's steps + meter.
+export function useAssignmentDetail(assignmentId: string | null) {
+  return useQuery({
+    queryKey: ["assignment-detail", assignmentId],
+    queryFn: () =>
+      apiGet<{ assignment: Assignment; steps: Step[]; meter: Meter | null }>(
+        `/assignments/${assignmentId}`,
+      ),
+    enabled: !!assignmentId,
+    refetchInterval: POLL,
+  });
+}
+
 export function useOperatorGates(orgId: string | null) {
   return useQuery({
     queryKey: ["gates", orgId],
@@ -137,7 +203,8 @@ export function useNotifications(orgId: string | null) {
 function useInvalidateWork(orgId: string | null) {
   const qc = useQueryClient();
   return () => {
-    for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments"]) {
+    for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments",
+                       "spend", "assignment-detail"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
     void orgId;
