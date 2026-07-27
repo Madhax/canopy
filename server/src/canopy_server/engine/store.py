@@ -22,6 +22,8 @@ from ..ids import (
     new_deliverable_id,
     new_gate_id,
     new_intent_id,
+    new_note_id,
+    new_notification_id,
     new_plan_id,
     new_step_id,
 )
@@ -33,6 +35,8 @@ from .models import (
     Gate,
     Intent,
     MemoryEntry,
+    Note,
+    Notification,
     Plan,
     PlanStage,
     Step,
@@ -105,6 +109,8 @@ CREATE TABLE IF NOT EXISTS work_plan_stage (
     sizing          TEXT NOT NULL DEFAULT 'medium',
     envelope_tokens INTEGER,
     state           TEXT NOT NULL DEFAULT 'pending',
+    started_at      TEXT,
+    completed_at    TEXT,
     PRIMARY KEY (plan_id, idx)
 );
 
@@ -145,6 +151,37 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     created_at TEXT NOT NULL,
     PRIMARY KEY (org_id, node_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS work_note (
+    id            TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL,
+    intent_id     TEXT NOT NULL,
+    assignment_id TEXT,
+    stage_idx     INTEGER,
+    author        TEXT NOT NULL,
+    text          TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    delivered_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_note_intent ON work_note (intent_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_note_undelivered ON work_note (assignment_id)
+    WHERE delivered_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS work_notification (
+    id          TEXT PRIMARY KEY,
+    org_id      TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    subject_ids TEXT NOT NULL DEFAULT '[]',
+    dedupe_key  TEXT,
+    text        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    read_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_notification_org ON work_notification (org_id, created_at);
+-- One live notification per fact (e.g. budget-warn per assignment fires once).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_notification_dedupe
+    ON work_notification (org_id, kind, dedupe_key) WHERE dedupe_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS work_gate (
     id            TEXT PRIMARY KEY,
@@ -231,6 +268,23 @@ def _stage(r) -> PlanStage:
     return PlanStage(
         planId=r["plan_id"], idx=r["idx"], title=r["title"], completion=r["completion"],
         sizing=r["sizing"], envelopeTokens=r["envelope_tokens"], state=r["state"],
+        startedAt=r["started_at"], completedAt=r["completed_at"],
+    )
+
+
+def _note(r) -> Note:
+    return Note(
+        id=r["id"], orgId=r["org_id"], intentId=r["intent_id"],
+        assignmentId=r["assignment_id"], stageIdx=r["stage_idx"], author=r["author"],
+        text=r["text"], createdAt=r["created_at"], deliveredAt=r["delivered_at"],
+    )
+
+
+def _notification(r) -> Notification:
+    return Notification(
+        id=r["id"], orgId=r["org_id"], severity=r["severity"], kind=r["kind"],
+        subjectIds=json.loads(r["subject_ids"]), text=r["text"], createdAt=r["created_at"],
+        readAt=r["read_at"],
     )
 
 
@@ -270,10 +324,23 @@ def _gate(r) -> Gate:
     )
 
 
+def _migrate_stage_timestamps(db: Db) -> None:
+    """E2b adds ``started_at``/``completed_at`` to work_plan_stage (amendment D-4). ALTER TABLE
+    ADD COLUMN is safe for nullable columns; run once for pre-E2b dev DBs."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_plan_stage)").fetchall()}
+    if not cols or "started_at" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute("ALTER TABLE work_plan_stage ADD COLUMN started_at TEXT")
+        conn.execute("ALTER TABLE work_plan_stage ADD COLUMN completed_at TEXT")
+
+
 class WorkStore:
     def __init__(self, db: Db):
         self.db = db
         _migrate_meter_nullable(db)
+        _migrate_stage_timestamps(db)
 
     # ----------------------------------------------------------------- intents
     def create_intent(
@@ -575,11 +642,27 @@ class WorkStore:
         )
 
     def set_stage_state(self, plan_id: str, idx: int, state: str) -> None:
+        """Move a stage; stamps ``started_at`` on the first 'active' and ``completed_at`` on
+        'done'/'dropped' (the plan timeline reads these — work-model.md §4)."""
+        ts = now_iso()
         with self.db.transaction() as conn:
-            conn.execute(
-                "UPDATE work_plan_stage SET state=? WHERE plan_id=? AND idx=?",
-                (state, plan_id, idx),
-            )
+            if state == "active":
+                conn.execute(
+                    "UPDATE work_plan_stage SET state=?, "
+                    "started_at=COALESCE(started_at, ?) WHERE plan_id=? AND idx=?",
+                    (state, ts, plan_id, idx),
+                )
+            elif state in ("done", "dropped"):
+                conn.execute(
+                    "UPDATE work_plan_stage SET state=?, started_at=COALESCE(started_at, ?), "
+                    "completed_at=? WHERE plan_id=? AND idx=?",
+                    (state, ts, ts, plan_id, idx),
+                )
+            else:
+                conn.execute(
+                    "UPDATE work_plan_stage SET state=? WHERE plan_id=? AND idx=?",
+                    (state, plan_id, idx),
+                )
 
     # ------------------------------------------------------------------- steps
     def add_step(
@@ -763,3 +846,107 @@ class WorkStore:
                 (state, json.dumps(resolution), resolved_by, now_iso(), gate_id),
             )
         return self.get_gate(gate_id)
+
+    # ------------------------------------------------------------------- notes
+    def create_note(
+        self, org_id: str, intent_id: str, text: str, *, assignment_id: str | None = None,
+        stage_idx: int | None = None, author: str = "operator",
+    ) -> Note:
+        nid = new_note_id()
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO work_note (id, org_id, intent_id, assignment_id, stage_idx, "
+                "author, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (nid, org_id, intent_id, assignment_id, stage_idx, author, text, ts),
+            )
+        return Note(
+            id=nid, orgId=org_id, intentId=intent_id, assignmentId=assignment_id,
+            stageIdx=stage_idx, author=author, text=text, createdAt=ts,
+        )
+
+    def list_notes(self, intent_id: str) -> list[Note]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_note WHERE intent_id=? ORDER BY created_at, id", (intent_id,)
+            ).fetchall()
+        return [_note(r) for r in rows]
+
+    def take_undelivered_notes(self, assignment_id: str) -> list[Note]:
+        """The assignment's undelivered notes, stamped ``delivered_at`` in the same transaction —
+        a note is injected exactly once (amendment D-5)."""
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_note WHERE assignment_id=? AND delivered_at IS NULL "
+                "ORDER BY created_at, id",
+                (assignment_id,),
+            ).fetchall()
+            if rows:
+                conn.execute(
+                    "UPDATE work_note SET delivered_at=? "
+                    "WHERE assignment_id=? AND delivered_at IS NULL",
+                    (ts, assignment_id),
+                )
+        notes = [_note(r) for r in rows]
+        for n in notes:
+            n.deliveredAt = ts
+        return notes
+
+    # ----------------------------------------------------------- notifications
+    def notify(
+        self, org_id: str, severity: str, kind: str, text: str, *,
+        subject_ids: list[str] | None = None, dedupe_key: str | None = None,
+    ) -> Notification | None:
+        """Insert a notification. With ``dedupe_key``, a duplicate of a live fact is dropped
+        (partial unique index) and None is returned — budget-warn per assignment fires once."""
+        nid = new_notification_id()
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO work_notification (id, org_id, severity, kind, "
+                "subject_ids, dedupe_key, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (nid, org_id, severity, kind, json.dumps(subject_ids or []), dedupe_key,
+                 text, ts),
+            )
+            if cur.rowcount == 0:
+                return None
+        return Notification(
+            id=nid, orgId=org_id, severity=severity, kind=kind, subjectIds=subject_ids or [],
+            text=text, createdAt=ts,
+        )
+
+    def list_notifications(
+        self, org_id: str, *, since: str | None = None, unread_only: bool = False,
+    ) -> list[Notification]:
+        clauses, params = ["org_id=?"], [org_id]
+        if since is not None:
+            clauses.append("created_at > ?")
+            params.append(since)
+        if unread_only:
+            clauses.append("read_at IS NULL")
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM work_notification WHERE {' AND '.join(clauses)} "  # noqa: S608
+                "ORDER BY created_at, id",
+                params,
+            ).fetchall()
+        return [_notification(r) for r in rows]
+
+    def mark_notifications_read(self, org_id: str, ids: list[str] | None = None) -> int:
+        """Mark the given notifications read (or all unread for the org). Returns the count."""
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            if ids:
+                placeholders = ",".join("?" for _ in ids)
+                cur = conn.execute(
+                    f"UPDATE work_notification SET read_at=? WHERE org_id=? "  # noqa: S608
+                    f"AND read_at IS NULL AND id IN ({placeholders})",
+                    (ts, org_id, *ids),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE work_notification SET read_at=? WHERE org_id=? AND read_at IS NULL",
+                    (ts, org_id),
+                )
+        return cur.rowcount

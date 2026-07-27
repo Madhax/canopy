@@ -247,6 +247,20 @@ class ReviewBody(BaseModel):
     revisedBrief: str | None = None  # reject only — triggers the rework-funding rule
 
 
+class GateOpenBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str
+    kind: str  # clarification | escalation
+    question: str
+    refs: list[str] = Field(default_factory=list)
+
+
+class PriorityBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignmentId: str  # the REPORT's assignment (R3: manager-set)
+    priority: int
+
+
 class PlanStageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str
@@ -311,13 +325,16 @@ def assignment_current(
     if a is None:
         return JSONResponse(content=None)  # nothing to do — the runtime idles
     brief = work_store.get_brief(a.id)
-    meter = ledger.get_meter(a.meterId)
+    meter = ledger.get_meter(a.meterId) if a.meterId else None
     return {
         "assignment": a.model_dump(),
         "brief": brief.model_dump() if brief else None,
         "contract": {"kind": a.contractKind, "type": a.contractType},
         "memory": [m.entry for m in work_store.get_memory(rec.orgId, rec.nodeId)],
         "meter": meter.model_dump() if meter else None,
+        # Undelivered notes, stamped delivered_at by this very read (amendment D-5) — advisory
+        # context for the next turn, never a suspension.
+        "notes": [n.model_dump() for n in work_store.take_undelivered_notes(a.id)],
     }
 
 
@@ -482,6 +499,58 @@ def reject_deliverable(
         return err
     try:
         a = engine.reject(body.assignmentId, body.note, revised_brief=body.revisedBrief)
+    except WorkError as exc:
+        return _work_conflict(exc)
+    return a.model_dump()
+
+
+@router.post("/gates")
+def open_gate(
+    body: GateOpenBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+) -> Any:
+    """Agent-side gate opening: clarification (intake feasibility failed) or escalation (asking
+    above the pay grade). Approval-request gates arrive with governed actions in E3."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    _a, err = _owned(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    try:
+        if body.kind == "clarification":
+            gate = engine.open_clarification(body.assignmentId, body.question)
+        elif body.kind == "escalation":
+            gate = engine.open_escalation(body.assignmentId, body.question, refs=body.refs)
+        else:
+            return _work_conflict(WorkError(f"unknown gate kind {body.kind!r}"))
+    except WorkError as exc:
+        return _work_conflict(exc)
+    return gate.model_dump()
+
+
+@router.post("/priority")
+def set_priority(
+    body: PriorityBody,
+    authorization: str | None = Header(default=None),
+    runtokens=Depends(get_runtokens),
+    work_store=Depends(get_work_store),
+    engine=Depends(get_engine),
+) -> Any:
+    """R3: a manager reprioritizes a report's assignment (higher first, FIFO within equal)."""
+    token = _bearer(authorization)
+    rec = runtokens.resolve(token) if token else None
+    if rec is None:
+        return _unauthorized()
+    _a, err = _reviewable(work_store, rec, body.assignmentId)
+    if err is not None:
+        return err
+    try:
+        a = engine.set_priority(body.assignmentId, body.priority)
     except WorkError as exc:
         return _work_conflict(exc)
     return a.model_dump()

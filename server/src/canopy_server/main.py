@@ -42,6 +42,19 @@ async def _reconciler_loop() -> None:
         await asyncio.sleep(15)
 
 
+async def _trigger_sweep_loop() -> None:
+    """Every 30 s, evaluate the stall triggers over executing assignments (work-model.md §6).
+    Budget warn/hard-stop ride each step report; this loop catches the quiet failures."""
+    while True:
+        try:
+            from .deps import get_engine
+
+            get_engine().sweep_triggers()
+        except Exception:  # noqa: BLE001 - the sweep must survive any single bad pass
+            pass
+        await asyncio.sleep(30)
+
+
 async def _forward_to_agent(endpoint_url: str, envelope) -> bool:
     import httpx
 
@@ -90,7 +103,11 @@ async def _delivery_loop() -> None:
 
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    tasks = [asyncio.create_task(_reconciler_loop()), asyncio.create_task(_delivery_loop())]
+    tasks = [
+        asyncio.create_task(_reconciler_loop()),
+        asyncio.create_task(_delivery_loop()),
+        asyncio.create_task(_trigger_sweep_loop()),
+    ]
     try:
         yield
     finally:
