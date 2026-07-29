@@ -153,6 +153,30 @@ def test_control_plane_restart_mid_intent(tmp_path, monkeypatch):
         assert c2.get(f"/api/assignments/{a['id']}").json()["assignment"]["state"] == "closed"
 
 
+def test_reconciler_heals_orphaned_actuation(client, make_org):
+    """An actuation whose org was deleted underneath it must fail itself on the next
+    reconcile pass — not raise forever and (pre-E6) starve every OTHER actuation's
+    reconciliation, which kept whole fleets dead after a control-plane restart."""
+    import asyncio
+
+    from canopy_server.deps import get_actuator
+    from canopy_server.ids import new_actuation_id
+
+    make_org(seed={"kind": "root", "roleKey": "engineering-lead"})  # ensures schema exists
+    orphan = new_actuation_id()
+    _seed_live_actuation(orphan, "org-deleted-long-ago")
+
+    actuator = get_actuator()
+    assert orphan in actuator.list_active_actuation_ids()
+    asyncio.run(actuator.reconcile_once(orphan))  # must not raise
+    assert orphan not in actuator.list_active_actuation_ids()
+
+    from canopy_server.deps import get_activity
+
+    kinds = [e["kind"] for e in get_activity().list()]
+    assert "actuation.orphaned" in kinds
+
+
 def test_reactuation_continues_open_work(client, make_org, mint_session):
     """Deactuate with an assignment mid-flight, re-actuate, and the node picks up exactly
     where it left off: same assignment, same meter, same money — and durable memory written

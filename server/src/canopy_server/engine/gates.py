@@ -59,6 +59,19 @@ class GateService:
             self.store.set_assignment_state(assignment.id, "gated")
             self._log("gate.opened", assignment.orgId, [assignment.id, gate.id],
                       {"kind": kind, "reason": reason})
+            # The suspend races the resolution sweep (E6): a watched upstream can deliver
+            # between the gate insert above and this state flip. The sweep resolves the gate
+            # but — correctly — refuses to restore an assignment that isn't gated yet, so
+            # without this re-check the assignment would sleep forever on a resolved gate.
+            fresh = self.store.get_gate(gate.id)
+            if fresh is not None and fresh.state != "open":
+                a = self.store.get_assignment(assignment.id)
+                if a is not None and a.state == "gated":
+                    self.store.set_assignment_state(
+                        a.id, body.get("priorState") or assignment.state
+                    )
+                    if self.on_resume is not None:
+                        self.on_resume(self.store.get_assignment(a.id))
         return gate
 
     # -------------------------------------------------------------- resolve

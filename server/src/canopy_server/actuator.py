@@ -43,6 +43,7 @@ from .router import MessageRouter
 from .runtokens import RunTokenStore
 from .sandbox.base import SandboxHandle, SandboxProvider, SandboxSpec
 from .secretstore import SecretStore
+from .store import StoreError
 from .validation import validate_organization
 from .validation.codes import ValidationIssue, issue
 
@@ -407,7 +408,15 @@ class Actuator:
         threshold = (datetime.now(UTC) - timedelta(seconds=_STALE_SECONDS)).isoformat().replace(
             "+00:00", "Z"
         )
-        org = self.store.read(row["org_id"])
+        try:
+            org = self.store.read(row["org_id"])
+        except StoreError:
+            # Orphaned actuation (its org was deleted underneath it) — fail it so it stops
+            # occupying every future reconciler pass (E6: one zombie must not starve the fleet).
+            self._set_state(actuation_id, "failed")
+            self.activity.log("system", "actuation.orphaned", org_id=row["org_id"],
+                              subject_ids=[actuation_id])
+            return
         agents_by_id = {a.id: (p, a) for p, a in enumerate_nodes(org)}
         recovered_any = False
         for stale in self.directory.stale(actuation_id, threshold):

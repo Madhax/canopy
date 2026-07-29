@@ -322,6 +322,42 @@ def test_finish_turn_sweeps_deliveries_that_arrived_mid_review(pod):
     assert eng.store.get_assignment(root.id).state == "executing"
 
 
+def test_await_arm_races_child_delivery(pod, monkeypatch):
+    """The E6 wake-loss race, deterministically: a child's finish-sweep runs BETWEEN the
+    await-gate insert and the manager's suspend. The sweep resolves the gate but (correctly)
+    refuses to restore a not-yet-gated manager — the open path must then notice it suspended
+    on an already-resolved gate and undo it, or the manager sleeps forever."""
+    eng, root = pod["engine"], pod["root"]
+    store, svc = eng.store, eng.gates
+    be = eng.delegate(root.id, pod["backend"]["id"], "implement")
+    gate = eng.finish_turn(root.id)
+    eng.resolve_gate(gate.id, action="approve")
+
+    # First wake, consumed normally: root back to executing, no open gate, child delivering.
+    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    assert store.get_assignment(root.id).state == "executing"
+
+    # Now the manager re-arms — and the child's sweep fires inside the race window.
+    orig_create = store.create_gate
+    fired = []
+    def racing_create(assignment_id, kind, **kw):
+        g = orig_create(assignment_id, kind, **kw)
+        if kw.get("payload", {}).get("await") and not fired:
+            fired.append(True)
+            # T2 wins the window: the manager is still 'executing', so this resolves the
+            # freshly inserted gate without restoring anyone.
+            svc.sweep(store.get_assignment(be.id), "delivered", ["org://acme/be/pr@1"])
+            assert store.get_gate(g.id).state == "resolved"
+        return g
+
+    monkeypatch.setattr(store, "create_gate", racing_create)
+    eng.finish_turn(root.id)
+    assert fired  # the race actually interleaved
+    a = store.get_assignment(root.id)
+    assert a.state == "executing"  # NOT gated-forever on a resolved gate
+    assert svc.open_gate_for(root.id, "dependency") is None
+
+
 # ------------------------------------------------------------------- the demo, as a fixture
 def test_mvp_demo_ordering(pod):
     """mvp.md §3.7–3.9 as an executable fixture: submit → verify-dep resolves → QA fails →

@@ -31,16 +31,24 @@ from .routes import work as work_routes
 
 
 async def _reconciler_loop() -> None:
-    """Every 15 s, restart nodes whose heartbeat went stale (control-plane.md §2)."""
+    """Every 15 s, restart nodes whose heartbeat went stale (control-plane.md §2).
+
+    The try sits INSIDE the for (E6): one broken actuation must not starve the rest of the
+    fleet's reconciliation — that failure mode kept every agent dead after a control-plane
+    restart over a DB with a single orphaned actuation."""
     while True:
         try:
             from .deps import get_actuator
 
             actuator = get_actuator()
-            for actuation_id in actuator.list_active_actuation_ids():
-                await actuator.reconcile_once(actuation_id)
+            actuation_ids = actuator.list_active_actuation_ids()
         except Exception:  # noqa: BLE001 - the reconciler must survive any single bad pass
-            pass
+            actuation_ids, actuator = [], None
+        for actuation_id in actuation_ids:
+            try:
+                await actuator.reconcile_once(actuation_id)
+            except Exception:  # noqa: BLE001 - isolate per actuation
+                pass
         await asyncio.sleep(15)
 
 
@@ -83,7 +91,11 @@ async def _delivery_loop() -> None:
             actuator, directory, bus, activity = (
                 get_actuator(), get_directory(), get_bus(), get_activity()
             )
-            for actuation_id in actuator.list_active_actuation_ids():
+            actuation_ids = actuator.list_active_actuation_ids()
+        except Exception:  # noqa: BLE001 - a delivery hiccup must not kill the worker
+            actuation_ids = []
+        for actuation_id in actuation_ids:
+            try:  # isolate per actuation (E6): one bad fleet member must not block deliveries
                 for agent in directory.list(actuation_id):
                     if agent.status != "idle" or not agent.endpointUrl:
                         continue
@@ -98,8 +110,8 @@ async def _delivery_loop() -> None:
                                     "system", "router.dead_letter", org_id=None,
                                     subject_ids=[actuation_id, agent.nodeId, delivery.id],
                                 )
-        except Exception:  # noqa: BLE001 - a delivery hiccup must not kill the worker
-            pass
+            except Exception:  # noqa: BLE001
+                pass
         await asyncio.sleep(1)
 
 

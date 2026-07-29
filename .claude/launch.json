@@ -23,7 +23,26 @@
         "--port",
         "8702"
       ],
-      "port": 8702
+      "port": 8702,
+      "env": {
+        "CANOPY_PORT": "8702"
+      }
+    },
+    {
+      "name": "canopy-server-8700",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "server",
+        "uvicorn",
+        "canopy_server.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8700"
+      ],
+      "port": 8700
     }
   ]
 }
