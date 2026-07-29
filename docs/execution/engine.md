@@ -168,7 +168,7 @@ CREATE TABLE work_notification (
 
 - **Crash/restart of the control plane**: work state is SQLite; the trigger sweep and cadence scheduler are stateless loops; in-flight session turns re-report idempotently (step ids dedupe in the ledger; assignment events carry monotonic seq).
 - **Agent death mid-assignment**: reconciler restarts the sandbox (A2, unchanged); the adapter finds `assignment/current` still `executing` with a `session_ref` and resumes the session; if the session is unresumable it restarts from the last engine-known state (brief + plan + produced refs survive upstream — only unproduced scratch is lost).
-- **Deactuation with open work**: assignments freeze as-is (`paused` en masse); re-actuation resumes queues. Intents survive actuations — they belong to the org, not the actuation.
+- **Deactuation with open work**: assignments freeze as-is (`paused` en masse); re-actuation resumes queues. Intents survive actuations — they belong to the org, not the actuation. *(E6 mechanism: the data plane's `assignment/current`, ownership checks, and the artifact grant wall are keyed by **org + node** — the position — never the actuation instance, so a re-actuated node picks up its open assignment on its original meter; the row's `actuation_id` stays as provenance. Same doctrine as `agent_memory`.)*
 - **Dead letters** (bus DLQ) surface as `attention` notifications naming the assignment.
 
 ## 9. What deliberately does not exist

@@ -71,7 +71,7 @@ def test_proposed_drafts_hold_no_meter_and_publish_nothing(pod):
     assert be.state == "proposed" and qa.state == "proposed"
     assert be.meterId is None and qa.meterId is None  # unfunded drafts (work-model §2)
     # Nothing is published: the node's runtime cannot see a proposed draft.
-    assert eng.store.current_assignment(root.actuationId, pod["backend"]["id"]) is None
+    assert eng.store.current_assignment(root.orgId, pod["backend"]["id"]) is None
 
     gate = eng.finish_turn(root.id)
     assert gate is not None and gate.kind == "approval" and gate.owner == "operator"
@@ -152,7 +152,7 @@ def test_direct_delegation_dispatches_immediately(pod, monkeypatch):
     be = eng.delegate(root.id, pod["backend"]["id"], "implement")
     assert be.state == "briefed" and be.meterId is not None
     # Published: the node's runtime sees it.
-    assert eng.store.current_assignment(root.actuationId, pod["backend"]["id"]).id == be.id
+    assert eng.store.current_assignment(root.orgId, pod["backend"]["id"]).id == be.id
 
 
 # ------------------------------------------------------------------- dependency thresholds

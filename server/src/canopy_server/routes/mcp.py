@@ -42,14 +42,14 @@ PROTOCOL_VERSION = "2024-11-05"
 # Handlers receive (rec, engine, work_store, args) and return a JSON-able dict.
 # --------------------------------------------------------------------------- #
 def _current(work_store, rec):
-    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    a = work_store.current_assignment(rec.orgId, rec.nodeId)
     if a is None:
         raise WorkError("no active assignment for this node")
     return a
 
 
 def _t_get_assignment(rec, engine, work_store, args) -> dict:
-    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    a = work_store.current_assignment(rec.orgId, rec.nodeId)
     if a is None:
         return {"assignment": None}
     brief = work_store.get_brief(a.id)
@@ -93,7 +93,7 @@ def _t_fetch_artifact(rec, engine, work_store, args) -> dict:
     if meta is None or meta.orgId != rec.orgId:
         raise WorkError(f"no artifact {ref}")
     if meta.nodeId != rec.nodeId and ref not in work_store.refs_granted_to(
-        rec.actuationId, rec.nodeId
+        rec.orgId, rec.nodeId
     ):
         raise _GrantDenied(f"ref {ref} is not in the caller's granted set")
     content = engine.artifacts.read(ref)
@@ -415,7 +415,7 @@ def mcp_endpoint(
     if method == "tools/call":
         name = params.get("name", "")
         args = params.get("arguments") or {}
-        cur = work_store.current_assignment(rec.actuationId, rec.nodeId)
+        cur = work_store.current_assignment(rec.orgId, rec.nodeId)
         aid = cur.id if cur else None
         tool = TOOLS.get(name)
         # Layer 2, the guarantee: re-check per call. Unknown tools, manager tools from

@@ -310,7 +310,9 @@ def _owned(work_store, rec, assignment_id: str):
     if a is None:
         return None, JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                                   "message": f"no assignment {assignment_id}"}})
-    if a.actuationId != rec.actuationId or a.nodeId != rec.nodeId:
+    # Ownership = the position (org + node), not the actuation instance — a re-actuated node
+    # keeps working its open assignment (E6; provenance stays on the row's actuation_id).
+    if a.orgId != rec.orgId or a.nodeId != rec.nodeId:
         return None, JSONResponse(status_code=403, content={"error": {"code": "NOT_YOUR_ASSIGNMENT",
                                   "message": "assignment belongs to another node"}})
     return a, None
@@ -327,7 +329,7 @@ def assignment_current(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
-    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    a = work_store.current_assignment(rec.orgId, rec.nodeId)
     if a is None:
         return JSONResponse(content=None)  # nothing to do — the runtime idles
     brief = work_store.get_brief(a.id)
@@ -355,7 +357,7 @@ def current_meter(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
-    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    a = work_store.current_assignment(rec.orgId, rec.nodeId)
     meter = ledger.get_meter(a.meterId) if a else None
     return JSONResponse(content=meter.model_dump() if meter else None)
 
@@ -466,7 +468,7 @@ def _reviewable(work_store, rec, assignment_id: str):
         return None, JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                                   "message": f"no assignment {assignment_id}"}})
     parent = work_store.get_assignment(a.parentId) if a.parentId else None
-    if parent is None or parent.actuationId != rec.actuationId or parent.nodeId != rec.nodeId:
+    if parent is None or parent.orgId != rec.orgId or parent.nodeId != rec.nodeId:
         return None, JSONResponse(status_code=403, content={"error": {"code": "NOT_YOUR_REPORT",
                                   "message": "assignment is not a report's work under the caller"}})
     return a, None
@@ -684,7 +686,7 @@ def reports_status(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
-    a = work_store.current_assignment(rec.actuationId, rec.nodeId)
+    a = work_store.current_assignment(rec.orgId, rec.nodeId)
     if a is None:
         return {"reports": []}
     out = []
@@ -827,7 +829,7 @@ def fetch_artifact(
     # Grant check (workspace.md §2, the E3 wall): a node reads its OWN outputs and refs
     # explicitly granted via its briefs — nothing else, even inside its org.
     if meta.nodeId != rec.nodeId and ref not in work_store.refs_granted_to(
-        rec.actuationId, rec.nodeId
+        rec.orgId, rec.nodeId
     ):
         return JSONResponse(status_code=403, content={"error": {"code": "GRANT_DENIED",
                             "message": f"ref {ref} is not in the caller's granted set"}})

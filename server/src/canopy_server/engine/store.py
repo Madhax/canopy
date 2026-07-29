@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     closed_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_assignment_node   ON work_assignment (actuation_id, node_id, state);
+-- Work belongs to the position (org+node), like agent_memory — the E6 re-actuation lookups.
+CREATE INDEX IF NOT EXISTS ix_assignment_org_node ON work_assignment (org_id, node_id, state);
 CREATE INDEX IF NOT EXISTS ix_assignment_intent ON work_assignment (intent_id);
 
 CREATE TABLE IF NOT EXISTS work_brief (
@@ -435,32 +437,38 @@ class WorkStore:
             ).fetchone()
         return _assignment(r) if r else None
 
-    def current_assignment(self, actuation_id: str, node_id: str) -> Assignment | None:
+    def current_assignment(self, org_id: str, node_id: str) -> Assignment | None:
         """The node's live assignment (most recent non-terminal). One `executing` per node is a
         domain rule, so at most one active row is expected — newest wins if a race leaves two.
-        ``proposed`` drafts are excluded: nothing is published to the node until dispatch."""
+        ``proposed`` drafts are excluded: nothing is published to the node until dispatch.
+
+        Keyed by **org + node** (the position), not the actuation instance (E6): open work
+        survives deactuate → re-actuate exactly like ``agent_memory`` — a fresh actuation
+        doesn't orphan the org's in-flight assignments. ``actuation_id`` on the row stays as
+        provenance (which actuation created it)."""
         hidden = sorted(ASSIGNMENT_TERMINAL_STATES | {"proposed"})
         placeholders = ",".join("?" for _ in hidden)
         with self.db.connect() as conn:
             r = conn.execute(
-                "SELECT * FROM work_assignment WHERE actuation_id=? AND node_id=? "
+                "SELECT * FROM work_assignment WHERE org_id=? AND node_id=? "
                 f"AND state NOT IN ({placeholders}) "  # noqa: S608 - fixed placeholders only
                 "ORDER BY created_at DESC LIMIT 1",
-                (actuation_id, node_id, *hidden),
+                (org_id, node_id, *hidden),
             ).fetchone()
         return _assignment(r) if r else None
 
-    def refs_granted_to(self, actuation_id: str, node_id: str) -> set[str]:
+    def refs_granted_to(self, org_id: str, node_id: str) -> set[str]:
         """Every artifact ref granted to the node via any brief version of any of its
-        assignments in this actuation — the grant set the artifact fetch checks against
-        (workspace.md §2: a manager can grant only refs it can itself read, so brief refs are
-        transitively legitimate)."""
+        assignments — the grant set the artifact fetch checks against (workspace.md §2: a
+        manager can grant only refs it can itself read, so brief refs are transitively
+        legitimate). Org+node keyed like ``current_assignment``: grants ride the position's
+        briefs and survive re-actuation."""
         with self.db.connect() as conn:
             rows = conn.execute(
                 "SELECT b.artifact_refs FROM work_brief b "
                 "JOIN work_assignment a ON a.id = b.assignment_id "
-                "WHERE a.actuation_id=? AND a.node_id=?",
-                (actuation_id, node_id),
+                "WHERE a.org_id=? AND a.node_id=?",
+                (org_id, node_id),
             ).fetchall()
         refs: set[str] = set()
         for r in rows:

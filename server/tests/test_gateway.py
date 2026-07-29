@@ -66,8 +66,16 @@ def test_step_is_tagged_coordination(client, make_org, mint_session):
 
     from canopy_server.deps import get_db
 
+    # E6: gateway_step is retired — work_step is THE Step record (runtimes report it with the
+    # gateway's step id) and the ledger's SpendEvent is the money audit. Only the response
+    # carries the tag at the gateway layer now.
     with get_db().connect() as conn:
-        row = conn.execute(
-            "SELECT kind FROM gateway_step WHERE id = ?", (r.json()["stepId"],)
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'gateway_step'"
         ).fetchone()
-    assert row["kind"] == "coordination"
+        spend = conn.execute(
+            "SELECT input_tokens FROM ledger_spend_event WHERE step_id = ?",
+            (r.json()["stepId"],),
+        ).fetchone()
+    assert table is None
+    assert spend is not None

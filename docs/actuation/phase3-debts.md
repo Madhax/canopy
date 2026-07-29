@@ -21,6 +21,25 @@ Each row: what A1–A6 ship, the Phase-3 target, and what keeps the seam honest.
 | D8 | **Chart edit while live rejected** (HTTP 409). | Structural edits reconcile live (paired with D7). | The 409 is a policy check, not a data shape — lifting it doesn't migrate anything. |
 | D9 | **A3 delivers over plain HTTP** `POST /inbox` (push) with a minimal Agent Card; agents *record* deliveries, no task lifecycle yet. | Full `a2a-sdk` task server (working / input-required / completed) + the step loop that acts on deliveries (A4). | A2A is confined to one adapter seam (risk AR-4): the router speaks envelopes, the agent's receive endpoint swaps for the a2a-sdk server without touching the loop. |
 
+## Status — E6 close-out (Phase 3, execution milestones E1–E6)
+
+| # | Status | Where it closed |
+|---|---|---|
+| D1 | **Closed** | E1: assignment-bound meters (engine funds one per Assignment; the gateway's injected `meter_resolver` maps taskId → the assignment's meter). E2a added the rework-funding rule (parent-meter transfer on rejection). |
+| D2 | **Closed** | E1: `gated` added to the directory status enum; existing members untouched. |
+| D3 | **Closed** | E2b: real ClarificationGate (`revise-brief` re-intakes on a bumped brief version); rework funding follows the brief version (E2a). |
+| D4 | **Closed** | E2a/E2b: all five gate kinds (clarification / dependency / approval / escalation / intervention) with owners, one resolution endpoint, idempotent opens. |
+| D5 | **Closed** (memory) / **narrowed** (workspace) | Durable memory: written at close (E1), inspect/reset via the inspector (E5), survives re-actuation (E6 vector). Workspace: the scratch dir stays per-node-per-actuation in MVP-1 — per-assignment isolation where it matters is the E4 repo worktree (one per assignment); a per-assignment scratch lifetime remains open, tracked here. |
+| D6 | **Closed** | E1: `work_step.delta_kind` ships the closed delta enum (artifact / tool-effect / progress / message / none). |
+| D7 | Open | Post-MVP (incremental re-actuation). E6 hardened the adjacent seam instead: open work now **survives** deactuate → re-actuate (lookups are org+node — the position owns its work, like memory). |
+| D8 | Open | Post-MVP (live structural edits), paired with D7. |
+| D9 | **Superseded** | The 2026-07-26 runtime pivot (`docs/execution/amendments-2026-07-26.md`, `cli-runtime.md`): real work runs as headless CLI sessions over the data plane + Canopy MCP server; the step loop is `canopy-agent`'s runtime. The a2a-sdk task server was not adopted — A3's HTTP inbox remains the bus delivery seam, still confined to one adapter. |
+
+Also closed in E6 (an A1-era duplicate, flagged at E1): **`gateway_step` is retired** — `work_step`
+is the one Step record (runtimes report it carrying the gateway's step id) and the ledger's
+SpendEvent is the authoritative money audit. The table is dropped by a one-shot migration; the
+gateway response shape is unchanged.
+
 ## Not debts — deliberate Phase-2 assets
 
 - **`mock` model provider.** Added as a first-class provider (the docs named `anthropic`/`gemini`
