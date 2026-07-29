@@ -59,3 +59,35 @@ jobs:
         run: pnpm --filter @canopy/ui test
       - name: Build
         run: pnpm --filter @canopy/ui build
+
+  # The E6 headless demo (mvp.md: "CI runs the whole demo headless"): a real control plane
+  # serving the built UI, four real subprocess agents on the keyless mock/loop spine, and
+  # Playwright driving actuate -> intent -> plan-review approve -> accept -> deactuate.
+  # Linux-only: the fleet lifecycle is already matrixed on Windows in the server job.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: uv sync --project server
+      - run: pnpm install --frozen-lockfile
+      - name: Build the UI (uvicorn serves ui/dist)
+        run: pnpm --filter @canopy/ui build
+      - name: Install Playwright browser
+        run: pnpm --filter @canopy/ui exec playwright install --with-deps chromium
+      - name: Run the demo headless
+        run: pnpm --filter @canopy/ui exec playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: ui/playwright-report/
+          retention-days: 7

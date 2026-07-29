@@ -18,3 +18,7 @@ data/
 .DS_Store
 *.local
 .env
+
+# Playwright (E6 e2e)
+ui/playwright-report/
+ui/test-results/
