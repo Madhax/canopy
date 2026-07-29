@@ -1,7 +1,9 @@
-// The operator work surface (E5) over the E2 engine APIs. Polling via react-query — the SSE
-// channel replaces the intervals in a later E5 part; the query keys are already event-shaped.
+// The operator work surface (E5) over the E2 engine APIs. Live data rides the SSE channel
+// (events.ts) — while it is connected the intervals below switch off and the stream
+// invalidates these query keys instead; polling is the fallback when the stream drops.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend } from "./client";
+import { useLiveStore } from "./events";
 
 export interface Assignment {
   id: string;
@@ -113,12 +115,17 @@ export interface Notification {
 
 const POLL = 2500;
 
+// SSE connected ⇒ no interval (the stream invalidates); dropped ⇒ poll.
+function usePollInterval(): number | false {
+  return useLiveStore((s) => s.live) ? false : POLL;
+}
+
 export function useIntents(orgId: string | null) {
   return useQuery({
     queryKey: ["intents", orgId],
     queryFn: () => apiGet<{ intents: Intent[] }>(`/organizations/${orgId}/intents`),
     enabled: !!orgId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
     select: (d) => d.intents,
   });
 }
@@ -131,7 +138,7 @@ export function useIntentPlan(intentId: string | null) {
         `/intents/${intentId}/plan`,
       ),
     enabled: !!intentId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
   });
 }
 
@@ -147,7 +154,7 @@ export function useSpend(
         `/organizations/${orgId}/spend?groupBy=${groupBy}&split=${split}`,
       ),
     enabled: !!orgId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
     select: (d) => d.rows,
   });
 }
@@ -158,7 +165,7 @@ export function useAssignments(orgId: string | null) {
     queryFn: () =>
       apiGet<{ assignments: Assignment[] }>(`/organizations/${orgId}/assignments`),
     enabled: !!orgId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
     select: (d) => d.assignments,
   });
 }
@@ -172,7 +179,7 @@ export function useAssignmentDetail(assignmentId: string | null) {
         `/assignments/${assignmentId}`,
       ),
     enabled: !!assignmentId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
   });
 }
 
@@ -182,7 +189,7 @@ export function useOperatorGates(orgId: string | null) {
     queryFn: () =>
       apiGet<{ gates: Gate[] }>(`/organizations/${orgId}/gates?state=open&owner=operator`),
     enabled: !!orgId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
     select: (d) => d.gates,
   });
 }
@@ -195,7 +202,7 @@ export function useNotifications(orgId: string | null) {
         `/organizations/${orgId}/notifications?unread=true`,
       ),
     enabled: !!orgId,
-    refetchInterval: POLL,
+    refetchInterval: usePollInterval(),
     select: (d) => d.notifications,
   });
 }

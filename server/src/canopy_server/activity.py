@@ -57,6 +57,20 @@ class ActivityLog:
                 ),
             )
 
+    def max_seq(self, org_id: str | None = None) -> int:
+        """The newest seq (0 if empty) — the SSE channel's starting cursor for 'only new'."""
+        with self.db.connect() as conn:
+            if org_id is None:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(seq), 0) AS n FROM activity_event"
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(seq), 0) AS n FROM activity_event WHERE org_id = ?",
+                    (org_id,),
+                ).fetchone()
+        return row["n"]
+
     def list(
         self, org_id: str | None = None, *, after_seq: int = 0, limit: int = 100
     ) -> list[dict]:

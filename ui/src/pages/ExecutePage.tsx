@@ -1,8 +1,9 @@
 // Phase 3 · Execute — the operator work surface (E5 part 1): submit intents, review the
 // staged fan-out, read the living plan, and clear the inbox. Everything here is the E2/E3
-// engine API; polling now, SSE in a later E5 part.
+// engine API, kept fresh by the SSE channel (events.ts) with polling as the fallback.
 import { useMemo, useState } from "react";
 import { useCatalog } from "../api/catalog";
+import { useOrgEvents } from "../api/events";
 import { useOrganizations } from "../api/organizations";
 import {
   useAssignmentAction,
@@ -46,6 +47,7 @@ export function ExecutePage() {
   const [text, setText] = useState("");
   const [view, setView] = useState<"work" | "costs">("work");
 
+  const live = useOrgEvents(effectiveOrg);
   const intents = useIntents(effectiveOrg);
   const gates = useOperatorGates(effectiveOrg);
   const notifications = useNotifications(effectiveOrg);
@@ -74,6 +76,13 @@ export function ExecutePage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <span
+            className={`flex items-center gap-1.5 text-[11px] ${live ? "text-ok" : "text-ink-muted"}`}
+            title={live ? "Live over SSE" : "Stream down — polling every 2.5s"}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-ok" : "bg-ink-muted"}`} />
+            {live ? "live" : "polling"}
+          </span>
           <div className="flex rounded-md border border-border bg-canvas p-0.5 text-xs">
             {(["work", "costs"] as const).map((v) => (
               <button

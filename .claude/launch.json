@@ -4,8 +4,26 @@
     {
       "name": "canopy",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "canopy-server-8702",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "server",
+        "uvicorn",
+        "canopy_server.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8702"
+      ],
+      "port": 8702
     }
   ]
 }

@@ -8,13 +8,15 @@ plan, steps, meter, and deliverable. Unauthenticated in v1 like the rest of the 
 
 from __future__ import annotations
 
+import asyncio
+import json
 from typing import Any
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from ..deps import get_actuator, get_engine, get_ledger, get_store, get_work_store
+from ..deps import get_activity, get_actuator, get_engine, get_ledger, get_store, get_work_store
 from ..engine.engine import WorkError
 
 router = APIRouter()
@@ -285,6 +287,76 @@ def mark_notifications_read(
     org_id: str, body: NotificationsReadBody, work_store=Depends(get_work_store),
 ) -> Any:
     return {"marked": work_store.mark_notifications_read(org_id, body.ids)}
+
+
+# --------------------------------------------------------------------------- #
+# The SSE channel (engine.md §6): one live stream per org. Activity transitions ride through
+# individually (id = seq, so Last-Event-ID resume works); step/plan/note/notification changes
+# arrive as coalesced per-family events — at most one per tick, which is the server-side step
+# throttle. The tail is DB-driven: anything that lands in the store surfaces here without
+# engine hooks, and a dropped stream loses nothing (the UI falls back to polling and the
+# cursor resumes).
+# --------------------------------------------------------------------------- #
+EVENTS_TICK_SECONDS = 1.0
+_KEEPALIVE_TICKS = 15
+_COALESCED_FAMILIES = ("steps", "plan", "notes", "notifications")
+
+
+def _sse(event: str, data: dict, *, event_id: int | None = None) -> str:
+    head = f"id: {event_id}\n" if event_id is not None else ""
+    return f"{head}event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+async def _org_event_stream(
+    request: Request, org_id: str, after: int | None, activity, work_store,
+):
+    last_seq = activity.max_seq(org_id) if after is None else after
+    marks = work_store.change_watermark(org_id)
+    yield _sse("hello", {"seq": last_seq})
+    quiet_ticks = 0
+    while not await request.is_disconnected():
+        wrote = False
+        for row in activity.list(org_id, after_seq=last_seq, limit=200):
+            last_seq = row["seq"]
+            yield _sse(
+                "activity",
+                {"seq": row["seq"], "ts": row["ts"], "kind": row["kind"],
+                 "subjectIds": row["subjectIds"]},
+                event_id=row["seq"],
+            )
+            wrote = True
+        fresh = work_store.change_watermark(org_id)
+        for family in _COALESCED_FAMILIES:
+            if fresh[family] != marks[family]:
+                yield _sse(family, {})
+                wrote = True
+        marks = fresh
+        quiet_ticks = 0 if wrote else quiet_ticks + 1
+        if quiet_ticks >= _KEEPALIVE_TICKS:
+            yield ": keepalive\n\n"
+            quiet_ticks = 0
+        await asyncio.sleep(EVENTS_TICK_SECONDS)
+
+
+@router.get("/organizations/{org_id}/events")
+async def org_events(
+    org_id: str,
+    request: Request,
+    after: int | None = None,
+    store=Depends(get_store),
+    work_store=Depends(get_work_store),
+    activity=Depends(get_activity),
+) -> Any:
+    if not store.exists(org_id):
+        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    last_event_id = request.headers.get("last-event-id")
+    if after is None and last_event_id and last_event_id.isdigit():
+        after = int(last_event_id)
+    return StreamingResponse(
+        _org_event_stream(request, org_id, after, activity, work_store),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/organizations/{org_id}/gates")
