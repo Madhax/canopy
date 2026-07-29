@@ -19,6 +19,7 @@ import {
 import { apiGet } from "../api/client";
 import { useQuery } from "@tanstack/react-query";
 import { Button, CenteredSpinner, EmptyState } from "../components/common";
+import { InspectorPanel } from "../components/execute/AgentInspector";
 import { CostSection } from "../components/execute/CostExplorer";
 import { GateCard } from "../components/execute/GateCard";
 import { PlanOutline } from "../components/execute/PlanOutline";
@@ -46,6 +47,7 @@ export function ExecutePage() {
   const [intentId, setIntentId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [view, setView] = useState<"work" | "costs">("work");
+  const [inspectNode, setInspectNode] = useState<string | null>(null);
 
   const live = useOrgEvents(effectiveOrg);
   const intents = useIntents(effectiveOrg);
@@ -101,6 +103,7 @@ export function ExecutePage() {
             onChange={(e) => {
               setOrgId(e.target.value || null);
               setIntentId(null);
+              setInspectNode(null);
             }}
             className="rounded-md border border-border bg-canvas px-2 py-1 text-sm outline-none focus:border-accent"
           >
@@ -198,6 +201,7 @@ export function ExecutePage() {
                     onReject={(assignmentId, note) =>
                       act.mutate({ assignmentId, action: "reject", body: { note } })
                     }
+                    onInspect={setInspectNode}
                   />
                 ))
               ) : (
@@ -245,6 +249,14 @@ export function ExecutePage() {
             )}
           </aside>
         </main>
+      )}
+      {inspectNode && effectiveOrg && (
+        <InspectorPanel
+          orgId={effectiveOrg}
+          nodeId={inspectNode}
+          nodeName={nodeName}
+          onClose={() => setInspectNode(null)}
+        />
       )}
     </div>
   );

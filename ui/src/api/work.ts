@@ -10,6 +10,7 @@ export interface Assignment {
   intentId: string;
   nodeId: string;
   parentId: string | null;
+  issuedBy: string;
   state: string;
   briefVersion: number;
   contractKind: string;
@@ -116,7 +117,7 @@ export interface Notification {
 const POLL = 2500;
 
 // SSE connected ⇒ no interval (the stream invalidates); dropped ⇒ poll.
-function usePollInterval(): number | false {
+export function usePollInterval(): number | false {
   return useLiveStore((s) => s.live) ? false : POLL;
 }
 

@@ -984,6 +984,19 @@ class WorkStore:
                 )
         return cur.rowcount
 
+    def list_gates_for_node(self, org_id: str, node_id: str, *, limit: int = 100) -> list[Gate]:
+        """All gates on one node's assignments, newest first — the inspector's Gates tab
+        (open + historical in one query; the route partitions)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT g.* FROM work_gate g "
+                "JOIN work_assignment a ON a.id = g.assignment_id "
+                "WHERE a.org_id = ? AND a.node_id = ? "
+                "ORDER BY g.created_at DESC, g.id DESC LIMIT ?",
+                (org_id, node_id, limit),
+            ).fetchall()
+        return [_gate(r) for r in rows]
+
     # ------------------------------------------------------------ events (SSE)
     def change_watermark(self, org_id: str) -> dict[str, tuple]:
         """Cheap per-org change counters for the /events channel (engine.md §6). The SSE tailer
