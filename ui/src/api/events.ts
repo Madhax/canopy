@@ -11,22 +11,23 @@ export const useLiveStore = create<{ live: boolean }>(() => ({ live: false }));
 
 const ALL_WORK_KEYS = [
   "intents", "intent-plan", "assignments", "assignment-detail", "gates",
-  "notifications", "spend", "agent-state",
+  "notifications", "spend", "agent-state", "pulse",
 ];
 
 // Activity events carry engine transitions by kind (`intent.submitted`, `gate.opened`,
 // `meter.topped-up`, …); first matching row wins.
 const ACTIVITY_KEYS: [RegExp, string[]][] = [
-  [/^gate\./, ["gates", "intent-plan", "intents", "notifications", "agent-state"]],
-  [/^meter\./, ["intent-plan", "spend", "assignment-detail", "agent-state"]],
-  [/^(intent|assignment)\./, ["intents", "intent-plan", "assignments", "assignment-detail", "gates", "agent-state"]],
+  [/^gate\./, ["gates", "intent-plan", "intents", "notifications", "agent-state", "pulse"]],
+  [/^meter\./, ["intent-plan", "spend", "assignment-detail", "agent-state", "pulse"]],
+  [/^(intent|assignment)\./, ["intents", "intent-plan", "assignments", "assignment-detail", "gates", "agent-state", "pulse"]],
   [/^memory\./, ["agent-state"]],
+  [/^actuation\./, ["pulse"]],
 ];
 
 // Coalesced per-family events (the server emits at most one per tick).
 const FAMILY_KEYS: Record<string, string[]> = {
-  steps: ["assignment-detail", "spend", "intent-plan", "agent-state"],
-  plan: ["intent-plan", "agent-state"],
+  steps: ["assignment-detail", "spend", "intent-plan", "agent-state", "pulse"],
+  plan: ["intent-plan", "agent-state", "pulse"],
   notes: ["intent-plan"],
   notifications: ["notifications"],
 };

@@ -18,9 +18,11 @@ import {
 } from "../api/work";
 import { apiGet } from "../api/client";
 import { useQuery } from "@tanstack/react-query";
+import { usePulse } from "../api/pulse";
 import { Button, CenteredSpinner, EmptyState } from "../components/common";
 import { InspectorPanel } from "../components/execute/AgentInspector";
 import { CostSection } from "../components/execute/CostExplorer";
+import { MissionControl, OrgPulse } from "../components/execute/MissionControl";
 import { GateCard } from "../components/execute/GateCard";
 import { PlanOutline } from "../components/execute/PlanOutline";
 
@@ -46,10 +48,11 @@ export function ExecutePage() {
   const effectiveOrg = orgId ?? orgs.data?.[0]?.id ?? null;
   const [intentId, setIntentId] = useState<string | null>(null);
   const [text, setText] = useState("");
-  const [view, setView] = useState<"work" | "costs">("work");
+  const [view, setView] = useState<"work" | "pulse" | "costs">("work");
   const [inspectNode, setInspectNode] = useState<string | null>(null);
 
   const live = useOrgEvents(effectiveOrg);
+  const pulse = usePulse(effectiveOrg);
   const intents = useIntents(effectiveOrg);
   const gates = useOperatorGates(effectiveOrg);
   const notifications = useNotifications(effectiveOrg);
@@ -86,7 +89,7 @@ export function ExecutePage() {
             {live ? "live" : "polling"}
           </span>
           <div className="flex rounded-md border border-border bg-canvas p-0.5 text-xs">
-            {(["work", "costs"] as const).map((v) => (
+            {(["work", "pulse", "costs"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -116,6 +119,8 @@ export function ExecutePage() {
         </div>
       </header>
 
+      {effectiveOrg && pulse.data && <OrgPulse pulse={pulse.data} />}
+
       {orgs.isLoading ? (
         <CenteredSpinner label="Loading organizations…" />
       ) : !effectiveOrg ? (
@@ -123,6 +128,25 @@ export function ExecutePage() {
       ) : view === "costs" ? (
         <main className="mx-auto max-w-6xl px-6 py-6">
           <CostSection orgId={effectiveOrg} nodeName={nodeName} />
+        </main>
+      ) : view === "pulse" ? (
+        <main className="mx-auto max-w-6xl px-6 py-6">
+          {pulse.data ? (
+            <>
+              <MissionControl pulse={pulse.data} onInspect={setInspectNode} />
+              {pulse.data.intents.open === 0 && (
+                <p className="mt-4 text-center text-xs text-ink-muted">
+                  No open intents — give the org work from the{" "}
+                  <button className="text-accent hover:underline" onClick={() => setView("work")}>
+                    work view
+                  </button>
+                  .
+                </p>
+              )}
+            </>
+          ) : (
+            <CenteredSpinner label="Reading the pulse…" />
+          )}
         </main>
       ) : (
         <main className="mx-auto grid max-w-6xl grid-cols-[1fr_320px] gap-6 px-6 py-6">
