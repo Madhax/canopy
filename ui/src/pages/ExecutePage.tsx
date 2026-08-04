@@ -225,6 +225,7 @@ export function ExecutePage() {
                     key={n.assignment.id}
                     node={n}
                     nodeName={nodeName}
+                    orgId={effectiveOrg}
                     onNote={(assignmentId, stageIdx, noteText) =>
                       leaveNote.mutate({
                         intentId: effectiveIntent,

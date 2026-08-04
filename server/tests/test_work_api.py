@@ -244,3 +244,57 @@ def test_artifact_fetch_requires_grant(client, make_org, mint_session):
     ws.add_brief(granted.id, "review this", artifact_refs=[ref], revised_by=root["id"])
     ok = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(intruder["token"]))
     assert ok.status_code == 200
+
+
+def test_operator_artifact_preview_and_plan_deliverable(client, make_org, mint_session):
+    """The deliverable viewer (E7 follow-up): the plan aggregate carries the deliverable, and
+    the operator artifact endpoint serves its content — you can't accept what you can't see."""
+    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(org)
+    s = mint_session(org["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], org["id"])
+
+    r = client.post(f"/api/organizations/{org['id']}/intents",
+                    json={"text": "hello world", "targetNodeId": root["id"]})
+    a = r.json()["assignment"]
+    intent_id = r.json()["intent"]["id"]
+    client.post("/api/dp/assignment/events", headers=_h(s["token"]),
+                json={"assignmentId": a["id"], "kind": "intake-complete"})
+    put = client.post("/api/dp/artifacts", headers=_h(s["token"]), json={
+        "assignmentId": a["id"], "name": "hello", "type": "code-patch",
+        "contentBase64": base64.b64encode(b"print('hello world')\n").decode(),
+    })
+    ref = put.json()["ref"]
+    client.post("/api/dp/finish", headers=_h(s["token"]),
+                json={"assignmentId": a["id"], "refs": [ref], "summary": "done"})
+
+    # The living-plan aggregate now includes the deliverable on the delivering node.
+    tree = client.get(f"/api/intents/{intent_id}/plan").json()["tree"]
+    dv = tree[0]["deliverable"]
+    assert dv is not None and dv["artifactRefs"] == [ref] and dv["accepted"] is None
+
+    # Operator preview: meta + utf-8 content, org-scoped.
+    got = client.get(f"/api/organizations/{org['id']}/artifacts?ref={ref}")
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["content"] == "print('hello world')\n" and body["reason"] is None
+    assert body["meta"]["ref"] == ref
+
+    # Another org cannot read it; a bogus ref 404s.
+    other = make_org(name="Other")
+    assert client.get(
+        f"/api/organizations/{other['id']}/artifacts?ref={ref}"
+    ).status_code == 404
+    assert client.get(
+        f"/api/organizations/{org['id']}/artifacts?ref=org://nope/x/y@1"
+    ).status_code == 404
+
+    # Binary content refuses the inline preview but still serves the meta.
+    put2 = client.post("/api/dp/artifacts", headers=_h(s["token"]), json={
+        "assignmentId": a["id"], "name": "blob", "type": "binary",
+        "contentBase64": base64.b64encode(b"\x00\x01\x02").decode(),
+    })
+    got2 = client.get(
+        f"/api/organizations/{org['id']}/artifacts?ref={put2.json()['ref']}"
+    ).json()
+    assert got2["content"] is None and got2["reason"] == "binary"

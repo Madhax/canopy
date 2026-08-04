@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict
 from ..deps import (
     get_activity,
     get_actuator,
+    get_artifact_store,
     get_engine,
     get_ledger,
     get_store,
@@ -263,6 +264,7 @@ def intent_plan(
     def node_view(a) -> dict[str, Any]:
         plan = work_store.get_plan(a.id)
         meter = ledger.get_meter(a.meterId) if a.meterId else None
+        deliverable = work_store.get_deliverable(a.deliverableId) if a.deliverableId else None
         return {
             "assignment": a.model_dump(),
             "brief": (b := work_store.get_brief(a.id)) and b.model_dump(),
@@ -271,6 +273,7 @@ def intent_plan(
             "gates": [g.model_dump()
                       for g in work_store.list_gates(assignment_id=a.id, state="open")],
             "meter": meter.model_dump() if meter else None,
+            "deliverable": deliverable.model_dump() if deliverable else None,
             "notes": [n.model_dump() for n in notes if n.assignmentId == a.id],
             "children": [node_view(c) for c in by_parent.get(a.id, [])],
         }
@@ -281,6 +284,33 @@ def intent_plan(
         "tree": [node_view(r) for r in roots],
         "intentNotes": [n.model_dump() for n in notes if n.assignmentId is None],
     }
+
+
+# The operator's artifact preview (the deliverable viewer): meta + utf-8 content for text
+# artifacts ≤ 256 KB, mirroring the inspector's workspace preview conventions. The data-plane
+# GET (dp.py) stays the grant-checked *agent* path; this one is org-scoped operator API like
+# everything else here — you can't accept what you can't see.
+_ARTIFACT_PREVIEW_LIMIT = 256 * 1024
+
+
+@router.get("/organizations/{org_id}/artifacts")
+def read_artifact(org_id: str, ref: str, artifacts=Depends(get_artifact_store)) -> Any:
+    meta = artifacts.resolve(ref)
+    if meta is None or meta.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No artifact {ref!r} in this organization")
+    out: dict[str, Any] = {"meta": meta.model_dump(), "content": None, "reason": None}
+    if meta.size > _ARTIFACT_PREVIEW_LIMIT:
+        out["reason"] = "too-large"
+        return out
+    raw = artifacts.read(ref)
+    if raw is None:
+        out["reason"] = "missing-blob"
+        return out
+    if b"\x00" in raw[:8192]:
+        out["reason"] = "binary"
+        return out
+    out["content"] = raw.decode("utf-8", errors="replace")
+    return out
 
 
 @router.get("/organizations/{org_id}/notifications")

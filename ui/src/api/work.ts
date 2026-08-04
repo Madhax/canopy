@@ -53,6 +53,16 @@ export interface WorkNote {
   deliveredAt: string | null;
 }
 
+export interface Deliverable {
+  id: string;
+  kind: string;
+  artifactRefs: string[];
+  summary: string;
+  accepted: boolean | null; // null = awaiting the verdict
+  reviewNote: string | null;
+  createdAt: string;
+}
+
 export interface PlanNode {
   assignment: Assignment;
   brief: { text: string; artifactRefs: string[]; version: number } | null;
@@ -67,6 +77,7 @@ export interface PlanNode {
   } | null;
   gates: Gate[];
   meter: Meter | null;
+  deliverable: Deliverable | null;
   notes: WorkNote[];
   children: PlanNode[];
 }
@@ -231,6 +242,34 @@ function useInvalidateWork(orgId: string | null) {
     }
     void orgId;
   };
+}
+
+// Operator artifact preview (the deliverable viewer). Refs are immutable versions, so the
+// result never goes stale.
+export interface ArtifactPreview {
+  meta: {
+    ref: string;
+    name: string;
+    type: string;
+    size: number;
+    version: number;
+    nodeId: string;
+    createdAt: string;
+  };
+  content: string | null;
+  reason: "too-large" | "binary" | "missing-blob" | null;
+}
+
+export function useArtifact(orgId: string | null, ref: string | null) {
+  return useQuery({
+    queryKey: ["artifact", orgId, ref],
+    queryFn: () =>
+      apiGet<ArtifactPreview>(
+        `/organizations/${orgId}/artifacts?ref=${encodeURIComponent(ref!)}`,
+      ),
+    enabled: !!orgId && !!ref,
+    staleTime: Infinity,
+  });
 }
 
 export function useCadences(orgId: string | null) {

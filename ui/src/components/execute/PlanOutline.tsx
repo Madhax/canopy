@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { PlanNode } from "../../api/work";
 import { Button } from "../common";
+import { DeliverableCard } from "./DeliverableCard";
 
 interface Props {
   node: PlanNode;
@@ -13,6 +14,7 @@ interface Props {
   onAccept: (assignmentId: string) => void;
   onReject: (assignmentId: string, note: string) => void;
   onInspect?: (nodeId: string) => void;
+  orgId?: string | null; // enables artifact preview on deliverable cards
   depth?: number;
 }
 
@@ -118,6 +120,16 @@ export function PlanOutline(props: Props) {
             </li>
           ))}
         </ol>
+      )}
+
+      {node.deliverable && (
+        <DeliverableCard
+          orgId={props.orgId ?? null}
+          deliverable={node.deliverable}
+          reviewable={a.state === "delivering"}
+          onAccept={() => props.onAccept(a.id)}
+          onReject={(note) => props.onReject(a.id, note)}
+        />
       )}
 
       {node.notes.map((n) => (
