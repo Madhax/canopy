@@ -7,6 +7,8 @@ are labeled estimates (risk IM-5); token counts are provider-authoritative.
 
 from __future__ import annotations
 
+from collections import Counter
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
@@ -56,6 +58,123 @@ def spend_rollup(
         "groupBy": groupBy,
         "costsAreEstimates": True,
         "rows": ledger.rollup(org_id, groupBy),
+    }
+
+
+#: Assignment states the node has accepted but not begun — mission control's queue depth.
+_QUEUED_STATES = frozenset({"created", "briefed"})
+
+
+@router.get("/organizations/{org_id}/pulse")
+def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) -> Any:
+    """Mission control's feed (operator-experience.md §2): the org pulse header (actuation
+    state · open intents · burn rate · open gates by kind · attention count) plus one overlay
+    row per node (status, current assignment, queue/WIP, meter, gate kinds, runtime kind).
+    One aggregate, so the live chart is a projection with zero client-side joins."""
+    from ..catalog import get_catalog
+    from ..config import get_runtime_override
+    from ..deps import get_actuator, get_db, get_directory, get_store, get_work_store
+    from ..engine.models import ASSIGNMENT_ACTIVE_STATES
+
+    store, work_store = get_store(), get_work_store()
+    if not store.exists(org_id):
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "NOT_FOUND", "message": f"No organization {org_id!r}"}},
+        )
+    org = store.read(org_id)
+    current_view = get_actuator().get_current(org_id)
+
+    # Node status: the live directory wins (idle/engaged/gated/dead moves with heartbeats);
+    # the actuation node row is the fallback while provisioning; else the org isn't actuated.
+    status_by_node: dict[str, str] = {}
+    if current_view:
+        for n in current_view.nodes:
+            status_by_node[n.nodeId] = n.status or n.subState
+        if current_view.state in ("live", "degraded"):
+            for d in get_directory().list(current_view.id):
+                status_by_node[d.nodeId] = d.status
+
+    intents = work_store.list_intents(org_id)
+    assignments = work_store.list_assignments(org_id=org_id)
+    node_of_assignment = {a.id: a.nodeId for a in assignments}
+    open_gates = work_store.list_gates(org_id=org_id, state="open")
+    gate_kinds_by_node: dict[str, list[str]] = {}
+    for g in open_gates:
+        node = node_of_assignment.get(g.assignmentId)
+        if node is not None:
+            gate_kinds_by_node.setdefault(node, []).append(g.kind)
+
+    # Burn: spend inside the trailing window, expressed per-minute / per-hour (estimates, IM-5).
+    window = max(1, min(windowMinutes, 24 * 60))
+    cutoff = (
+        (datetime.now(UTC) - timedelta(minutes=window)).isoformat().replace("+00:00", "Z")
+    )
+    with get_db().connect() as conn:
+        burn_row = conn.execute(
+            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens, "
+            "COALESCE(SUM(est_cost_micros), 0) AS micros "
+            "FROM ledger_spend_event WHERE org_id = ? AND created_at >= ?",
+            (org_id, cutoff),
+        ).fetchone()
+
+    runtime_override = get_runtime_override()
+    catalog = get_catalog()
+    role_runtime = {r.key: getattr(r, "defaultRuntime", "loop") or "loop" for r in catalog.roles}
+
+    by_node: dict[str, list] = {}
+    for a in assignments:
+        by_node.setdefault(a.nodeId, []).append(a)
+
+    nodes = []
+    for agent in org.agents:
+        mine = by_node.get(agent.id, [])
+        active = [a for a in mine if a.state in ASSIGNMENT_ACTIVE_STATES]
+        current = next((a for a in active if a.state not in _QUEUED_STATES), None)
+        meter = ledger.get_meter(current.meterId) if current and current.meterId else None
+        brief = work_store.get_brief(current.id) if current else None
+        nodes.append({
+            "nodeId": agent.id,
+            "name": agent.name,
+            "managerId": agent.managerId,
+            "roleKey": agent.role.key,
+            "status": status_by_node.get(agent.id, "not-actuated"),
+            "current": (
+                {"assignmentId": current.id, "state": current.state,
+                 "briefPreview": (brief.text[:80] if brief else "")}
+                if current else None
+            ),
+            "queueDepth": sum(1 for a in active if a.state in _QUEUED_STATES),
+            "wip": len(active),
+            "meter": (
+                {"spent": meter.spent, "allowance": meter.allowance, "warned": meter.warned,
+                 "state": meter.state}
+                if meter else None
+            ),
+            "openGateKinds": gate_kinds_by_node.get(agent.id, []),
+            "runtimeKind": runtime_override or role_runtime.get(agent.role.key, "loop"),
+        })
+
+    return {
+        "actuation": (
+            {"id": current_view.id, "state": current_view.state} if current_view else None
+        ),
+        "intents": {
+            "open": sum(1 for i in intents if i.state == "open"),
+            "total": len(intents),
+        },
+        "gates": {
+            "open": len(open_gates),
+            "byKind": dict(Counter(g.kind for g in open_gates)),
+            "attention": sum(1 for g in open_gates if g.owner == "operator"),
+        },
+        "burn": {
+            "windowMinutes": window,
+            "tokensPerMinute": burn_row["tokens"] / window,
+            "estCostMicrosPerHour": burn_row["micros"] * 60 / window,
+            "costsAreEstimates": True,
+        },
+        "nodes": nodes,
     }
 
 

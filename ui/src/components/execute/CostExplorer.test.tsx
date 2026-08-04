@@ -32,9 +32,9 @@ const byAssignment: SpendRow[] = [
 
 function assignment(over: Partial<Assignment>): Assignment {
   return {
-    id: "as_be", intentId: "in_1", nodeId: "a_be", parentId: "as_root", state: "closed",
-    briefVersion: 1, contractKind: "artifact", contractType: "PullRequest", meterId: "mt_1",
-    priority: 0, sessionRef: null, createdAt: "", ...over,
+    id: "as_be", intentId: "in_1", nodeId: "a_be", parentId: "as_root", issuedBy: "a_lead",
+    state: "closed", briefVersion: 1, contractKind: "artifact", contractType: "PullRequest",
+    meterId: "mt_1", priority: 0, sessionRef: null, createdAt: "", ...over,
   };
 }
 

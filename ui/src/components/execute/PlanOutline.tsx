@@ -12,6 +12,7 @@ interface Props {
   onIntervene: (assignmentId: string, note: string) => void;
   onAccept: (assignmentId: string) => void;
   onReject: (assignmentId: string, note: string) => void;
+  onInspect?: (nodeId: string) => void;
   depth?: number;
 }
 
@@ -48,7 +49,17 @@ export function PlanOutline(props: Props) {
   return (
     <div className={depth > 0 ? "ml-5 border-l border-border pl-4" : ""}>
       <div className="group flex flex-wrap items-center gap-2 py-1">
-        <span className="text-sm font-medium text-ink">{nodeName(a.nodeId)}</span>
+        {props.onInspect ? (
+          <button
+            className="text-sm font-medium text-ink hover:text-accent hover:underline"
+            title="Inspect this agent"
+            onClick={() => props.onInspect!(a.nodeId)}
+          >
+            {nodeName(a.nodeId)}
+          </button>
+        ) : (
+          <span className="text-sm font-medium text-ink">{nodeName(a.nodeId)}</span>
+        )}
         <span className={`text-xs font-semibold ${STATE_TONE[a.state] ?? "text-ink"}`}>
           {a.state}
         </span>

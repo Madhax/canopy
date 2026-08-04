@@ -984,6 +984,56 @@ class WorkStore:
                 )
         return cur.rowcount
 
+    def list_gates_for_node(self, org_id: str, node_id: str, *, limit: int = 100) -> list[Gate]:
+        """All gates on one node's assignments, newest first — the inspector's Gates tab
+        (open + historical in one query; the route partitions)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT g.* FROM work_gate g "
+                "JOIN work_assignment a ON a.id = g.assignment_id "
+                "WHERE a.org_id = ? AND a.node_id = ? "
+                "ORDER BY g.created_at DESC, g.id DESC LIMIT ?",
+                (org_id, node_id, limit),
+            ).fetchall()
+        return [_gate(r) for r in rows]
+
+    # ------------------------------------------------------------ events (SSE)
+    def change_watermark(self, org_id: str) -> dict[str, tuple]:
+        """Cheap per-org change counters for the /events channel (engine.md §6). The SSE tailer
+        diffs consecutive snapshots and emits one coalesced event per changed family — steps at
+        10/s become at most one event per tick, and stage/note/notification *stamps* (updates
+        that fill a nullable column) register without any engine-side hooks. Every counter only
+        ever grows, so tuple equality means "nothing happened"."""
+        with self.db.connect() as conn:
+            step = conn.execute(
+                "SELECT COUNT(*) AS n FROM work_step s "
+                "JOIN work_assignment a ON a.id = s.assignment_id WHERE a.org_id = ?",
+                (org_id,),
+            ).fetchone()
+            plan = conn.execute(
+                "SELECT COUNT(*) AS n, COUNT(ps.started_at) AS started, "
+                "COUNT(ps.completed_at) AS completed FROM work_plan_stage ps "
+                "JOIN work_plan p ON p.id = ps.plan_id "
+                "JOIN work_assignment a ON a.id = p.assignment_id WHERE a.org_id = ?",
+                (org_id,),
+            ).fetchone()
+            note = conn.execute(
+                "SELECT COUNT(*) AS n, COUNT(delivered_at) AS delivered "
+                "FROM work_note WHERE org_id = ?",
+                (org_id,),
+            ).fetchone()
+            notif = conn.execute(
+                "SELECT COUNT(*) AS n, COUNT(read_at) AS read "
+                "FROM work_notification WHERE org_id = ?",
+                (org_id,),
+            ).fetchone()
+        return {
+            "steps": (step["n"],),
+            "plan": (plan["n"], plan["started"], plan["completed"]),
+            "notes": (note["n"], note["delivered"]),
+            "notifications": (notif["n"], notif["read"]),
+        }
+
     # ------------------------------------------------------------- tool events
     def record_tool_event(
         self, *, org_id: str, actuation_id: str, node_id: str, tool: str, outcome: str,

@@ -62,7 +62,8 @@ describe("GateCard plan review", () => {
 describe("PlanOutline", () => {
   it("renders the tree with states, padlocks, cursors, and notes", () => {
     const node: PlanNode = {
-      assignment: { id: "as_root", intentId: "in_1", nodeId: "a_lead", parentId: null, state: "gated",
+      assignment: { id: "as_root", intentId: "in_1", nodeId: "a_lead", parentId: null,
+                    issuedBy: "operator", state: "gated",
                     briefVersion: 1, contractKind: "artifact", contractType: "Deliverable",
                     meterId: "mt_1", priority: 0, sessionRef: null, createdAt: "" },
       brief: { text: "ship CSV", artifactRefs: [], version: 1 },
