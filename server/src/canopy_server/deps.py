@@ -202,6 +202,22 @@ def get_engine():
 
 
 @lru_cache(maxsize=8)
+def _cadence_scheduler_for(path_str: str, data_dir_str: str):
+    from .engine.cadence import CadenceScheduler
+
+    return CadenceScheduler(
+        _work_store_for(path_str),
+        _engine_for(path_str, data_dir_str),
+        _actuator_for(path_str, data_dir_str),
+        activity=_activity_for(path_str),
+    )
+
+
+def get_cadence_scheduler():
+    return _cadence_scheduler_for(str(get_db_path()), str(get_data_dir()))
+
+
+@lru_cache(maxsize=8)
 def _directory_for(path_str: str):
     from .directory import AgentDirectory
 

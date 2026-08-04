@@ -21,6 +21,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePulse } from "../api/pulse";
 import { Button, CenteredSpinner, EmptyState } from "../components/common";
 import { InspectorPanel } from "../components/execute/AgentInspector";
+import { CadenceSection, type CadenceSeed } from "../components/execute/CadenceSection";
 import { CostSection } from "../components/execute/CostExplorer";
 import { MissionControl, OrgPulse } from "../components/execute/MissionControl";
 import { GateCard } from "../components/execute/GateCard";
@@ -50,6 +51,7 @@ export function ExecutePage() {
   const [text, setText] = useState("");
   const [view, setView] = useState<"work" | "pulse" | "costs">("work");
   const [inspectNode, setInspectNode] = useState<string | null>(null);
+  const [cadenceSeed, setCadenceSeed] = useState<CadenceSeed | null>(null);
 
   const live = useOrgEvents(effectiveOrg);
   const pulse = usePulse(effectiveOrg);
@@ -178,19 +180,36 @@ export function ExecutePage() {
               )}
               <div className="flex flex-wrap gap-2">
                 {(intents.data ?? []).map((i) => (
-                  <button
-                    key={i.id}
-                    onClick={() => setIntentId(i.id)}
-                    className={`rounded-full border px-3 py-1 text-xs ${
-                      i.id === effectiveIntent
-                        ? "border-accent bg-accent/10 text-ink"
-                        : "border-border bg-surface text-ink-muted hover:border-accent"
-                    }`}
-                  >
-                    {i.text.slice(0, 48)}
-                    {i.text.length > 48 ? "…" : ""}
-                    <span className="ml-1 text-[10px] uppercase">{i.state}</span>
-                  </button>
+                  <span key={i.id} className="flex items-center gap-1">
+                    <button
+                      onClick={() => setIntentId(i.id)}
+                      className={`rounded-full border px-3 py-1 text-xs ${
+                        i.id === effectiveIntent
+                          ? "border-accent bg-accent/10 text-ink"
+                          : "border-border bg-surface text-ink-muted hover:border-accent"
+                      }`}
+                    >
+                      {i.cadenceId && (
+                        <span className="mr-1" title="Fired by a cadence">
+                          ↻
+                        </span>
+                      )}
+                      {i.text.slice(0, 48)}
+                      {i.text.length > 48 ? "…" : ""}
+                      <span className="ml-1 text-[10px] uppercase">{i.state}</span>
+                    </button>
+                    {i.state === "completed" && (
+                      <button
+                        title="Make this recurring"
+                        onClick={() =>
+                          setCadenceSeed({ intentText: i.text, nodeId: i.targetNode })
+                        }
+                        className="rounded-full border border-border bg-surface px-1.5 py-0.5 text-[11px] text-ink-muted hover:border-accent hover:text-accent"
+                      >
+                        ↻ recur
+                      </button>
+                    )}
+                  </span>
                 ))}
               </div>
             </section>
@@ -232,6 +251,14 @@ export function ExecutePage() {
                 <CenteredSpinner label="Loading plan…" />
               )}
             </section>
+
+            {/* Cadences: put this org on a schedule (E7) */}
+            <CadenceSection
+              orgId={effectiveOrg}
+              nodeName={nodeName}
+              seed={cadenceSeed}
+              onSeedConsumed={() => setCadenceSeed(null)}
+            />
           </div>
 
           {/* Inbox: needs-you first (open operator gates), then the pulse */}

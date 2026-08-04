@@ -65,6 +65,19 @@ async def _trigger_sweep_loop() -> None:
         await asyncio.sleep(30)
 
 
+async def _cadence_loop() -> None:
+    """Every 30 s, fire due cadences as ordinary episodic intents (engine.md §4). Stateless:
+    ``work_cadence.last_fired_at`` is the only cursor, so restarts just resume."""
+    while True:
+        try:
+            from .deps import get_cadence_scheduler
+
+            get_cadence_scheduler().run_once()
+        except Exception:  # noqa: BLE001 - the scheduler must survive any single bad pass
+            pass
+        await asyncio.sleep(30)
+
+
 async def _forward_to_agent(endpoint_url: str, envelope) -> bool:
     import httpx
 
@@ -121,6 +134,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.create_task(_reconciler_loop()),
         asyncio.create_task(_delivery_loop()),
         asyncio.create_task(_trigger_sweep_loop()),
+        asyncio.create_task(_cadence_loop()),
     ]
     try:
         yield

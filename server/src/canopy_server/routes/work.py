@@ -10,13 +10,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from ..deps import get_activity, get_actuator, get_engine, get_ledger, get_store, get_work_store
+from ..deps import (
+    get_activity,
+    get_actuator,
+    get_engine,
+    get_ledger,
+    get_store,
+    get_work_store,
+    now_iso,
+)
+from ..engine.cadence import CronError, next_fire, parse_cron, validate_cron
 from ..engine.engine import WorkError
 
 router = APIRouter()
@@ -287,6 +297,118 @@ def mark_notifications_read(
     org_id: str, body: NotificationsReadBody, work_store=Depends(get_work_store),
 ) -> Any:
     return {"marked": work_store.mark_notifications_read(org_id, body.ids)}
+
+
+# --------------------------------------------------------------------------- #
+# Cadences (E7, engine.md §4): CRUD over work_cadence. The 30 s scheduler loop in main.py does
+# the firing; these routes only manage the schedule rows — and compute the next fire time for
+# the management list (operator-experience.md §4).
+# --------------------------------------------------------------------------- #
+class CadenceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    cron: str  # five UTC fields: minute hour day-of-month month day-of-week
+    intentText: str
+    nodeId: str | None = None  # None ⇒ the org root at fire time
+    enabled: bool = True
+
+
+class CadenceUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = None
+    cron: str | None = None
+    intentText: str | None = None
+    nodeId: str | None = None  # None ⇒ unchanged (retarget-to-root = recreate)
+    enabled: bool | None = None
+
+
+def _cadence_view(c) -> dict[str, Any]:
+    """The row + its computed ``nextFireAt`` (from now — a disabled cadence has none)."""
+    out = c.model_dump()
+    nxt = None
+    if c.enabled:
+        try:
+            due = next_fire(parse_cron(c.cron), datetime.fromisoformat(now_iso()))
+            nxt = due.isoformat().replace("+00:00", "Z") if due else None
+        except CronError:
+            nxt = None
+    out["nextFireAt"] = nxt
+    return out
+
+
+def _check_cadence_node(store, org_id: str, node_id: str | None) -> JSONResponse | None:
+    if node_id is None:
+        return None
+    org = store.read(org_id)
+    if not any(a.id == node_id for a in org.agents):
+        return _error(422, "BAD_NODE", f"node {node_id!r} not found in org {org_id!r}")
+    return None
+
+
+@router.get("/organizations/{org_id}/cadences")
+def list_cadences(org_id: str, work_store=Depends(get_work_store)) -> Any:
+    return {"cadences": [_cadence_view(c) for c in work_store.list_cadences(org_id)]}
+
+
+@router.post("/organizations/{org_id}/cadences", status_code=201)
+def create_cadence(
+    org_id: str, body: CadenceBody, store=Depends(get_store),
+    work_store=Depends(get_work_store), activity=Depends(get_activity),
+) -> Any:
+    if not store.exists(org_id):
+        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    if not body.name.strip() or not body.intentText.strip():
+        return _error(422, "BAD_CADENCE", "name and intentText are required")
+    try:
+        validate_cron(body.cron)
+    except CronError as exc:
+        return _error(422, "BAD_CRON", str(exc))
+    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+        return err
+    cadence = work_store.create_cadence(
+        org_id, body.name.strip(), body.cron, body.intentText.strip(),
+        node_id=body.nodeId, enabled=body.enabled,
+    )
+    activity.log("operator", "cadence.created", org_id=org_id, subject_ids=[cadence.id],
+                 payload={"cron": cadence.cron})
+    return _cadence_view(cadence)
+
+
+@router.put("/organizations/{org_id}/cadences/{cadence_id}")
+def update_cadence(
+    org_id: str, cadence_id: str, body: CadenceUpdateBody, store=Depends(get_store),
+    work_store=Depends(get_work_store), activity=Depends(get_activity),
+) -> Any:
+    existing = work_store.get_cadence(cadence_id)
+    if existing is None or existing.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No cadence {cadence_id!r}")
+    if body.cron is not None:
+        try:
+            validate_cron(body.cron)
+        except CronError as exc:
+            return _error(422, "BAD_CRON", str(exc))
+    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+        return err
+    cadence = work_store.update_cadence(
+        cadence_id, name=body.name, cron=body.cron, intent_text=body.intentText,
+        node_id=body.nodeId, enabled=body.enabled,
+    )
+    activity.log("operator", "cadence.updated", org_id=org_id, subject_ids=[cadence_id],
+                 payload={"enabled": cadence.enabled})
+    return _cadence_view(cadence)
+
+
+@router.delete("/organizations/{org_id}/cadences/{cadence_id}", status_code=204)
+def delete_cadence(
+    org_id: str, cadence_id: str, work_store=Depends(get_work_store),
+    activity=Depends(get_activity),
+):
+    existing = work_store.get_cadence(cadence_id)
+    if existing is None or existing.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No cadence {cadence_id!r}")
+    work_store.delete_cadence(cadence_id)
+    activity.log("operator", "cadence.deleted", org_id=org_id, subject_ids=[cadence_id])
+    return JSONResponse(status_code=204, content=None)
 
 
 # --------------------------------------------------------------------------- #

@@ -78,6 +78,20 @@ export interface Intent {
   targetNode: string;
   createdAt: string;
   rootAssignmentId: string | null;
+  cadenceId: string | null;
+}
+
+// A standing schedule (E7, engine.md §4): each due occurrence fires an ordinary intent.
+export interface Cadence {
+  id: string;
+  nodeId: string | null; // null ⇒ the org root at fire time
+  name: string;
+  cron: string; // five UTC fields: minute hour day-of-month month day-of-week
+  intentText: string;
+  enabled: boolean;
+  lastFiredAt: string | null;
+  nextFireAt: string | null; // server-computed; null when disabled
+  createdAt: string;
 }
 
 export interface Step {
@@ -212,11 +226,52 @@ function useInvalidateWork(orgId: string | null) {
   const qc = useQueryClient();
   return () => {
     for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments",
-                       "spend", "assignment-detail"]) {
+                       "spend", "assignment-detail", "cadences"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
     void orgId;
   };
+}
+
+export function useCadences(orgId: string | null) {
+  return useQuery({
+    queryKey: ["cadences", orgId],
+    queryFn: () => apiGet<{ cadences: Cadence[] }>(`/organizations/${orgId}/cadences`),
+    enabled: !!orgId,
+    refetchInterval: usePollInterval(),
+    select: (d) => d.cadences,
+  });
+}
+
+export function useCreateCadence(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      cron: string;
+      intentText: string;
+      nodeId?: string | null;
+    }) => apiSend("POST", `/organizations/${orgId}/cadences`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateCadence(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: ({ cadenceId, body }: { cadenceId: string; body: { enabled?: boolean } }) =>
+      apiSend("PUT", `/organizations/${orgId}/cadences/${cadenceId}`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteCadence(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (cadenceId: string) =>
+      apiSend("DELETE", `/organizations/${orgId}/cadences/${cadenceId}`),
+    onSuccess: invalidate,
+  });
 }
 
 export function useSubmitIntent(orgId: string | null) {
