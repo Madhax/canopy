@@ -553,6 +553,12 @@ def _effective_grants(rec, actuator, engine) -> set[str]:
         return set()
 
 
+# Either write grant opens the rw worktree/PR path: code.repo.write is the tier-2 code grant,
+# docs.repo.write the tier-1 docs re-scope (E8) — same git-mediated executor, same canopy/*
+# branch discipline.
+_REPO_WRITE_GRANTS = ("code.repo.write", "docs.repo.write")
+
+
 def _grant_denied(work_store, rec, tool: str, need: str, assignment_id: str | None):
     work_store.record_tool_event(
         org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
@@ -586,7 +592,7 @@ def repo_checkout(
     grants = _effective_grants(rec, actuator, engine)
     try:
         if body.ref is None:
-            if "code.repo.write" not in grants:
+            if not grants.intersection(_REPO_WRITE_GRANTS):
                 return _grant_denied(work_store, rec, "repo_checkout", "code.repo.write", a.id)
             result = repos.materialize_worktree(a.orgId, a.id)
         else:
@@ -622,7 +628,7 @@ def repo_pr(
     if err is not None:
         return err
     grants = _effective_grants(rec, actuator, engine)
-    if "code.repo.write" not in grants:
+    if not grants.intersection(_REPO_WRITE_GRANTS):
         return _grant_denied(work_store, rec, "repo_pr", "code.repo.write", a.id)
     try:
         pr = repos.assemble_pr(a.orgId, a.id, test_output=body.testOutput)

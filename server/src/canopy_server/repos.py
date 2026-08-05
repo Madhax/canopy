@@ -1,9 +1,13 @@
 """RepoManager — the git-mediated executor behind the repo grants (mvp.md §2, envelope §3.4).
 
-The work target lives under platform control at ``data/repos/<orgId>/target-app`` (``main``
+The work target lives under platform control at ``data/repos/<orgId>/<name>`` (``main``
 protected by convention — nothing in the tool surface can commit to it directly):
 
-- ``ensure_repo``: copy the fixture in and ``git init`` with one initial commit on ``main``.
+- ``ensure_repo``: initialize the org's work target. By default the ``examples/target-app``
+  fixture is copied in and ``git init``-ed with one initial commit on ``main`` (the CI spine).
+  With a ``source`` (canopy.toml ``[repo] source`` — E8's "point the executor at a local clone
+  of the Canopy repo"), the work target is ``git clone``-d from that local repository instead,
+  history preserved; the source itself is only ever read.
 - ``materialize_worktree`` (the ``code.repo.write`` executor, v1 git-mediated form): a fresh
   worktree on a ``canopy/<assignmentId>`` branch — local worktree + branch, no remotes.
 - ``readonly_checkout`` (the ``repo.read`` executor): a detached worktree at a PR's head, for
@@ -43,32 +47,52 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 class RepoManager:
-    def __init__(self, repos_root: Path, *, fixture: Path = _FIXTURE):
+    def __init__(self, repos_root: Path, *, fixture: Path = _FIXTURE,
+                 source: Path | None = None):
         self.root = repos_root
         self.fixture = fixture
+        self.source = source
+        self.repo_name = source.name if source is not None else "target-app"
 
     def repo_path(self, org_id: str) -> Path:
-        return self.root / org_id / "target-app"
+        return self.root / org_id / self.repo_name
 
     def _worktrees_path(self, org_id: str) -> Path:
         return self.root / org_id / "worktrees"
 
     # ------------------------------------------------------------------ setup
     def ensure_repo(self, org_id: str) -> Path:
-        """Initialize the org's work target from the fixture (idempotent)."""
+        """Initialize the org's work target (idempotent): clone the configured source repo,
+        or copy the fixture in and git-init it."""
         repo = self.repo_path(org_id)
         if (repo / ".git").exists():
             return repo
         repo.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            self.fixture, repo,
-            ignore=shutil.ignore_patterns(".venv", "__pycache__", ".pytest_cache"),
-        )
-        _git(repo, "init", "-b", "main")
+        if self.source is not None:
+            if not (self.source / ".git").exists():
+                raise RepoError(f"[repo] source is not a git repository: {self.source}")
+            _git(repo.parent, "clone", str(self.source), str(repo))
+            try:
+                # DWIM-creates local main from origin/main when the source HEAD is elsewhere.
+                _git(repo, "checkout", "main")
+            except RepoError:
+                # A half-initialized clone must not satisfy the idempotency check next call.
+                shutil.rmtree(repo, ignore_errors=True)
+                raise RepoError(
+                    f"[repo] source {self.source} has no 'main' branch — the executors "
+                    "protect and merge into 'main' (worktrees branch from it)"
+                ) from None
+        else:
+            shutil.copytree(
+                self.fixture, repo,
+                ignore=shutil.ignore_patterns(".venv", "__pycache__", ".pytest_cache"),
+            )
+            _git(repo, "init", "-b", "main")
+            _git(repo, "add", "-A")
         _git(repo, "config", "user.email", "canopy@localhost")
         _git(repo, "config", "user.name", "Canopy")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-m", "target-app: initial fixture state")
+        if self.source is None:
+            _git(repo, "commit", "-m", "target-app: initial fixture state")
         return repo
 
     # -------------------------------------------------------------- worktrees

@@ -172,7 +172,7 @@ def get_gateway():
 def _engine_for(path_str: str, data_dir_str: str):
     from .engine.engine import ExecutionEngine
 
-    repos = _repos_for(data_dir_str)
+    repos = _repos_for(data_dir_str, _repo_source_str())
     return ExecutionEngine(
         _work_store_for(path_str),
         _ledger_for(path_str),
@@ -186,15 +186,23 @@ def _engine_for(path_str: str, data_dir_str: str):
     )
 
 
+def _repo_source_str() -> str:
+    from .config import get_repo_source
+
+    source = get_repo_source()
+    return str(source) if source else ""
+
+
 @lru_cache(maxsize=8)
-def _repos_for(data_dir_str: str):
+def _repos_for(data_dir_str: str, source_str: str):
     from .repos import RepoManager
 
-    return RepoManager(Path(data_dir_str) / "repos")
+    return RepoManager(Path(data_dir_str) / "repos",
+                       source=Path(source_str) if source_str else None)
 
 
 def get_repos():
-    return _repos_for(str(get_data_dir()))
+    return _repos_for(str(get_data_dir()), _repo_source_str())
 
 
 def get_engine():

@@ -293,13 +293,14 @@ TOOLS: dict[str, dict[str, Any]] = {
                        "read-only checkout at a submitted ref (reviewers). Returns the path.",
         "schema": _obj({"ref": _STR}, []),
         "handler": _t_repo_checkout, "manager": False,
-        "grants": ("code.repo.write", "repo.read"),
+        "grants": ("code.repo.write", "docs.repo.write", "repo.read"),
     },
     "repo_pr": {
         "description": "Assemble the PullRequest artifact from your worktree state (branch, "
                        "baseSha, headSha, diff, testOutput) — cite its ref in finish.",
         "schema": _obj({"testOutput": _STR}, []),
-        "handler": _t_repo_pr, "manager": False, "grants": ("code.repo.write",),
+        "handler": _t_repo_pr, "manager": False,
+        "grants": ("code.repo.write", "docs.repo.write"),
     },
     "repo_merge_request": {
         "description": "Request the governed merge of an approved branch into main; opens an "

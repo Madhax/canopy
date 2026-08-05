@@ -12,7 +12,7 @@ def test_catalog_shape():
     catalog = get_catalog()
     assert len(catalog.organizationTypes) == 26
     assert len(catalog.roles) == 87
-    assert len(catalog.formations) == 16
+    assert len(catalog.formations) == 17
 
 
 def test_every_palette_role_resolves():
@@ -51,6 +51,7 @@ def test_formation_verify_edges_match_teams_doc():
     assert verify_edges == {
         ("product-engineering-pod", "qa", "backend"),
         ("product-engineering-pod", "qa", "frontend"),
+        ("docs-pod", "editor", "writer"),
         ("ml-delivery-pod", "qa", "ml"),
         ("newsdesk", "factchecker", "reporter"),
         ("newsdesk", "copyeditor", "reporter"),
@@ -64,13 +65,19 @@ def test_tool_grants_resolve_and_cover_the_mvp_roles():
     catalog = get_catalog()
     grants = {g.key: g for g in catalog.toolGrants}
     assert set(grants) == {
-        "workspace.rw", "repo.read", "code.repo.write", "test.unit.run", "test.run",
-        "repo.merge",
+        "workspace.rw", "repo.read", "code.repo.write", "docs.repo.write", "test.unit.run",
+        "test.run", "repo.merge",
     }
     # Execute-class grants carry the hard tier floor (envelope §3.1); merge is governed.
     assert grants["test.run"].riskClass == "execute" and grants["test.run"].minSandboxTier == 2
     assert "merge" in grants["repo.merge"].governedActions
     assert grants["code.repo.write"].params["branchPattern"] == "canopy/*"
+    # The docs write grant (E8): same executor and branch discipline as code.repo.write, but
+    # tier-1 — documentation is never executed downstream, so no hard-wall requirement and
+    # no trusted-local waiver for a docs-only pod.
+    assert grants["docs.repo.write"].minSandboxTier == 1
+    assert grants["docs.repo.write"].executor == "git-mediated"
+    assert grants["docs.repo.write"].params["branchPattern"] == "canopy/*"
 
     roles = {r.key: r for r in catalog.roles}
     assert roles["backend-engineer"].toolGrants == [
@@ -87,6 +94,26 @@ def test_tool_grants_resolve_and_cover_the_mvp_roles():
     assert not {"code.repo.write", "test.unit.run", "test.run"} & set(
         roles["engineering-lead"].toolGrants
     )
+
+
+def test_docs_pod_roles_carry_no_execute_class_grants():
+    """E8: the docs pod re-role. The writer writes on a canopy/* branch via the tier-1 docs
+    grant, the editor reads, the lead merges — nothing in the pod needs a sandbox tier above
+    the subprocess tier, so it actuates with no trusted-local waiver (mvp.md §4 E8)."""
+    catalog = get_catalog()
+    roles = {r.key: r for r in catalog.roles}
+    assert roles["tech-writer"].toolGrants == ["workspace.rw", "repo.read", "docs.repo.write"]
+    assert roles["editor"].toolGrants == ["workspace.rw", "repo.read"]
+    for k in ("tech-writer", "editor"):
+        assert roles[k].defaultRuntime == "cli-claude"
+
+    grants = {g.key: g for g in catalog.toolGrants}
+    pod = [(f.manager.roleKey, *[m.roleKey for m in f.members])
+           for f in catalog.formations if f.key == "docs-pod"][0]
+    assert set(pod) == {"engineering-lead", "tech-writer", "editor"}
+    for role_key in pod:
+        for gk in roles[role_key].toolGrants:
+            assert grants[gk].minSandboxTier < 2, f"{role_key}:{gk} would demand the waiver"
 
 
 def test_integrity_catches_dangling_tool_grant():
