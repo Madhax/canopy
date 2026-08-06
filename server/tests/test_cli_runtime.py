@@ -296,3 +296,46 @@ def test_two_node_delegate_demo_on_fake_cli(
     events = [e["tool"] for e in
               get_work_store().list_tool_events(s_lead["actuationId"], lead["id"])]
     assert "reports_status" in events
+
+
+def test_read_only_poll_loop_trips_stall_trigger(
+    client, make_org, mint_session, live_server, tmp_path, monkeypatch,
+):
+    """Regression: a session that only calls read-only status tools (get_assignment,
+    reports_status, fetch_artifact) settles NO-DELTA steps, so the engine's no-delta stall
+    trigger gates the spin. Previously any tool call counted as "tool-effect", so an agent
+    politely polling forever was invisible to stall detection and burned a session per
+    resume."""
+    from canopy_server.deps import get_engine
+
+    monkeypatch.chdir(tmp_path)
+    org = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Spin")
+    node = _node(org, "backend-engineer")
+    s = mint_session(org["id"], node_id=node["id"])
+    _seed_charter(org, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(org["id"], s["actuationId"], "spin regression",
+                                   target_node=node["id"], allowance_override=50_000).assignment
+
+    poll = {"tools": [{"name": "get_assignment", "arguments": {}}], "usage": [50, 10]}
+    _write_script(tmp_path, monkeypatch, {
+        "sessionId": "sess-spin",
+        "turns": [
+            {"tools": [{"name": "declare_plan",
+                        "arguments": {"stages": [{"title": "work"}]}}],
+             "usage": [100, 20]},
+            poll, poll, poll, poll, poll,  # 5 = the stall_none_steps default
+        ],
+    })
+    agent = _agent(s["token"])
+    cfg = _cfg(live_server, s, node["id"])
+    cli_runtime.cli_tick(agent, cfg)  # intake
+    cli_runtime.cli_tick(agent, cfg)  # session
+    _wait_session_done(a.id)
+
+    detail = client.get(f"/api/assignments/{a.id}").json()
+    no_delta = [st for st in detail["steps"] if st["deltaKind"] == "none"]
+    assert len(no_delta) >= 5  # read-only polls are not progress
+    gates = get_engine().sweep_triggers()
+    gate = next(g for g in gates if g.reason.startswith("stall:no-delta"))
+    assert gate.assignmentId == a.id
+    assert client.get(f"/api/assignments/{a.id}").json()["assignment"]["state"] == "gated"
