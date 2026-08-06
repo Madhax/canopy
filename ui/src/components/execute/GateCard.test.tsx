@@ -76,6 +76,7 @@ describe("PlanOutline", () => {
                 resolution: null, createdAt: "" }],
       meter: { id: "mt_1", allowance: 1000, spent: 850, reserved: 0, state: "open",
                warned: true },
+      deliverable: null,
       notes: [{ id: "no_1", assignmentId: "as_root", stageIdx: null, author: "operator",
                 text: "prefer the streaming writer", createdAt: "", deliveredAt: "t" }],
       children: [],

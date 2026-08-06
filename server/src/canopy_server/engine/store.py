@@ -19,6 +19,7 @@ from ..db import Db, register_schema
 from ..deps import now_iso
 from ..ids import (
     new_assignment_id,
+    new_cadence_id,
     new_deliverable_id,
     new_gate_id,
     new_intent_id,
@@ -32,6 +33,7 @@ from .models import (
     ASSIGNMENT_TERMINAL_STATES,
     Assignment,
     Brief,
+    Cadence,
     Deliverable,
     Gate,
     Intent,
@@ -82,6 +84,8 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     closed_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_assignment_node   ON work_assignment (actuation_id, node_id, state);
+-- Work belongs to the position (org+node), like agent_memory — the E6 re-actuation lookups.
+CREATE INDEX IF NOT EXISTS ix_assignment_org_node ON work_assignment (org_id, node_id, state);
 CREATE INDEX IF NOT EXISTS ix_assignment_intent ON work_assignment (intent_id);
 
 CREATE TABLE IF NOT EXISTS work_brief (
@@ -205,6 +209,19 @@ CREATE INDEX IF NOT EXISTS ix_gate_assignment ON work_gate (assignment_id, state
 CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_open_dedupe
     ON work_gate (assignment_id, kind, reason_hash) WHERE state = 'open';
 
+CREATE TABLE IF NOT EXISTS work_cadence (
+    id            TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL,
+    node_id       TEXT,                        -- NULL ⇒ the org root at fire time
+    name          TEXT NOT NULL,
+    cron          TEXT NOT NULL,               -- five UTC fields (engine.md §4)
+    intent_text   TEXT NOT NULL,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    last_fired_at TEXT,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_cadence_org ON work_cadence (org_id, created_at);
+
 CREATE TABLE IF NOT EXISTS work_tool_event (
     id            TEXT PRIMARY KEY,
     org_id        TEXT NOT NULL,
@@ -257,6 +274,14 @@ def _intent(r) -> Intent:
         kind=r["kind"], text=r["text"], state=r["state"],
         rootAssignmentId=r["root_assignment_id"], cadenceId=r["cadence_id"],
         createdBy=r["created_by"], createdAt=r["created_at"], closedAt=r["closed_at"],
+    )
+
+
+def _cadence(r) -> Cadence:
+    return Cadence(
+        id=r["id"], orgId=r["org_id"], nodeId=r["node_id"], name=r["name"], cron=r["cron"],
+        intentText=r["intent_text"], enabled=bool(r["enabled"]),
+        lastFiredAt=r["last_fired_at"], createdAt=r["created_at"],
     )
 
 
@@ -403,6 +428,85 @@ class WorkStore:
                 (state, now_iso(), intent_id),
             )
 
+    # ---------------------------------------------------------------- cadences
+    def create_cadence(
+        self, org_id: str, name: str, cron: str, intent_text: str, *,
+        node_id: str | None = None, enabled: bool = True,
+    ) -> Cadence:
+        cid = new_cadence_id()
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO work_cadence (id, org_id, node_id, name, cron, intent_text, "
+                "enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cid, org_id, node_id, name, cron, intent_text, 1 if enabled else 0, ts),
+            )
+        return Cadence(
+            id=cid, orgId=org_id, nodeId=node_id, name=name, cron=cron,
+            intentText=intent_text, enabled=enabled, createdAt=ts,
+        )
+
+    def get_cadence(self, cadence_id: str) -> Cadence | None:
+        with self.db.connect() as conn:
+            r = conn.execute("SELECT * FROM work_cadence WHERE id=?", (cadence_id,)).fetchone()
+        return _cadence(r) if r else None
+
+    def list_cadences(
+        self, org_id: str | None = None, *, enabled_only: bool = False,
+    ) -> list[Cadence]:
+        clauses, params = [], []
+        if org_id is not None:
+            clauses.append("org_id=?")
+            params.append(org_id)
+        if enabled_only:
+            clauses.append("enabled=1")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM work_cadence {where} ORDER BY created_at, id",  # noqa: S608
+                params,
+            ).fetchall()
+        return [_cadence(r) for r in rows]
+
+    def update_cadence(
+        self, cadence_id: str, *, name: str | None = None, cron: str | None = None,
+        intent_text: str | None = None, node_id: str | None = None, enabled: bool | None = None,
+    ) -> Cadence | None:
+        sets, params = [], []
+        for col, val in (
+            ("name", name), ("cron", cron), ("intent_text", intent_text), ("node_id", node_id),
+            ("enabled", None if enabled is None else (1 if enabled else 0)),
+        ):
+            if val is not None:
+                sets.append(f"{col}=?")
+                params.append(val)
+        if sets:
+            with self.db.transaction() as conn:
+                conn.execute(
+                    f"UPDATE work_cadence SET {', '.join(sets)} WHERE id=?",  # noqa: S608
+                    (*params, cadence_id),
+                )
+        return self.get_cadence(cadence_id)
+
+    def mark_cadence_fired(self, cadence_id: str, ts: str) -> None:
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE work_cadence SET last_fired_at=? WHERE id=?", (ts, cadence_id))
+
+    def delete_cadence(self, cadence_id: str) -> None:
+        """Delete the schedule only — intents it fired are ordinary history and stay."""
+        with self.db.transaction() as conn:
+            conn.execute("DELETE FROM work_cadence WHERE id=?", (cadence_id,))
+
+    def open_intent_for_cadence(self, cadence_id: str) -> Intent | None:
+        """The still-open previous occurrence, if any — the misfire check (engine.md §4)."""
+        with self.db.connect() as conn:
+            r = conn.execute(
+                "SELECT * FROM work_intent WHERE cadence_id=? AND state='open' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (cadence_id,),
+            ).fetchone()
+        return _intent(r) if r else None
+
     # ------------------------------------------------------------- assignments
     def create_assignment(
         self, *, org_id: str, actuation_id: str, intent_id: str, node_id: str, issued_by: str,
@@ -435,32 +539,38 @@ class WorkStore:
             ).fetchone()
         return _assignment(r) if r else None
 
-    def current_assignment(self, actuation_id: str, node_id: str) -> Assignment | None:
+    def current_assignment(self, org_id: str, node_id: str) -> Assignment | None:
         """The node's live assignment (most recent non-terminal). One `executing` per node is a
         domain rule, so at most one active row is expected — newest wins if a race leaves two.
-        ``proposed`` drafts are excluded: nothing is published to the node until dispatch."""
+        ``proposed`` drafts are excluded: nothing is published to the node until dispatch.
+
+        Keyed by **org + node** (the position), not the actuation instance (E6): open work
+        survives deactuate → re-actuate exactly like ``agent_memory`` — a fresh actuation
+        doesn't orphan the org's in-flight assignments. ``actuation_id`` on the row stays as
+        provenance (which actuation created it)."""
         hidden = sorted(ASSIGNMENT_TERMINAL_STATES | {"proposed"})
         placeholders = ",".join("?" for _ in hidden)
         with self.db.connect() as conn:
             r = conn.execute(
-                "SELECT * FROM work_assignment WHERE actuation_id=? AND node_id=? "
+                "SELECT * FROM work_assignment WHERE org_id=? AND node_id=? "
                 f"AND state NOT IN ({placeholders}) "  # noqa: S608 - fixed placeholders only
                 "ORDER BY created_at DESC LIMIT 1",
-                (actuation_id, node_id, *hidden),
+                (org_id, node_id, *hidden),
             ).fetchone()
         return _assignment(r) if r else None
 
-    def refs_granted_to(self, actuation_id: str, node_id: str) -> set[str]:
+    def refs_granted_to(self, org_id: str, node_id: str) -> set[str]:
         """Every artifact ref granted to the node via any brief version of any of its
-        assignments in this actuation — the grant set the artifact fetch checks against
-        (workspace.md §2: a manager can grant only refs it can itself read, so brief refs are
-        transitively legitimate)."""
+        assignments — the grant set the artifact fetch checks against (workspace.md §2: a
+        manager can grant only refs it can itself read, so brief refs are transitively
+        legitimate). Org+node keyed like ``current_assignment``: grants ride the position's
+        briefs and survive re-actuation."""
         with self.db.connect() as conn:
             rows = conn.execute(
                 "SELECT b.artifact_refs FROM work_brief b "
                 "JOIN work_assignment a ON a.id = b.assignment_id "
-                "WHERE a.actuation_id=? AND a.node_id=?",
-                (actuation_id, node_id),
+                "WHERE a.org_id=? AND a.node_id=?",
+                (org_id, node_id),
             ).fetchall()
         refs: set[str] = set()
         for r in rows:

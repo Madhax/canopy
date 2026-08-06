@@ -18,6 +18,15 @@ Dependency edges carry a **resolution policy** (`resolveOn`, per `domain-model.m
 **Built-in dependencies:** QA assignments always depend on the implementing engineer's PR (**verify** — unlocks at submission; the lead's acceptance waits for the `TestReport`).
 **Absorbs intents like:** "Add multi-tenant billing," "Fix the checkout race condition."
 
+## `docs-pod`
+
+**Manager:** `engineering-lead` · **Members:** `tech-writer`, `editor`
+**Purpose:** Close documentation issues with reviewed, verifiable doc changes.
+**Artifact flow:** brief → writer `PullRequest` (docs-only branch) → editor `EditedDraft` review → lead accepts both → publishes upward.
+**Built-in dependencies:** the editor's review always depends on the writer's submitted PR (**verify** — the review starts at submission; the lead's acceptance waits for the `EditedDraft`).
+**Distinctive:** the writer's `docs.repo.write` grant is tier-1 — documentation artifacts are never executed downstream (unlike code, which feeds `test.run`), so the pod actuates on the subprocess tier with no trusted-local waiver. Seeded by `execution/mvp.md` E8 (Canopy working on Canopy); grows into `org-roadmap.md` O2's `canopy-docs`.
+**Absorbs intents like:** "Document the actuation readiness codes," "Rewrite the quickstart for the new runtime."
+
 ## `incident-response-squad`
 
 **Manager:** `sre-lead` · **Members:** `incident-responder`, `platform-engineer`, `tech-writer`

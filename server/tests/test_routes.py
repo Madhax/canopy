@@ -10,7 +10,7 @@ def test_catalog(client):
     body = r.json()
     assert len(body["organizationTypes"]) == 26
     assert len(body["roles"]) == 87
-    assert len(body["formations"]) == 16
+    assert len(body["formations"]) == 17
 
 
 def test_create_and_read(client, make_org):

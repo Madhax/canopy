@@ -9,14 +9,12 @@ a Step + SpendEvent so cost is analyzable, not merely accounted (domain Economic
 from __future__ import annotations
 
 import asyncio
-import time
 from collections.abc import Callable
 
 from pydantic import BaseModel
 
 from ..activity import ActivityLog
 from ..db import Db, register_schema
-from ..deps import now_iso
 from ..ids import new_step_id
 from ..ledger import BudgetExhausted, BudgetLedger, Meter
 from ..profiles import ProfileStore
@@ -25,23 +23,12 @@ from ..secretstore import SecretStore
 from .base import CompletionRequest, ModelGateway, StepKind, ToolCall, ValidationResult
 from .providers import ProviderError, provider_registry
 
+# E6 debt close (engine.md's unified-Step decision): the A1 ``gateway_step`` table is retired.
+# ``work_step`` is THE Step record (fed by runtimes with the gateway's step id) and
+# ``ledger_spend_event`` is the authoritative money audit — the duplicate row added nothing.
+# The DROP is a one-shot migration for pre-E6 dev DBs; the response shape is unchanged.
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS gateway_step (
-    id            TEXT PRIMARY KEY,
-    actuation_id  TEXT NOT NULL,
-    node_id       TEXT NOT NULL,
-    task_id       TEXT,
-    provider      TEXT NOT NULL,
-    model         TEXT NOT NULL,
-    kind          TEXT NOT NULL DEFAULT 'production',
-    input_tokens  INTEGER NOT NULL,
-    output_tokens INTEGER NOT NULL,
-    duration_ms   INTEGER NOT NULL,
-    stop_reason   TEXT NOT NULL,
-    delta_note    TEXT,
-    created_at    TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_step_node ON gateway_step (actuation_id, node_id);
+DROP TABLE IF EXISTS gateway_step;
 """
 register_schema(SCHEMA)
 
@@ -200,7 +187,6 @@ class DefaultModelGateway(ModelGateway):
             raise GatewayBudgetExhausted(exc.meter_id) from exc
 
         provider = self._providers[profile.provider]
-        started = time.perf_counter()
         try:
             async with self._sem(profile.provider):
                 result = await provider.complete(
@@ -212,8 +198,6 @@ class DefaultModelGateway(ModelGateway):
         except Exception as exc:  # noqa: BLE001 - never leak a reservation on an unexpected error
             self.ledger.release(reservation)
             raise GatewayProviderError(f"unexpected provider failure: {exc}") from exc
-        duration_ms = int((time.perf_counter() - started) * 1000)
-
         est_cost, price_known = self._price(
             profile.provider, profile.model, result.inputTokens, result.outputTokens
         )
@@ -231,10 +215,6 @@ class DefaultModelGateway(ModelGateway):
             est_cost_micros=est_cost,
             reserved=reservation.amount,
             task_id=task_id,
-        )
-        self._insert_step(
-            step_id, rec.actuationId, rec.nodeId, task_id, profile.provider, profile.model,
-            kind, result.inputTokens, result.outputTokens, duration_ms, result.stopReason,
         )
         if outcome.crossedWarn:
             self.activity.log(
@@ -280,15 +260,3 @@ class DefaultModelGateway(ModelGateway):
             return None
         return self._meter_resolver(actuation_id, node_id, task_id)
 
-    def _insert_step(
-        self, step_id, actuation_id, node_id, task_id, provider, model, kind, in_tok, out_tok,
-        duration_ms, stop_reason,
-    ) -> None:
-        with self.db.transaction() as conn:
-            conn.execute(
-                "INSERT INTO gateway_step (id, actuation_id, node_id, task_id, provider, model, "
-                "kind, input_tokens, output_tokens, duration_ms, stop_reason, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (step_id, actuation_id, node_id, task_id, provider, model, kind, in_tok, out_tok,
-                 duration_ms, stop_reason, now_iso()),
-            )

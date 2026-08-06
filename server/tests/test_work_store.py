@@ -95,12 +95,12 @@ def test_assignment_create_and_state_machine(tmp_path):
 
 def test_current_assignment_ignores_terminal(tmp_path):
     store = _store(tmp_path)
-    assert store.current_assignment("act_1", "a_be") is None
+    assert store.current_assignment("o1", "a_be") is None
     a = _assignment(store, state="executing")
-    assert store.current_assignment("act_1", "a_be").id == a.id
+    assert store.current_assignment("o1", "a_be").id == a.id
 
     store.set_assignment_state(a.id, "closed")
-    assert store.current_assignment("act_1", "a_be") is None  # closed no longer "current"
+    assert store.current_assignment("o1", "a_be") is None  # closed no longer "current"
 
 
 def test_list_assignments_filters(tmp_path):

@@ -2,7 +2,7 @@
   "name": "canopy",
   "private": true,
   "version": "0.1.0",
-  "description": "Canopy — build AI-agent organizations as literal, executable org charts. Phase 1: the WYSIWYG org-chart editor and thin persistence server.",
+  "description": "Canopy \u00e2\u20ac\u201d build AI-agent organizations as literal, executable org charts. Phase 1: the WYSIWYG org-chart editor and thin persistence server.",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n server,ui -c green,cyan \"pnpm dev:server\" \"pnpm dev:ui\"",
@@ -14,7 +14,8 @@
     "test": "pnpm run test:ui && pnpm run test:server",
     "test:ui": "pnpm --filter @canopy/ui test",
     "test:server": "uv run --project server pytest server/tests -q",
-    "start": "uv run --project server uvicorn canopy_server.main:app --port 8700"
+    "start": "uv run --project server uvicorn canopy_server.main:app --port 8700",
+    "test:e2e": "pnpm --filter @canopy/ui exec playwright test"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

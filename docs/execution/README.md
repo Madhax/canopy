@@ -25,6 +25,7 @@ Read in this order:
 | `mvp.md` | **MVP-1: the software team.** A three-role `product-engineering-pod` (lead / backend engineer / QA) building and testing code in a real local git repo. Role isolation by construction, salary in use end-to-end, build milestones E1–E7 for Claude Code. |
 | `target-app.md` | The MVP-1 work object, designed in full: the `examples/target-app` expense-reports service, the unit/acceptance suite split that makes the rework beat structural, the seeded CSV contract, grant→path mapping, salary calibration, and the PF-1 benchmark twin. Built in E4. |
 | `amendments-2026-07-26.md` | Amendment record: five settled decisions (verify/consume dependencies, staged delegation, wake-on-delivery, the living plan view, notes) with the per-doc change log and the code impact map. |
+| `e8-runbook.md` | The E8 capstone as an operator script: the `docs-pod` re-role, `[repo] source` pointed at a dedicated Canopy clone, one curated docs issue through the full machinery, branch pushed by hand, cost receipt in the PR. Seeds `../org-roadmap.md` O2. |
 
 ## Phase-3 definition of done (MVP-1)
 

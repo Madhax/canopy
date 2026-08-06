@@ -53,6 +53,16 @@ export interface WorkNote {
   deliveredAt: string | null;
 }
 
+export interface Deliverable {
+  id: string;
+  kind: string;
+  artifactRefs: string[];
+  summary: string;
+  accepted: boolean | null; // null = awaiting the verdict
+  reviewNote: string | null;
+  createdAt: string;
+}
+
 export interface PlanNode {
   assignment: Assignment;
   brief: { text: string; artifactRefs: string[]; version: number } | null;
@@ -67,6 +77,7 @@ export interface PlanNode {
   } | null;
   gates: Gate[];
   meter: Meter | null;
+  deliverable: Deliverable | null;
   notes: WorkNote[];
   children: PlanNode[];
 }
@@ -78,6 +89,20 @@ export interface Intent {
   targetNode: string;
   createdAt: string;
   rootAssignmentId: string | null;
+  cadenceId: string | null;
+}
+
+// A standing schedule (E7, engine.md §4): each due occurrence fires an ordinary intent.
+export interface Cadence {
+  id: string;
+  nodeId: string | null; // null ⇒ the org root at fire time
+  name: string;
+  cron: string; // five UTC fields: minute hour day-of-month month day-of-week
+  intentText: string;
+  enabled: boolean;
+  lastFiredAt: string | null;
+  nextFireAt: string | null; // server-computed; null when disabled
+  createdAt: string;
 }
 
 export interface Step {
@@ -212,11 +237,80 @@ function useInvalidateWork(orgId: string | null) {
   const qc = useQueryClient();
   return () => {
     for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments",
-                       "spend", "assignment-detail"]) {
+                       "spend", "assignment-detail", "cadences"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
     void orgId;
   };
+}
+
+// Operator artifact preview (the deliverable viewer). Refs are immutable versions, so the
+// result never goes stale.
+export interface ArtifactPreview {
+  meta: {
+    ref: string;
+    name: string;
+    type: string;
+    size: number;
+    version: number;
+    nodeId: string;
+    createdAt: string;
+  };
+  content: string | null;
+  reason: "too-large" | "binary" | "missing-blob" | null;
+}
+
+export function useArtifact(orgId: string | null, ref: string | null) {
+  return useQuery({
+    queryKey: ["artifact", orgId, ref],
+    queryFn: () =>
+      apiGet<ArtifactPreview>(
+        `/organizations/${orgId}/artifacts?ref=${encodeURIComponent(ref!)}`,
+      ),
+    enabled: !!orgId && !!ref,
+    staleTime: Infinity,
+  });
+}
+
+export function useCadences(orgId: string | null) {
+  return useQuery({
+    queryKey: ["cadences", orgId],
+    queryFn: () => apiGet<{ cadences: Cadence[] }>(`/organizations/${orgId}/cadences`),
+    enabled: !!orgId,
+    refetchInterval: usePollInterval(),
+    select: (d) => d.cadences,
+  });
+}
+
+export function useCreateCadence(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      cron: string;
+      intentText: string;
+      nodeId?: string | null;
+    }) => apiSend("POST", `/organizations/${orgId}/cadences`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateCadence(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: ({ cadenceId, body }: { cadenceId: string; body: { enabled?: boolean } }) =>
+      apiSend("PUT", `/organizations/${orgId}/cadences/${cadenceId}`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteCadence(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (cadenceId: string) =>
+      apiSend("DELETE", `/organizations/${orgId}/cadences/${cadenceId}`),
+    onSuccess: invalidate,
+  });
 }
 
 export function useSubmitIntent(orgId: string | null) {

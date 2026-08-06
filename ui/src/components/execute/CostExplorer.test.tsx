@@ -10,7 +10,7 @@ const nodeName = (id: string) => names[id] ?? id;
 
 const intents: Intent[] = [
   { id: "in_1", text: "Add CSV export; all tests must pass", state: "executing",
-    targetNode: "a_lead", createdAt: "", rootAssignmentId: "as_root" },
+    targetNode: "a_lead", createdAt: "", rootAssignmentId: "as_root", cadenceId: null },
 ];
 
 const byIntent: SpendRow[] = [

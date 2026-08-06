@@ -56,6 +56,65 @@ def test_repo_manager_lifecycle(tmp_path):
         mgr.assemble_pr("org1", "as_missing")
 
 
+def test_repo_manager_clones_a_configured_source(tmp_path):
+    """E8: with ``[repo] source`` set, the work target is a clone of a real local repository —
+    history preserved, source never written — and the whole executor lifecycle runs on it."""
+    from canopy_server.repos import RepoManager, _git
+
+    source = tmp_path / "canopy-work"
+    source.mkdir()
+    _git(source, "init", "-b", "main")
+    _git(source, "config", "user.email", "op@localhost")
+    _git(source, "config", "user.name", "Operator")
+    (source / "README.md").write_text("# Canopy\n", encoding="utf-8")
+    (source / "docs").mkdir()
+    (source / "docs" / "quickstart.md").write_text("# Quickstart\n", encoding="utf-8")
+    _git(source, "add", "-A")
+    _git(source, "commit", "-m", "canopy: initial")
+    (source / "docs" / "quickstart.md").write_text("# Quickstart\n\nrun it\n", encoding="utf-8")
+    _git(source, "add", "-A")
+    _git(source, "commit", "-m", "docs: expand quickstart")
+
+    mgr = RepoManager(tmp_path / "repos", source=source)
+    repo = mgr.ensure_repo("org1")
+    assert repo.name == "canopy-work"  # named after the source, not target-app
+    assert _git(repo, "log", "--format=%s").splitlines() == [
+        "docs: expand quickstart", "canopy: initial",
+    ]  # a clone with history, not a snapshot
+    assert mgr.ensure_repo("org1") == repo  # idempotent
+
+    wt = mgr.materialize_worktree("org1", "as_docs")
+    assert wt["branch"] == "canopy/as_docs"
+    Path(wt["path"], "docs", "readiness.md").write_text("# Readiness\n", encoding="utf-8")
+    pr = mgr.assemble_pr("org1", "as_docs")
+    assert "docs/readiness.md" in pr["diff"]
+    mgr.merge("org1", "canopy/as_docs")
+    assert (repo / "docs" / "readiness.md").exists()  # merged under governance
+    # The source repository is only ever read — nothing wrote back to it.
+    assert not (source / "docs" / "readiness.md").exists()
+    assert _git(source, "log", "--format=%s").splitlines()[0] == "docs: expand quickstart"
+
+
+def test_repo_source_guards(tmp_path):
+    from canopy_server.repos import RepoError, RepoManager, _git
+
+    not_a_repo = tmp_path / "plain-dir"
+    not_a_repo.mkdir()
+    with pytest.raises(RepoError, match="not a git repository"):
+        RepoManager(tmp_path / "r1", source=not_a_repo).ensure_repo("org1")
+
+    trunk = tmp_path / "trunk-repo"
+    trunk.mkdir()
+    _git(trunk, "init", "-b", "trunk")
+    _git(trunk, "config", "user.email", "op@localhost")
+    _git(trunk, "config", "user.name", "Operator")
+    (trunk / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(trunk, "add", "-A")
+    _git(trunk, "commit", "-m", "init")
+    with pytest.raises(RepoError, match="no 'main' branch"):
+        RepoManager(tmp_path / "r2", source=trunk).ensure_repo("org1")
+
+
 # --------------------------------------------------------------- dp surface + grants
 @pytest.fixture()
 def pod(client, make_org, mint_session):
@@ -221,6 +280,74 @@ def test_mcp_repo_tools_are_grant_filtered(client, pod):
     events = get_work_store().list_tool_events(pod["s_qa"]["actuationId"],
                                                pod["s_qa"]["nodeId"])
     assert events[-1]["tool"] == "repo_pr" and events[-1]["outcome"] == "denied"
+
+
+def test_docs_pod_writer_writes_editor_reviews(client, make_org, mint_session):
+    """E8 — the docs re-role. The tier-1 ``docs.repo.write`` grant opens the same rw
+    worktree/PR path the engineer uses; the editor (read-only, the verify edge) can check
+    out the submitted head but is refused a rw worktree; MCP filters match."""
+    from canopy_server.deps import get_engine
+    from test_cli_runtime import _seed_charter
+
+    org = make_org(seed={"kind": "formation", "formationKey": "docs-pod"})
+    lead, writer, editor = (_node(org, k) for k in
+                            ("engineering-lead", "tech-writer", "editor"))
+    s_lead = mint_session(org["id"], node_id=lead["id"])
+    s_w = mint_session(org["id"], node_id=writer["id"], actuation_id=s_lead["actuationId"])
+    s_e = mint_session(org["id"], node_id=editor["id"], actuation_id=s_lead["actuationId"])
+    for node in (lead, writer, editor):
+        _seed_charter(org, s_lead["actuationId"], node["id"])
+    eng = get_engine()
+    root = eng.submit_intent(org["id"], s_lead["actuationId"],
+                             "Document the readiness codes",
+                             target_node=lead["id"]).assignment
+    eng.mark_intake_complete(root.id)
+    eng.declare_plan(root.id, [{"title": "decompose"}])
+    w_a = eng.delegate(root.id, writer["id"], "write the doc page",
+                       contract_type="PullRequest")
+    e_a = eng.delegate(root.id, editor["id"], "review the doc page",
+                       contract_type="EditedDraft",
+                       depends_on=[{"assignmentId": w_a.id}])
+    gate = eng.finish_turn(root.id)
+    eng.resolve_gate(gate.id, action="approve")
+
+    eng.mark_intake_complete(w_a.id)
+    eng.declare_plan(w_a.id, [{"title": "write"}])
+    wt = client.post("/api/dp/repo/checkout", headers=_h(s_w["token"]),
+                     json={"assignmentId": w_a.id})
+    assert wt.status_code == 200, wt.text
+    assert wt.json()["branch"] == f"canopy/{w_a.id}"
+    Path(wt.json()["path"], "docs-page.md").write_text("# Readiness codes\n", encoding="utf-8")
+    pr_resp = client.post("/api/dp/repo/pr", headers=_h(s_w["token"]),
+                          json={"assignmentId": w_a.id})
+    assert pr_resp.status_code == 200, pr_resp.text
+    ref, pr = pr_resp.json()["ref"], pr_resp.json()["pr"]
+    assert "docs-page.md" in pr["diff"]
+
+    eng.finish(w_a.id, artifact_refs=[ref], summary="doc PR v1")
+    e_a = eng.store.get_assignment(e_a.id)
+    assert e_a.state == "briefed"  # the verify edge unlocked at submission
+    eng.mark_intake_complete(e_a.id)
+
+    # The editor reviews read-only: ro checkout allowed, rw worktree refused + audited.
+    ro = client.post("/api/dp/repo/checkout", headers=_h(s_e["token"]),
+                     json={"assignmentId": e_a.id, "ref": pr["headSha"]})
+    assert ro.status_code == 200 and Path(ro.json()["path"], "docs-page.md").exists()
+    steal = client.post("/api/dp/repo/checkout", headers=_h(s_e["token"]),
+                        json={"assignmentId": e_a.id})
+    assert steal.status_code == 403
+    assert steal.json()["error"]["code"] == "GRANT_DENIED"
+
+    def tools_for(session):
+        r = client.post("/api/dp/mcp", headers=_h(session["token"]),
+                        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        return {t["name"] for t in r.json()["result"]["tools"]}
+
+    assert {"repo_checkout", "repo_pr"} <= tools_for(s_w)
+    assert "repo_merge_request" not in tools_for(s_w)
+    editor_tools = tools_for(s_e)
+    assert "repo_checkout" in editor_tools and "repo_pr" not in editor_tools
+    assert "repo_merge_request" in tools_for(s_lead)
 
 
 def test_pr_artifact_content_round_trips(client, pod):

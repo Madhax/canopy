@@ -122,6 +122,7 @@ class ExecutionEngine:
         self, org_id: str, actuation_id: str, text: str, *, target_node: str | None = None,
         kind: str = "episodic", created_by: str = "operator", allowance_override: int | None = None,
         contract_kind: str | None = None, contract_type: str | None = None,
+        cadence_id: str | None = None,
     ) -> RootAssignmentResult:
         """Create a work_intent and its root Assignment, funded from the target node's salary.
 
@@ -134,9 +135,14 @@ class ExecutionEngine:
         allowance = allowance_override or agent.salary.perAssignmentAllowance
         ckind = contract_kind or self._contract_for(agent)[0]
         ctype = contract_type or self._contract_for(agent)[1]
+        # A cadence occurrence is operator work from here on (engine.md §4: "indistinguishable
+        # from operator work") — gates and reviews route to the operator; provenance rides the
+        # intent's created_by + cadence_id.
+        issuer = "operator" if created_by == "cadence" else created_by
 
         intent = self.store.create_intent(
             org_id, actuation_id, agent.id, text, kind=kind, created_by=created_by,
+            cadence_id=cadence_id,
         )
         # Pre-mint the assignment id so the meter is bound to it in both directions.
         aid = new_assignment_id()
@@ -147,10 +153,10 @@ class ExecutionEngine:
         )
         assignment = self.store.create_assignment(
             assignment_id=aid, org_id=org_id, actuation_id=actuation_id, intent_id=intent.id,
-            node_id=agent.id, issued_by=created_by, contract_kind=ckind, contract_type=ctype,
+            node_id=agent.id, issued_by=issuer, contract_kind=ckind, contract_type=ctype,
             meter_id=meter.id, state="briefed",
         )
-        self.store.add_brief(aid, text, revised_by=created_by)
+        self.store.add_brief(aid, text, revised_by=issuer)
         self.store.set_intent_root(intent.id, aid)
         self._log("intent.submitted", org_id, [intent.id, aid, agent.id],
                   {"actuationId": actuation_id, "meterId": meter.id})

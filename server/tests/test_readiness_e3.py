@@ -45,6 +45,24 @@ def test_tier_unsatisfiable_without_the_waiver(pod_actuator, monkeypatch):
     assert {roles[a] for a in flagged} == {"backend-engineer", "qa-engineer"}
 
 
+def test_docs_pod_is_ready_without_the_waiver(client, make_org, mint_session, monkeypatch):
+    """E8's posture claim, asserted: docs-only work carries no grant above tier 1, so the
+    docs pod actuates on the subprocess tier with allow_trusted_local=False — no waiver
+    stretching (mvp.md §4 E8)."""
+    from canopy_server.deps import get_actuator, get_store
+
+    org = make_org(seed={"kind": "formation", "formationKey": "docs-pod"})
+    for a in org["agents"]:
+        mint_session(org["id"], node_id=a["id"])
+    act = get_actuator()
+    monkeypatch.setattr(actuator_mod, "get_allow_trusted_local", lambda: False)
+    issues = act.check_readiness(get_store().read(org["id"]))
+    assert "TIER_UNSATISFIABLE" not in _codes(issues)
+    assert issues == []
+    # And the waiver's loud activity entry has nothing to announce for this org.
+    assert act._has_execute_grants(get_store().read(org["id"])) is False
+
+
 def test_cli_unavailable_when_roles_want_cli_claude(pod_actuator, monkeypatch):
     act, org = pod_actuator
     from canopy_server.deps import get_store

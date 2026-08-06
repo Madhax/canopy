@@ -17,10 +17,12 @@
         "qa-engineer",
         "code-reviewer",
         "tech-writer",
+        "editor",
         "product-manager"
       ],
       "formations": [
         "product-engineering-pod",
+        "docs-pod",
         "design-studio-cell"
       ]
     },
@@ -851,6 +853,8 @@
     {
       "key": "tech-writer",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read", "docs.repo.write"],
+      "defaultRuntime": "cli-claude",
       "title": "Technical Writer",
       "group": "software-engineering",
       "purpose": "Developer-facing documentation",
@@ -1408,6 +1412,8 @@
     {
       "key": "editor",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read"],
+      "defaultRuntime": "cli-claude",
       "title": "Editor",
       "group": "marketing-growth-content",
       "purpose": "Quality gate for published words",
@@ -3040,6 +3046,33 @@
       "artifactFlow": "brief → engineers produce PullRequest → DependencyGate opens QA → TestReport → lead accepts both → publishes upward"
     },
     {
+      "key": "docs-pod",
+      "title": "Docs Pod",
+      "purpose": "Close documentation issues with reviewed, verifiable doc changes.",
+      "manager": {
+        "slot": "lead",
+        "roleKey": "engineering-lead"
+      },
+      "members": [
+        {
+          "slot": "writer",
+          "roleKey": "tech-writer"
+        },
+        {
+          "slot": "editor",
+          "roleKey": "editor"
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "editor",
+          "to": "writer",
+          "resolveOn": "delivered"
+        }
+      ],
+      "artifactFlow": "brief → writer produces PullRequest (docs-only) → DependencyGate opens editor → EditedDraft review → lead accepts both → publishes upward"
+    },
+    {
       "key": "incident-response-squad",
       "title": "Incident Response Squad",
       "purpose": "Restore service fast, then convert the pain into prevention.",
@@ -3595,6 +3628,15 @@
       "title": "Repository write access",
       "riskClass": "write",
       "minSandboxTier": 2,
+      "executor": "git-mediated",
+      "credentialKind": "scm-token",
+      "params": { "branchPattern": "canopy/*" }
+    },
+    {
+      "key": "docs.repo.write",
+      "title": "Repository write access (documentation)",
+      "riskClass": "write",
+      "minSandboxTier": 1,
       "executor": "git-mediated",
       "credentialKind": "scm-token",
       "params": { "branchPattern": "canopy/*" }

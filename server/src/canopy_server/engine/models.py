@@ -193,3 +193,18 @@ class MemoryEntry(BaseModel):
     seq: int
     entry: dict[str, Any]
     createdAt: str
+
+
+class Cadence(BaseModel):
+    """A standing schedule (engine.md §4): each due occurrence becomes an ordinary episodic
+    intent on ``nodeId`` (None ⇒ the org root), tagged with this cadence's id."""
+
+    id: str
+    orgId: str
+    nodeId: str | None = None
+    name: str
+    cron: str  # five UTC fields: minute hour day-of-month month day-of-week
+    intentText: str
+    enabled: bool
+    lastFiredAt: str | None = None
+    createdAt: str

@@ -34,6 +34,15 @@ allow_trusted_local = true
 # pod roles run their real cli-claude sessions (needs the CLI on PATH and logged in).
 runtime_override = "loop"
 
+[repo]
+# The work target the repo executors materialize for each org (docs/execution/mvp.md E8).
+# Empty (the default) uses the examples/target-app fixture — the CI spine. Point it at a LOCAL
+# git clone to have orgs work on a real repository, e.g. a dedicated clone of Canopy itself:
+#   source = "D:/workspace/canopy-work"
+# The source is only ever read (cloned from); branches merge inside data/repos/<orgId>/ and the
+# operator pushes accepted branches by hand (no remote plumbing until org-roadmap.md O2).
+source = ""
+
 [gateway]
 # The default model provider. "mock" is the deterministic provider that makes CI green and demos
 # free with zero API spend and no keys (risk IM-2 — the mock provider is the testing spine).

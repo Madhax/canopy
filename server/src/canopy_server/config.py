@@ -65,6 +65,7 @@ _DEFAULTS: dict[str, Any] = {
         "concurrency": {"anthropic": 4, "gemini": 4, "mock": 64},
     },
     "work": {"rework_grant_pct": 20, "stall_minutes": 10, "stall_none_steps": 5},
+    "repo": {"source": ""},
     "execution": {"allow_trusted_local": False, "runtime_override": ""},
     "prices": {},
 }
@@ -155,6 +156,15 @@ def get_stall_minutes() -> int:
 def get_stall_none_steps() -> int:
     """This many consecutive ``delta_kind='none'`` steps opens a stall InterventionGate."""
     return int(_raw_config()["work"]["stall_none_steps"])
+
+
+def get_repo_source() -> Path | None:
+    """The work target the repo executors materialize for each org (mvp.md E8): a path to a
+    local git clone. Empty (the default) means the ``examples/target-app`` fixture — the CI
+    spine. Set it to point the org at a real repository (e.g. a dedicated clone of Canopy
+    itself); the source is only ever read (cloned from), never written."""
+    raw = str(_raw_config()["repo"]["source"]).strip()
+    return Path(raw).expanduser() if raw else None
 
 
 def get_provider_concurrency() -> dict[str, int]:
