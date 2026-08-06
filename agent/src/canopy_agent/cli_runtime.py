@@ -84,6 +84,11 @@ denial arrive when you are resumed. When resumed with completed child work, chec
 note (a rejection with an unchanged brief funds rework from the report's own meter). Synthesize
 accepted refs into your own deliverable via `finish`. You never do your reports' work — you
 have no tools for it.
+
+A report in state `delivering` is NOT still working: it has finished and is blocked waiting on
+YOUR review (`reports_status` shows its deliverable under `awaitingYourReview`). Fetch its
+artifacts with `fetch_artifact` and `accept`/`reject` immediately — never wait on, poll, or
+escalate about a `delivering` report.
 """
 
 
@@ -147,6 +152,9 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
+_READ_ONLY_TOOLS = ("get_assignment", "reports_status", "fetch_artifact")
+
+
 class _Session:
     """One live headless session and the observer thread consuming its stream."""
 
@@ -154,6 +162,7 @@ class _Session:
         self.assignment_id = assignment_id
         self.thread: threading.Thread | None = None
         self.proc: subprocess.Popen | None = None
+        self.progress = False  # any non-"none" delta settled by this session
 
     @property
     def alive(self) -> bool:
@@ -161,6 +170,7 @@ class _Session:
 
 
 _SESSIONS: dict[str, _Session] = {}
+_RESUME_BACKOFF: dict[str, dict[str, float]] = {}
 
 
 def _observe_stream(
@@ -198,11 +208,19 @@ def _observe_stream(
             out_tok = int(usage.get("output_tokens", 0))
             content = msg.get("content") or []
             tools = [c.get("name", "") for c in content if c.get("type") == "tool_use"]
-            delta = "tool-effect" if tools else "none"
+            # Read-only status checks are NOT progress: a session that only polls must
+            # settle no-delta steps so the engine's stall trigger can see the spin.
+            delta = "none"
+            if tools and not all(t.endswith(_READ_ONLY_TOOLS) for t in tools):
+                delta = "tool-effect"
             if any(t.endswith("produce_artifact") for t in tools):
                 delta = "artifact"
             elif any(t.endswith(("delegate", "escalate", "finish_turn")) for t in tools):
                 delta = "message"
+            if delta != "none":
+                sess = _SESSIONS.get(assignment_id)
+                if sess is not None:
+                    sess.progress = True
             now = time.monotonic()
             client.post("/api/dp/assignment/events", json={
                 "assignmentId": assignment_id, "kind": "step",
@@ -222,11 +240,23 @@ def _observe_stream(
                 break
 
         elif etype == "result":
+            err = event.get("result") if event.get("is_error") else None
             _log("session_result", assignment=assignment_id,
-                 cost_usd=event.get("total_cost_usd"), turns=event.get("num_turns"))
+                 cost_usd=event.get("total_cost_usd"), turns=event.get("num_turns"),
+                 is_error=bool(event.get("is_error")),
+                 error=(str(err)[:200] if err is not None else None))
 
     proc.wait()
-    _log("session_exit", assignment=assignment_id, code=proc.returncode)
+    stderr_tail: list[str] = []
+    if proc.returncode:
+        try:
+            stderr_log = Path.cwd() / "assignments" / assignment_id / "session.stderr.log"
+            stderr_tail = stderr_log.read_text(encoding="utf-8", errors="replace")\
+                .strip().splitlines()[-3:]
+        except OSError:
+            pass
+    _log("session_exit", assignment=assignment_id, code=proc.returncode,
+         stderr_tail=stderr_tail or None)
 
 
 def _materialize_brief(client: httpx.Client, workroot: Path, brief: dict | None) -> None:
@@ -273,7 +303,12 @@ def _start_session(
     brief_text = (cur.get("brief") or {}).get("text", "")
     if resume and a.get("sessionRef"):
         prompt = ("You have been resumed. Call the canopy `get_assignment` tool to see the "
-                  "current state (resolutions, notes, deliveries), then continue the protocol.")
+                  "current state (resolutions, notes, deliveries), then continue the protocol. "
+                  "Do not end your turn without advancing the assignment: if your deliverable "
+                  "artifacts are already produced, call `finish` citing their refs; if you are "
+                  "a manager with a report in state `delivering`, review and accept/reject it "
+                  "now; if you are genuinely blocked, escalate or open a clarification instead "
+                  "of ending your turn idle.")
         extra = ["--resume", a["sessionRef"]]
     else:
         prompt = (f"Begin your assignment. Brief:\n\n{brief_text}\n\n"
@@ -286,8 +321,17 @@ def _start_session(
         "--max-turns", str(max_turns), "--permission-mode", "default",
         "--mcp-config", ".mcp.json", "--strict-mcp-config", *extra,
     ]
+    # The profile's model is the session's model (cli-runtime.md §2: profile.model → --model);
+    # without it the CLI silently runs on the operator's personal default.
+    model = os.environ.get("CANOPY_CLI_MODEL")
+    if model:
+        cmd += ["--model", model]
+    # CLI stderr goes to a per-assignment file, not DEVNULL: when a session dies at
+    # startup (auth, bad flag), this file is the only place the reason lands.
+    stderr_path = workroot / "session.stderr.log"
     popen_kw: dict = {
-        "cwd": str(workdir), "stdout": subprocess.PIPE, "stderr": subprocess.DEVNULL,
+        "cwd": str(workdir), "stdout": subprocess.PIPE,
+        "stderr": open(stderr_path, "ab"),  # noqa: SIM115 - fd is inherited by the child
         "text": True, "encoding": "utf-8",
     }
     if sys.platform == "win32":
@@ -366,7 +410,22 @@ def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
                     json={"assignmentId": aid, "kind": "intake-complete"})
         return "engaged"
     if state in ("planning", "executing"):
-        _start_session(client, cfg, charter, cur,
-                       resume=bool(a.get("sessionRef")) and state == "executing")
+        resuming = bool(a.get("sessionRef")) and state == "executing"
+        if resuming:
+            # A resume that follows a no-progress session backs off exponentially:
+            # without this, a session that keeps ending with only status polls gets
+            # re-dispatched every tick at full session price.
+            st = _RESUME_BACKOFF.setdefault(aid, {"count": 0, "until": 0.0})
+            prev = _SESSIONS.get(aid)
+            if prev is not None and prev.progress:
+                st["count"], st["until"] = 0, 0.0
+            elif prev is not None:
+                if time.monotonic() < st["until"]:
+                    return "engaged"
+                st["count"] += 1
+                st["until"] = time.monotonic() + min(10.0 * (2 ** st["count"]), 300.0)
+                if st["count"] >= 2:
+                    _log("resume_backoff", assignment=aid, count=st["count"])
+        _start_session(client, cfg, charter, cur, resume=resuming)
         return "engaged"
     return "idle"  # delivering / gated / terminal: awaiting review or resolution

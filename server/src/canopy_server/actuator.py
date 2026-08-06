@@ -319,7 +319,8 @@ class Actuator:
         spec = SandboxSpec(
             actuation_id=actuation_id, node_id=agent.id, org_id=top.id,
             workspace_root=workspace_root,
-            env=self._build_env(token, agent.id, actuation_id, runtime_kind=runtime_kind),
+            env=self._build_env(token, agent.id, actuation_id, runtime_kind=runtime_kind,
+                                model=profile.model if profile else None),
             a2a_port=None,
         )
         handle = await self.sandbox.create(spec)
@@ -334,6 +335,7 @@ class Actuator:
 
     def _build_env(
         self, token: str, node_id: str, actuation_id: str, *, runtime_kind: str = "loop",
+        model: str | None = None,
     ) -> dict[str, str]:
         env = {
             "CANOPY_CP_URL": self.cp_url,
@@ -351,8 +353,13 @@ class Actuator:
         if runtime_kind == "cli-claude":
             # The CLI needs its (operator-provisioned) auth/config dir and a home
             # (cli-runtime.md §8: trusted-local, stated plainly), plus the shim override.
+            # USER/LOGNAME are load-bearing on macOS: without USER the CLI cannot reach
+            # its Keychain credentials and every session exits "not logged in".
             passthrough += ["CLAUDE_CONFIG_DIR", "CANOPY_CLI_CMD", "FAKE_CLAUDE_SCRIPT",
-                            "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA"]
+                            "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+                            "USER", "LOGNAME", "TMPDIR", "LANG"]
+            if model:
+                env["CANOPY_CLI_MODEL"] = model
         for key in passthrough:
             if key in os.environ:
                 env[key] = os.environ[key]

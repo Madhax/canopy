@@ -152,12 +152,23 @@ def _t_reports_status(rec, engine, work_store, args) -> dict:
         cursor = next((s.idx for s in plan.stages if s.state == "active"), None) if plan else None
         meter = get_ledger().get_meter(c.meterId) if c.meterId else None
         gates = work_store.list_gates(assignment_id=c.id, state="open")
-        out.append({
+        entry = {
             "assignmentId": c.id, "nodeId": c.nodeId, "state": c.state,
             "planCursor": cursor,
             "meter": {"spent": meter.spent, "allowance": meter.allowance} if meter else None,
             "openGates": [g.kind for g in gates],
-        })
+        }
+        # "delivering" is not in-progress — it is the child DONE and blocked on this
+        # manager's review. Surface that, and the deliverable itself, so the reviewing
+        # session can act instead of polling.
+        if c.state == "delivering" and c.deliverableId:
+            d = work_store.get_deliverable(c.deliverableId)
+            if d is not None:
+                entry["awaitingYourReview"] = True
+                entry["deliverable"] = {
+                    "summary": d.summary, "artifactRefs": d.artifactRefs, "kind": d.kind,
+                }
+        out.append(entry)
     return {"reports": out}
 
 
