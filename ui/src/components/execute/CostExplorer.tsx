@@ -10,7 +10,13 @@ import { useAssignmentDetail, useAssignments, useIntents, useSpend } from "../..
 const fmtTokens = (n: number) => n.toLocaleString();
 const fmtCost = (micros: number) => `$${(micros / 1_000_000).toFixed(4)}`;
 
-/** Coordination vs production as one stacked bar — the SC-1 split at a glance. */
+/** F2: a zero estimate over real tokens means "no price configured", never "$0.0000" —
+ * IM-5's honesty rule at the display layer. */
+const fmtCostHonest = (micros: number, tokens: number) =>
+  micros === 0 && tokens > 0 ? "—" : fmtCost(micros);
+
+/** Coordination vs production as one stacked bar — the SC-1 split at a glance.
+ * Labeled "% coord" (F2): the bare percentage read as share-of-total spend. */
 function SplitBar({ coordination, production }: { coordination: number; production: number }) {
   const total = coordination + production;
   const pct = total > 0 ? Math.round((coordination / total) * 100) : 0;
@@ -23,7 +29,7 @@ function SplitBar({ coordination, production }: { coordination: number; producti
         <span className="block h-full bg-warn" style={{ width: `${pct}%` }} />
         <span className="block h-full bg-accent" style={{ width: `${100 - pct}%` }} />
       </span>
-      {pct}%
+      {pct}% coord
     </span>
   );
 }
@@ -39,7 +45,8 @@ function StepsTable({ steps }: { steps: Step[] }) {
           <th className="py-0.5 pr-2 font-normal">kind</th>
           <th className="py-0.5 pr-2 font-normal">delta</th>
           <th className="py-0.5 pr-2 text-right font-normal">in</th>
-          <th className="py-0.5 text-right font-normal">out</th>
+          <th className="py-0.5 pr-2 text-right font-normal">out</th>
+          <th className="py-0.5 text-right font-normal">cached</th>
         </tr>
       </thead>
       <tbody>
@@ -49,7 +56,10 @@ function StepsTable({ steps }: { steps: Step[] }) {
             <td className="py-0.5 pr-2">{s.kind}</td>
             <td className="py-0.5 pr-2 text-ink-muted">{s.deltaKind}</td>
             <td className="py-0.5 pr-2 text-right">{fmtTokens(s.inputTokens)}</td>
-            <td className="py-0.5 text-right">{fmtTokens(s.outputTokens)}</td>
+            <td className="py-0.5 pr-2 text-right">{fmtTokens(s.outputTokens)}</td>
+            <td className="py-0.5 text-right text-ink-muted">
+              {fmtTokens((s.cacheReadTokens ?? 0) + (s.cacheCreationTokens ?? 0))}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -82,16 +92,20 @@ export function CostExplorer(props: CostExplorerProps) {
     (t, r) => ({
       cost: t.cost + r.est_cost_micros,
       tokens: t.tokens + r.input_tokens + r.output_tokens,
+      cached: t.cached + (r.cache_read_tokens ?? 0) + (r.cache_creation_tokens ?? 0),
       steps: t.steps + r.steps,
       coord: t.coord + (r.coordination_tokens ?? 0),
       prod: t.prod + (r.production_tokens ?? 0),
     }),
-    { cost: 0, tokens: 0, steps: 0, coord: 0, prod: 0 },
+    { cost: 0, tokens: 0, cached: 0, steps: 0, coord: 0, prod: 0 },
   );
   const totalOverhead =
     totals.coord + totals.prod > 0
       ? Math.round((totals.coord / (totals.coord + totals.prod)) * 100)
       : null;
+  // F2: every recorded cost being zero while tokens flowed means the model has no price row —
+  // say so instead of quoting $0.0000 (the run's "everything is free" confusion).
+  const priceMissing = totals.cost === 0 && totals.tokens > 0;
 
   // Quality context per node, derived from the assignment list (accepted|closed = accepted).
   const nodeStats = new Map<string, { total: number; accepted: number; terminal: number; rework: number }>();
@@ -113,14 +127,27 @@ export function CostExplorer(props: CostExplorerProps) {
       {/* Headline: the whole engagement's burn, overhead first-class */}
       <section className="grid grid-cols-4 gap-3">
         {[
-          { label: "Est. cost", value: fmtCost(totals.cost) },
-          { label: "Tokens", value: fmtTokens(totals.tokens) },
-          { label: "Steps", value: fmtTokens(totals.steps) },
-          { label: "Overhead", value: totalOverhead === null ? "—" : `${totalOverhead}%` },
+          {
+            label: "Est. cost",
+            value: priceMissing ? "—" : fmtCost(totals.cost),
+            sub: priceMissing ? "no price for this model — tokens only" : null,
+          },
+          {
+            label: "Tokens",
+            value: fmtTokens(totals.tokens),
+            sub: totals.cached > 0 ? `+ ${fmtTokens(totals.cached)} cached context` : null,
+          },
+          { label: "Steps", value: fmtTokens(totals.steps), sub: null },
+          {
+            label: "Overhead",
+            value: totalOverhead === null ? "—" : `${totalOverhead}%`,
+            sub: null,
+          },
         ].map((s) => (
           <div key={s.label} className="rounded-lg border border-border bg-surface px-4 py-3">
             <p className="text-[11px] uppercase tracking-wide text-ink-muted">{s.label}</p>
             <p className="text-lg font-semibold text-ink">{s.value}</p>
+            {s.sub ? <p className="text-[11px] text-ink-muted">{s.sub}</p> : null}
           </div>
         ))}
       </section>
@@ -169,7 +196,7 @@ export function CostExplorer(props: CostExplorerProps) {
                     </td>
                     <td className="py-1.5 pr-2 text-right text-ink">{r.steps}</td>
                     <td className="py-1.5 text-right font-medium text-ink">
-                      {fmtCost(r.est_cost_micros)}
+                      {fmtCostHonest(r.est_cost_micros, r.input_tokens + r.output_tokens)}
                     </td>
                   </tr>,
                   ...(open
@@ -209,7 +236,12 @@ export function CostExplorer(props: CostExplorerProps) {
                               {spend ? spend.steps : "—"}
                             </td>
                             <td className="py-1 text-right text-ink-muted">
-                              {spend ? fmtCost(spend.est_cost_micros) : "—"}
+                              {spend
+                                ? fmtCostHonest(
+                                    spend.est_cost_micros,
+                                    spend.input_tokens + spend.output_tokens,
+                                  )
+                                : "—"}
                             </td>
                           </tr>
                         );
@@ -265,7 +297,7 @@ export function CostExplorer(props: CostExplorerProps) {
                       )}
                     </td>
                     <td className="py-1.5 text-right font-medium text-ink">
-                      {fmtCost(r.est_cost_micros)}
+                      {fmtCostHonest(r.est_cost_micros, r.input_tokens + r.output_tokens)}
                     </td>
                   </tr>
                 );
@@ -276,7 +308,8 @@ export function CostExplorer(props: CostExplorerProps) {
       </section>
 
       <p className="text-[11px] text-ink-muted">
-        Costs are estimates (provider-reported tokens × configured rates) — risk IM-5.
+        Costs are estimates (provider-reported tokens × configured rates) — risk IM-5. A “—”
+        cost over real tokens means the model has no price row in canopy.toml.
       </p>
     </div>
   );
