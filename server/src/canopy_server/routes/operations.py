@@ -102,10 +102,14 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
     node_of_assignment = {a.id: a.nodeId for a in assignments}
     open_gates = work_store.list_gates(org_id=org_id, state="open")
     gate_kinds_by_node: dict[str, list[str]] = {}
+    # F5: kind alone can't tell operator work from internal wiring (a dependency gate is the
+    # org running normally) — carry the owner so the UI can tone them apart.
+    gates_by_node: dict[str, list[dict]] = {}
     for g in open_gates:
         node = node_of_assignment.get(g.assignmentId)
         if node is not None:
             gate_kinds_by_node.setdefault(node, []).append(g.kind)
+            gates_by_node.setdefault(node, []).append({"kind": g.kind, "owner": g.owner})
 
     # Burn: spend inside the trailing window, expressed per-minute / per-hour (estimates, IM-5).
     window = max(1, min(windowMinutes, 24 * 60))
@@ -135,6 +139,14 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
         current = next((a for a in active if a.state not in _QUEUED_STATES), None)
         meter = ledger.get_meter(current.meterId) if current and current.meterId else None
         brief = work_store.get_brief(current.id) if current else None
+        # F15: stage progress is the honest per-assignment headline (the meter arc read as
+        # progress and sat at ~0% all run) — completed stages over the living plan's stages.
+        plan = work_store.get_plan(current.id) if current else None
+        stage_progress = (
+            {"done": sum(1 for s in plan.stages if s.state == "done"),
+             "total": len(plan.stages)}
+            if plan and plan.stages else None
+        )
         nodes.append({
             "nodeId": agent.id,
             "name": agent.name,
@@ -143,7 +155,8 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
             "status": status_by_node.get(agent.id, "not-actuated"),
             "current": (
                 {"assignmentId": current.id, "state": current.state,
-                 "briefPreview": (brief.text[:80] if brief else "")}
+                 "briefPreview": (brief.text[:80] if brief else ""),
+                 "stageProgress": stage_progress}
                 if current else None
             ),
             "queueDepth": sum(1 for a in active if a.state in _QUEUED_STATES),
@@ -154,6 +167,7 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
                 if meter else None
             ),
             "openGateKinds": gate_kinds_by_node.get(agent.id, []),
+            "openGates": gates_by_node.get(agent.id, []),
             "runtimeKind": runtime_override or role_runtime.get(agent.role.key, "loop"),
         })
 

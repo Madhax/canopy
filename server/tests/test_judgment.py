@@ -357,6 +357,28 @@ def test_notifications_feed_and_read_cursor(pod, client):
     ).json()["notifications"] == []
 
 
+def test_gate_resolution_auto_reads_its_notifications(pod, client):
+    """F9: a resolved gate's unread notifications stop ringing — stale unread rows read as
+    pending operator actions during the live run."""
+    eng, root = pod["engine"], pod["root"]
+    eng.delegate(root.id, pod["backend"]["id"], "implement")
+    eng.finish_turn(root.id)  # -> plan-review gate + plan-review-waiting notification
+
+    unread = client.get(
+        f"/api/organizations/{root.orgId}/notifications?unread=true"
+    ).json()["notifications"]
+    assert any(n["kind"] == "plan-review-waiting" for n in unread)
+
+    gate = next(g for g in eng.store.list_gates(assignment_id=root.id, state="open")
+                if g.kind == "approval")
+    eng.resolve_gate(gate.id, action="approve")
+
+    unread = client.get(
+        f"/api/organizations/{root.orgId}/notifications?unread=true"
+    ).json()["notifications"]
+    assert not any(n["kind"] == "plan-review-waiting" for n in unread)
+
+
 # ------------------------------------------------- F3 / F11 / F14: liveness-aware triggers
 def test_no_delta_run_suppressed_while_session_is_live(pod):
     """F3+F14: a manager wake-turn settles no-delta steps while the session is actively

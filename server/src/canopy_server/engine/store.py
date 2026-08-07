@@ -1163,6 +1163,18 @@ class WorkStore:
             ).fetchall()
         return [_notification(r) for r in rows]
 
+    def mark_notifications_read_for_subject(self, org_id: str, subject_id: str) -> int:
+        """F9: a resolved fact must not keep ringing. Auto-read every unread notification
+        whose ``subjectIds`` include the given id (e.g. the gate that just resolved) — stale
+        unread rows were indistinguishable from pending operator actions."""
+        with self.db.transaction() as conn:
+            cur = conn.execute(
+                "UPDATE work_notification SET read_at=? WHERE org_id=? AND read_at IS NULL "
+                "AND subject_ids LIKE ?",
+                (now_iso(), org_id, f'%"{subject_id}"%'),
+            )
+        return cur.rowcount
+
     def mark_notifications_read(self, org_id: str, ids: list[str] | None = None) -> int:
         """Mark the given notifications read (or all unread for the org). Returns the count."""
         ts = now_iso()

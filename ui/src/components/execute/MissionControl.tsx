@@ -29,9 +29,35 @@ function fmtCost(micros: number): string {
   return `$${(micros / 1_000_000).toFixed(micros >= 10_000_000 ? 2 : 4)}`;
 }
 
+// F5: "delivering" is finished work waiting on its REVIEWER — showing the raw state read as
+// "stuck" during the live run. Label states in operator language wherever they render.
+export const STATE_LABEL: Record<string, string> = {
+  delivering: "awaiting review",
+};
+
+export const stateLabel = (s: string) => STATE_LABEL[s] ?? s;
+
+/** F5: one line of narrative — what the org is doing and whether any of it needs you. */
+export function pulseNarrative(pulse: Pulse, opts?: { includeAttention?: boolean }): string {
+  const parts: string[] = [];
+  const working = pulse.nodes.filter(
+    (n) => n.current && ["planning", "executing", "intake", "briefed"].includes(n.current.state),
+  ).length;
+  const reviewing = pulse.nodes.filter((n) => n.current?.state === "delivering").length;
+  if (working > 0) parts.push(`${working} working`);
+  if (reviewing > 0) parts.push(`${reviewing} awaiting review`);
+  if (parts.length === 0 && pulse.intents.open === 0) parts.push("no open work");
+  if (opts?.includeAttention === false) return parts.join(" · ");
+  parts.push(pulse.gates.attention > 0
+    ? `${pulse.gates.attention} need${pulse.gates.attention === 1 ? "s" : ""} you`
+    : "nothing needs you");
+  return parts.join(" · ");
+}
+
 /** The always-visible observability strip: actuation · intents · burn · gates · attention. */
 export function OrgPulse({ pulse }: { pulse: Pulse }) {
   const actuation = pulse.actuation?.state ?? "not actuated";
+  const internal = pulse.gates.open - pulse.gates.attention;
   const gateSummary = Object.entries(pulse.gates.byKind)
     .map(([k, n]) => `${n} ${k}`)
     .join(" · ");
@@ -58,38 +84,59 @@ export function OrgPulse({ pulse }: { pulse: Pulse }) {
         </span>{" "}
         tk/min · ~{fmtCost(pulse.burn.estCostMicrosPerHour)}/hr
       </span>
+      {/* F5: operator gates and internal wiring are different facts — only one is your job. */}
+      {internal > 0 && (
+        <span className="text-ink-muted" title={gateSummary}>
+          <span className="font-semibold text-ink">{internal}</span> internal gate
+          {internal === 1 ? "" : "s"} (wiring)
+        </span>
+      )}
       <span className="text-ink-muted">
-        <span className="font-semibold text-ink">{pulse.gates.open}</span> open gate
-        {pulse.gates.open === 1 ? "" : "s"}
-        {gateSummary && <span className="ml-1 text-[11px]">({gateSummary})</span>}
+        {pulseNarrative(pulse, { includeAttention: pulse.gates.attention === 0 })}
       </span>
+      {/* F4: the single most urgent fact is unmissable, not a rail item. */}
       {pulse.gates.attention > 0 && (
-        <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-medium text-danger">
-          {pulse.gates.attention} need you
+        <span className="animate-pulse rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-semibold text-danger">
+          {pulse.gates.attention} gate{pulse.gates.attention === 1 ? "" : "s"} need
+          {pulse.gates.attention === 1 ? "s" : ""} you
         </span>
       )}
     </div>
   );
 }
 
-function MeterArc({ meter }: { meter: NonNullable<PulseNode["meter"]> }) {
-  const pct =
-    meter.allowance > 0 ? Math.min(100, Math.round((meter.spent / meter.allowance) * 100)) : 0;
+// F15: the budget meter is a separate, LABELED affordance — the bare arc read as "progress"
+// and sat at ~0% all run with six-figure allowances.
+export function BudgetChip({ meter }: { meter: NonNullable<PulseNode["meter"]> }) {
+  const pct = meter.allowance > 0 ? (meter.spent / meter.allowance) * 100 : 0;
   const tone =
     meter.state === "stopped" || pct >= 100
-      ? "bg-danger"
+      ? "text-danger"
       : meter.warned || pct >= 80
-        ? "bg-warn"
-        : "bg-ok";
+        ? "text-warn"
+        : "text-ink-muted";
+  return (
+    <span
+      className={`text-[10px] ${tone}`}
+      title={`budget: ${meter.spent.toLocaleString()}/${meter.allowance.toLocaleString()} tokens`}
+    >
+      budget {pct >= 10 ? Math.round(pct) : pct.toFixed(1)}%
+    </span>
+  );
+}
+
+/** F15: completed stages over the plan — the primary progress number per assignment. */
+export function StageProgress({ progress }: { progress: { done: number; total: number } }) {
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   return (
     <span
       className="inline-flex items-center gap-1 text-[10px] text-ink-muted"
-      title={`${meter.spent.toLocaleString()}/${meter.allowance.toLocaleString()} tokens`}
+      title={`${progress.done} of ${progress.total} plan stages done`}
     >
       <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-surface-2">
-        <span className={`block h-full ${tone}`} style={{ width: `${pct}%` }} />
+        <span className="block h-full bg-accent" style={{ width: `${pct}%` }} />
       </span>
-      {pct}%
+      {progress.done}/{progress.total} stages
     </span>
   );
 }
@@ -119,22 +166,37 @@ function NodeCard({ node, onInspect }: { node: PulseNode; onInspect: (id: string
       </div>
       {node.current ? (
         <p className="mt-1 truncate text-[11px] text-ink" title={node.current.briefPreview}>
-          <span className="text-accent">{node.current.state}</span> · {node.current.briefPreview}
+          <span className={node.current.state === "delivering" ? "text-warn" : "text-accent"}>
+            {stateLabel(node.current.state)}
+          </span>{" "}
+          · {node.current.briefPreview}
         </p>
       ) : (
         <p className="mt-1 text-[11px] text-ink-muted">no active work</p>
       )}
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        {node.meter && <MeterArc meter={node.meter} />}
+        {node.current?.stageProgress && <StageProgress progress={node.current.stageProgress} />}
+        {node.meter && <BudgetChip meter={node.meter} />}
         {node.queueDepth > 0 && (
           <span className="text-[10px] text-ink-muted">queue {node.queueDepth}</span>
         )}
         {node.wip > 1 && <span className="text-[10px] text-ink-muted">wip {node.wip}</span>}
-        {node.openGateKinds.map((k, i) => (
-          <span key={`${k}${i}`} className="rounded bg-warn/15 px-1 text-[10px] text-warn">
-            🔒 {k}
-          </span>
-        ))}
+        {/* F5: operator-owned gates ring; internal wiring (dependency/await) stays quiet. */}
+        {(node.openGates ?? node.openGateKinds.map((k) => ({ kind: k, owner: "operator" }))).map(
+          (g, i) =>
+            g.owner === "operator" ? (
+              <span key={`${g.kind}${i}`}
+                    className="rounded bg-danger/15 px-1 text-[10px] font-medium text-danger">
+                🔒 {g.kind}
+              </span>
+            ) : (
+              <span key={`${g.kind}${i}`}
+                    className="rounded bg-surface-2 px-1 text-[10px] text-ink-muted"
+                    title={`${g.kind} gate — internal (${g.owner}), not your action`}>
+                🔗 {g.kind}
+              </span>
+            ),
+        )}
       </div>
     </button>
   );

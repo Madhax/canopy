@@ -19,12 +19,14 @@ import {
 import { apiGet } from "../api/client";
 import { useQuery } from "@tanstack/react-query";
 import { usePulse } from "../api/pulse";
-import { Button, CenteredSpinner, EmptyState } from "../components/common";
+import { useAssignments } from "../api/work";
+import { Button, CenteredSpinner, EmptyState, Markdown } from "../components/common";
 import { InspectorPanel } from "../components/execute/AgentInspector";
 import { CadenceSection, type CadenceSeed } from "../components/execute/CadenceSection";
 import { CostSection } from "../components/execute/CostExplorer";
 import { MissionControl, OrgPulse } from "../components/execute/MissionControl";
 import { GateCard } from "../components/execute/GateCard";
+import { OrgPicker, orgLabelSuffix } from "../components/execute/OrgPicker";
 import { PlanOutline } from "../components/execute/PlanOutline";
 
 const SEVERITY_TONE: Record<string, string> = {
@@ -45,8 +47,10 @@ function useOrgDoc(orgId: string | null) {
 export function ExecutePage() {
   const orgs = useOrganizations();
   useCatalog(); // warm the cache for names elsewhere
+  // F5: no default org — landing is the actuated-org picker, not org[0]'s (possibly dead)
+  // console. The header select stays as the switcher once an org is chosen.
   const [orgId, setOrgId] = useState<string | null>(null);
-  const effectiveOrg = orgId ?? orgs.data?.[0]?.id ?? null;
+  const effectiveOrg = orgId;
   const [intentId, setIntentId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [view, setView] = useState<"work" | "pulse" | "costs">("work");
@@ -67,11 +71,25 @@ export function ExecutePage() {
 
   const effectiveIntent = intentId ?? intents.data?.[0]?.id ?? null;
   const plan = useIntentPlan(effectiveIntent);
+  const assignments = useAssignments(effectiveOrg);
 
   const nodeName = useMemo(() => {
     const byId = new Map((orgDoc.data?.agents ?? []).map((a) => [a.id, a.name]));
     return (id: string) => byId.get(id) ?? id;
   }, [orgDoc.data]);
+
+  // F4: intents whose tree holds an open operator gate get the attention ring on their chip.
+  const intentsNeedingYou = useMemo(() => {
+    const intentOf = new Map((assignments.data ?? []).map((a) => [a.id, a.intentId]));
+    const set = new Set<string>();
+    for (const g of gates.data ?? []) {
+      const iid = intentOf.get(g.assignmentId);
+      if (iid) set.add(iid);
+    }
+    return set;
+  }, [assignments.data, gates.data]);
+
+  const orgSuffix = useMemo(() => orgLabelSuffix(orgs.data ?? []), [orgs.data]);
 
   return (
     <div className="min-h-full">
@@ -83,6 +101,17 @@ export function ExecutePage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* F4: the count of gates blocking this org is header-level, not a rail footnote. */}
+          {effectiveOrg && (gates.data?.length ?? 0) > 0 && (
+            <button
+              onClick={() => setView("work")}
+              title="Open gates need your decision — click to see them"
+              className="animate-pulse rounded-full bg-danger/15 px-2.5 py-1 text-[11px] font-semibold text-danger"
+            >
+              🔒 {gates.data!.length} gate{gates.data!.length === 1 ? "" : "s"} need
+              {gates.data!.length === 1 ? "s" : ""} you
+            </button>
+          )}
           <span
             className={`flex items-center gap-1.5 text-[11px] ${live ? "text-ok" : "text-ink-muted"}`}
             title={live ? "Live over SSE" : "Stream down — polling every 2.5s"}
@@ -112,9 +141,10 @@ export function ExecutePage() {
             }}
             className="rounded-md border border-border bg-canvas px-2 py-1 text-sm outline-none focus:border-accent"
           >
+            <option value="">— pick an organization —</option>
             {(orgs.data ?? []).map((o) => (
               <option key={o.id} value={o.id}>
-                {o.name}
+                {orgSuffix(o.id) ? `${o.name} ${orgSuffix(o.id)}` : o.name}
               </option>
             ))}
           </select>
@@ -126,7 +156,7 @@ export function ExecutePage() {
       {orgs.isLoading ? (
         <CenteredSpinner label="Loading organizations…" />
       ) : !effectiveOrg ? (
-        <EmptyState title="No organizations yet">Build one in the editor first.</EmptyState>
+        <OrgPicker orgs={orgs.data ?? []} onPick={setOrgId} />
       ) : view === "costs" ? (
         <main className="mx-auto max-w-6xl px-6 py-6">
           <CostSection orgId={effectiveOrg} nodeName={nodeName} />
@@ -153,21 +183,52 @@ export function ExecutePage() {
       ) : (
         <main className="mx-auto grid max-w-6xl grid-cols-[1fr_320px] gap-6 px-6 py-6">
           <div className="flex flex-col gap-6">
-            {/* Intent console */}
+            {/* F4: open gates ARE the main column's first content — the operator's single
+                most urgent action must not sit in a side rail. */}
+            {(gates.data ?? []).length > 0 && (
+              <section className="flex flex-col gap-3">
+                <h2 className="text-sm font-semibold text-danger">
+                  Needs your decision — the org is blocked on these
+                </h2>
+                {(gates.data ?? []).map((g) => (
+                  <GateCard
+                    key={g.id}
+                    gate={g}
+                    nodeName={nodeName}
+                    busy={resolve.isPending}
+                    onResolve={(gateId, body) => resolve.mutate({ gateId, body })}
+                  />
+                ))}
+              </section>
+            )}
+
+            {/* Intent console. F6: a real intent is paragraphs of markdown, not one line. */}
             <section>
               <form
-                className="mb-3 flex gap-2"
+                className="mb-3 flex items-end gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (text.trim()) submit.mutate({ text: text.trim() });
                   setText("");
                 }}
               >
-                <input
+                <textarea
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder='Give the org work — e.g. "Add CSV export; all tests must pass"'
-                  className="flex-1 rounded-md border border-border bg-canvas px-3 py-2 text-sm outline-none focus:border-accent"
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 320)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && text.trim()) {
+                      e.preventDefault();
+                      submit.mutate({ text: text.trim() });
+                      setText("");
+                    }
+                  }}
+                  rows={2}
+                  placeholder={'Give the org work — e.g. "Add CSV export; all tests must pass". Markdown welcome; Ctrl+Enter submits.'}
+                  className="flex-1 resize-none rounded-md border border-border bg-canvas px-3 py-2 text-sm outline-none focus:border-accent"
                 />
                 <Button type="submit" disabled={submit.isPending || !text.trim()}>
                   Submit intent
@@ -179,23 +240,35 @@ export function ExecutePage() {
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
-                {(intents.data ?? []).map((i) => (
+                {(intents.data ?? []).map((i) => {
+                  // F6: chips show the intent's first line, not a mid-paragraph slice.
+                  const firstLine = i.text.split("\n")[0].replace(/^#+\s*/, "");
+                  // F4: an intent whose tree holds an open operator gate rings.
+                  const needsYou = intentsNeedingYou.has(i.id);
+                  return (
                   <span key={i.id} className="flex items-center gap-1">
                     <button
                       onClick={() => setIntentId(i.id)}
                       className={`rounded-full border px-3 py-1 text-xs ${
-                        i.id === effectiveIntent
-                          ? "border-accent bg-accent/10 text-ink"
-                          : "border-border bg-surface text-ink-muted hover:border-accent"
-                      }`}
+                        needsYou
+                          ? "border-danger bg-danger/10 text-ink"
+                          : i.id === effectiveIntent
+                            ? "border-accent bg-accent/10 text-ink"
+                            : "border-border bg-surface text-ink-muted hover:border-accent"
+                      } ${i.id === effectiveIntent && needsYou ? "ring-1 ring-danger" : ""}`}
                     >
+                      {needsYou && (
+                        <span className="mr-1" title="A gate in this intent needs you">
+                          🔒
+                        </span>
+                      )}
                       {i.cadenceId && (
                         <span className="mr-1" title="Fired by a cadence">
                           ↻
                         </span>
                       )}
-                      {i.text.slice(0, 48)}
-                      {i.text.length > 48 ? "…" : ""}
+                      {firstLine.slice(0, 48)}
+                      {firstLine.length > 48 ? "…" : ""}
                       <span className="ml-1 text-[10px] uppercase">{i.state}</span>
                     </button>
                     {i.state === "completed" && (
@@ -210,7 +283,8 @@ export function ExecutePage() {
                       </button>
                     )}
                   </span>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -220,7 +294,21 @@ export function ExecutePage() {
               {!effectiveIntent ? (
                 <EmptyState title="No intent selected">Submit or pick an intent above.</EmptyState>
               ) : plan.data ? (
-                plan.data.tree.map((n) => (
+                <>
+                {/* F6: the submitted intent, rendered as the markdown it was written in. */}
+                {plan.data.intent.text.length > 120 || plan.data.intent.text.includes("\n") ? (
+                  <details className="mb-3 rounded-md border border-border bg-canvas px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                      Intent — {plan.data.intent.text.split("\n")[0].replace(/^#+\s*/, "").slice(0, 80)}
+                    </summary>
+                    <Markdown text={plan.data.intent.text} className="mt-1 text-xs text-ink" />
+                  </details>
+                ) : (
+                  <p className="mb-3 rounded-md border border-border bg-canvas px-3 py-2 text-xs text-ink">
+                    {plan.data.intent.text}
+                  </p>
+                )}
+                {plan.data.tree.map((n) => (
                   <PlanOutline
                     key={n.assignment.id}
                     node={n}
@@ -247,7 +335,8 @@ export function ExecutePage() {
                     }
                     onInspect={setInspectNode}
                   />
-                ))
+                ))}
+                </>
               ) : (
                 <CenteredSpinner label="Loading plan…" />
               )}
@@ -262,25 +351,9 @@ export function ExecutePage() {
             />
           </div>
 
-          {/* Inbox: needs-you first (open operator gates), then the pulse */}
+          {/* Inbox: notifications only — open gates render in the main column (F4). */}
           <aside className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-ink">
-              Inbox
-              {(gates.data?.length ?? 0) > 0 && (
-                <span className="ml-2 rounded-full bg-danger/15 px-2 py-0.5 text-[11px] text-danger">
-                  {gates.data!.length} need you
-                </span>
-              )}
-            </h2>
-            {(gates.data ?? []).map((g) => (
-              <GateCard
-                key={g.id}
-                gate={g}
-                nodeName={nodeName}
-                busy={resolve.isPending}
-                onResolve={(gateId, body) => resolve.mutate({ gateId, body })}
-              />
-            ))}
+            <h2 className="text-sm font-semibold text-ink">Inbox</h2>
             {(notifications.data ?? []).length > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-ink-muted">While you were away</span>

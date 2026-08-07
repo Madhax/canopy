@@ -65,6 +65,27 @@ the run proved the ledger's input side blind.
 | F12 | **Inspector session log keyed to the original actuation.** Continuation semantics keep the assignment's original `actuationId`; the inspector reads `logs/<node>.log` under that actuation's sandbox, so after a re-actuation the log tail shows the *old* process's events. | inspector | Read the log from the **current** actuation's sandbox (directory row / live actuation id), falling back to the assignment's original. |
 | F10 | **Windows cli-runtime fixes (closed during the run).** (a) Bare `claude` is invisible to `CreateProcess` (no PATHEXT) — probe and spawn now resolve via `shutil.which`. (b) A multi-line `-p` argument is mangled by the npm `claude.CMD` shim (`cmd.exe` treats newlines as command separators — flags after the prompt silently dropped; sessions answered in plain text and settled zero events). The prompt now rides stdin. (c) Workspace trust is path-separator-sensitive: `D:\…` and `D:/…` are distinct entries in `~/.claude.json`; the sandbox resolves the forward-slash form. | runtime | (a) and (b) are fixed in `agent/src/canopy_agent/cli_runtime.py` + `server/src/canopy_server/actuator.py` (this working tree). (c) is an operator-setup note for `cli-runtime.md` §8 — document the trust requirement and the exact key shape. |
 
+### Status — live-run fixes (branch `live-run-fixes`, 2026-08-07)
+
+| # | Status | Where it closed |
+|---|---|---|
+| F1 | **Closed** | Cache-aware metering: `work_step`/`SpendEvent` carry both cache-token columns; settlement and cost estimation weight all four components. The meter-currency re-decision stays open (tracked in the F1 row's end-state). |
+| F2 | **Closed** | Token-share fallback when costs are all zero; "no price for X" surfaces honestly. |
+| F3 | **Closed** | With F14: liveness-aware no-delta trigger (grace window while the session streams); intervention-card node label fixed. |
+| F4 | **Closed** | Header gate badge + pulse chip; open-gate cards promoted into the main column; attention ring on intent chips and plan rows. |
+| F5 | **Closed** | `/execute` lands on the actuated-org picker (live first, pulse narrative per card); one-line org narrative in the pulse strip; `delivering` relabeled "awaiting review"; operator gates (🔒, danger) toned apart from internal wiring (🔗, muted). |
+| F6 | **Closed** | Auto-growing textarea composer (Ctrl+Enter submits); markdown-aware display of intents (chips = first line; plan view renders the full text). |
+| F7 | **Closed** | Markdown rendering for document artifacts; deliverable cards collapse behind an expander — auto-open only while the verdict is pending, auto-collapse and recede on resolution. |
+| F8 | **Closed** | Per-org repo source (org settings + store field; `RepoManager` resolves org → config → fixture at run time). |
+| F9 | **Closed** | Gate resolution auto-reads its notifications; duplicate org names disambiguated with an id suffix on picker cards and the org select. |
+| F10 | **Closed** | (a)/(b) fixed in `cli_runtime.py`/`actuator.py`; (c) documented in `cli-runtime.md` §8 (trust key shape, forward-slash form). |
+| F11 | **Closed** | Adapter recognizes provider-limit errors in `result` events: distinct `provider-limit` notification, backoff instead of hammering, generic stall no longer the shape of "the credit card is empty". |
+| F12 | **Closed** | Inspector reads the current actuation's sandbox (newest existing on disk), falling back to the assignment's original; superseded in the common case by F16's stable log home. |
+| F13 | **Closed** | Assignment workdir is actuation-independent (`data/work/<orgId>/<nodeId>`, env `CANOPY_WORK_ROOT`) — session refs survive re-actuation natively; the "No conversation found" fresh-session fallback stays as a net. |
+| F14 | **Closed** | First-class liveness: per-assignment `lastActivityAt` + `sessionHealth` on a heartbeat cadence; the stall sweep keys on activity, not settled steps. |
+| F15 | **Closed** | Stage-based progress (done/total from the living plan) is the primary number on node cards and plan rows; the budget meter is a separate affordance labeled "budget". |
+| F16 | **Closed** | Org-owned audit home under `data/work/<orgId>/<nodeId>`: adapter log (size-rotated), per-session stderr (rotated), transcript pointer stored on the assignment, transcript copy archived per session; inspector reads the stable home. |
+
 ## Not debts — deliberate Phase-2 assets
 
 - **`mock` model provider.** Added as a first-class provider (the docs named `anthropic`/`gemini`
