@@ -149,3 +149,28 @@ def test_workspace_listing_and_preview(client, make_org, mint_session, tmp_path)
 
     assert client.get(f"{base}?path=out/blob.bin").json()["reason"] == "binary"
     assert client.get(f"{base}?path=../../secret.txt").status_code == 422
+
+
+def test_best_actuation_prefers_live_then_newest_existing_sandbox(client):
+    """F12: after a re-actuation, the inspector reads the newest sandbox that exists on
+    disk — not the (oldest) assignment's original actuationId."""
+    from types import SimpleNamespace
+
+    from canopy_server.config import get_data_dir
+    from canopy_server.routes.inspector import _best_actuation
+
+    node = "a_n1"
+    for act in ("act_old", "act_new"):
+        (get_data_dir() / "sandboxes" / act / node).mkdir(parents=True, exist_ok=True)
+    assignments = [
+        SimpleNamespace(actuationId="act_old", updatedAt="2026-01-01T00:00:00Z"),
+        SimpleNamespace(actuationId="act_new", updatedAt="2026-02-01T00:00:00Z"),
+    ]
+    # Live actuation always wins.
+    assert _best_actuation("act_new", assignments, node) == "act_new"
+    # Deactuated: newest assignment's actuation with an existing sandbox.
+    assert _best_actuation(None, assignments, node) == "act_new"
+    # A live id with no sandbox yet falls through to the newest existing one.
+    assert _best_actuation("act_ghost", assignments, node) == "act_new"
+    # Nothing on disk at all: first candidate, so the caller still has a path to show.
+    assert _best_actuation(None, [assignments[0]], "a_other") == "act_old"

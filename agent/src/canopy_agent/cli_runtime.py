@@ -185,6 +185,9 @@ class _Session:
 
 _SESSIONS: dict[str, _Session] = {}
 _RESUME_BACKOFF: dict[str, dict[str, float]] = {}
+#: F13 interim: assignments whose conversation the CLI can no longer find — the next
+#: session starts fresh (full brief prompt) instead of retrying a doomed --resume.
+_RESUME_FALLBACK: set[str] = set()
 
 
 def _observe_stream(
@@ -312,6 +315,13 @@ def _observe_stream(
                 .strip().splitlines()[-3:]
         except OSError:
             pass
+        # F13 interim: the CLI keys conversations by project directory, so a workdir that
+        # moved (re-actuation changes the sandbox path) makes --resume fail forever with
+        # "No conversation found". Fall back to a fresh session instead of crash-looping
+        # into the stall trigger; the durable work model re-briefs it.
+        if any("No conversation found" in line for line in stderr_tail):
+            _RESUME_FALLBACK.add(assignment_id)
+            _log("resume_conversation_lost", assignment=assignment_id)
     _log("session_exit", assignment=assignment_id, code=proc.returncode,
          stderr_tail=stderr_tail or None)
 
@@ -484,6 +494,11 @@ def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
         return "engaged"
     if state in ("planning", "executing"):
         resuming = bool(a.get("sessionRef")) and state == "executing"
+        if resuming and aid in _RESUME_FALLBACK:
+            # F13 interim: the conversation is gone — start over from the brief.
+            _RESUME_FALLBACK.discard(aid)
+            resuming = False
+            _log("resume_fallback_fresh", assignment=aid)
         if resuming:
             # A resume that follows a no-progress session backs off exponentially:
             # without this, a session that keeps ending with only status polls gets

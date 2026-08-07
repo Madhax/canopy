@@ -72,6 +72,26 @@ def _node_root(actuation_id: str, node_id: str) -> Path:
     return get_data_dir() / "sandboxes" / actuation_id / node_id
 
 
+def _best_actuation(current_id: str | None, assignments, node_id: str) -> str | None:
+    """F12: the sandbox to inspect. The live actuation wins; deactuated, prefer the NEWEST
+    actuation whose sandbox actually exists on disk — continuation keeps an assignment's
+    original ``actuationId``, so the oldest row used to point the log tail at a dead
+    process's sandbox after a re-actuation."""
+    candidates = [current_id] if current_id else []
+    candidates += [
+        a.actuationId
+        for a in sorted(assignments, key=lambda a: a.updatedAt, reverse=True)
+    ]
+    seen: set[str] = set()
+    for cid in candidates:
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        if _node_root(cid, node_id).is_dir():
+            return cid
+    return candidates[0] if candidates else None
+
+
 def _list_workspace(actuation_id: str, node_id: str) -> dict[str, Any] | None:
     """Read-only file listing of the node's sandbox workspace (rel path, size, mtime)."""
     root = _node_root(actuation_id, node_id) / "workspace"
@@ -189,7 +209,7 @@ def agent_state(
 
     # ---- Session: resume ref, tool events, subprocess log tail (best actuation we know of)
     session_ref = next((a.sessionRef for a in assignments if a.sessionRef), None)
-    session_actuation = actuation_id or (assignments[0].actuationId if assignments else None)
+    session_actuation = _best_actuation(actuation_id, assignments, node_id)
     tool_events = (
         work_store.list_tool_events(session_actuation, node_id)[-_TOOL_EVENT_LIMIT:]
         if session_actuation else []
@@ -274,10 +294,10 @@ def workspace_file(
     """Text preview of one workspace file (≤ 256 KB). Path is relative to the node's
     workspace root; anything escaping it is rejected."""
     current_view = actuator.get_current(org_id)
-    actuation_id = current_view.id if current_view else None
-    if actuation_id is None:
-        assignments = work_store.list_assignments(org_id=org_id, node_id=node_id)
-        actuation_id = assignments[0].actuationId if assignments else None
+    assignments = work_store.list_assignments(org_id=org_id, node_id=node_id)
+    actuation_id = _best_actuation(
+        current_view.id if current_view else None, assignments, node_id
+    )
     if actuation_id is None:
         return _error(404, "NOT_FOUND", "No workspace for this node")
     root = (_node_root(actuation_id, node_id) / "workspace").resolve()
