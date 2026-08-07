@@ -81,7 +81,15 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     session_ref     TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
-    closed_at       TEXT
+    closed_at       TEXT,
+    -- F14: first-class liveness, reported by the runtime adapter. Any stream event = alive.
+    -- session_health is running or erroring, detail carries the last error. NULL = a
+    -- non-reporting runtime (loop) and the triggers fall back to step inference unchanged.
+    -- NOTE keep this comment semicolon-free: the meter-nullable rebuild extracts this DDL
+    -- block by splitting on the first semicolon.
+    last_activity_at      TEXT,
+    session_health        TEXT,
+    session_health_detail TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_assignment_node   ON work_assignment (actuation_id, node_id, state);
 -- Work belongs to the position (org+node), like agent_memory — the E6 re-actuation lookups.
@@ -295,7 +303,8 @@ def _assignment(r) -> Assignment:
         contractType=r["contract_type"], meterId=r["meter_id"], priority=r["priority"],
         deliverableId=r["deliverable_id"], reassignedFrom=r["reassigned_from"],
         sessionRef=r["session_ref"], createdAt=r["created_at"], updatedAt=r["updated_at"],
-        closedAt=r["closed_at"],
+        closedAt=r["closed_at"], lastActivityAt=r["last_activity_at"],
+        sessionHealth=r["session_health"], sessionHealthDetail=r["session_health_detail"],
     )
 
 
@@ -368,6 +377,20 @@ def _gate(r) -> Gate:
     )
 
 
+def _migrate_session_health(db: Db) -> None:
+    """F14: liveness columns on work_assignment. Must run BEFORE ``_migrate_meter_nullable``:
+    that rebuild copies with ``SELECT *``, so an old table has to reach the new column count
+    first. ALTER ADD COLUMN appends in DDL order, keeping the copy aligned."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_assignment)").fetchall()}
+    if not cols or "last_activity_at" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN last_activity_at TEXT")
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN session_health TEXT")
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN session_health_detail TEXT")
+
+
 def _migrate_step_cache_tokens(db: Db) -> None:
     """F1 (phase3-debts.md live-run findings): the CLI adapter settles cache_read /
     cache_creation input tokens alongside the uncached counts — the context window was
@@ -401,6 +424,7 @@ def _migrate_stage_timestamps(db: Db) -> None:
 class WorkStore:
     def __init__(self, db: Db):
         self.db = db
+        _migrate_session_health(db)  # before the meter rebuild — see its docstring
         _migrate_meter_nullable(db)
         _migrate_stage_timestamps(db)
         _migrate_step_cache_tokens(db)
@@ -675,6 +699,18 @@ class WorkStore:
             conn.execute(
                 "UPDATE work_assignment SET session_ref=?, updated_at=? WHERE id=?",
                 (session_ref, now_iso(), assignment_id),
+            )
+
+    def set_session_health(
+        self, assignment_id: str, health: str | None, detail: str | None = None,
+    ) -> None:
+        """F14: the runtime's liveness report. Deliberately does NOT bump ``updated_at`` —
+        a 15 s heartbeat must not churn the SSE change watermark."""
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE work_assignment SET last_activity_at=?, session_health=?, "
+                "session_health_detail=? WHERE id=?",
+                (now_iso(), health, detail, assignment_id),
             )
 
     # ------------------------------------------------------------------ briefs

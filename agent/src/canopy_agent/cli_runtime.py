@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,14 @@ import httpx
 from .runtime import AgentConfig, _log, runtime
 
 MAX_TURNS_DEFAULT = 30
+
+#: F14: how often the observer re-asserts "this session is alive" to the control plane.
+HEALTH_HEARTBEAT_SECONDS = 15.0
+#: F11: a provider-limit death backs off this long before the next resume attempt —
+#: hammering a closed window burns nothing but looks like (and used to be gated as) a stall.
+PROVIDER_LIMIT_BACKOFF_SECONDS = 600.0
+#: Error text that means "the provider shut the door", not "the session broke".
+_PROVIDER_LIMIT_RE = re.compile(r"limit|resets|overloaded|quota|rate.?limit", re.I)
 
 # Grant key -> Claude Code permission entries (cli-runtime.md §2's table, path-concrete in
 # target-app.md §5). Generated permissions are defense-in-depth; the MCP server's per-call
@@ -186,6 +195,7 @@ def _observe_stream(
     session_id: str | None = None
     spent = 0
     last_event = time.monotonic()
+    last_health = 0.0
     assert proc.stdout is not None
     for line in proc.stdout:
         line = line.strip()
@@ -196,6 +206,19 @@ def _observe_stream(
         except ValueError:
             continue
         etype = event.get("type")
+
+        # F14: any stream event is proof of life — report it (throttled) so the stall sweep
+        # keys on real activity instead of inferring life from settled steps.
+        now_mono = time.monotonic()
+        if now_mono - last_health >= HEALTH_HEARTBEAT_SECONDS:
+            last_health = now_mono
+            try:
+                client.post("/api/dp/assignment/events", json={
+                    "assignmentId": assignment_id, "kind": "session-health",
+                    "health": "running",
+                })
+            except httpx.HTTPError:
+                pass  # liveness is best-effort; the next event retries
 
         if etype == "system" and event.get("subtype") == "init":
             session_id = event.get("session_id")
@@ -258,6 +281,27 @@ def _observe_stream(
                  cost_usd=event.get("total_cost_usd"), turns=event.get("num_turns"),
                  is_error=bool(event.get("is_error")),
                  error=(str(err)[:200] if err is not None else None))
+            if event.get("is_error"):
+                # F11: surface the cause to the control plane instead of dying silently into
+                # a crash-loop the sweep reads as a stall.
+                detail = str(err)[:300] if err is not None else "session ended with an error"
+                try:
+                    client.post("/api/dp/assignment/events", json={
+                        "assignmentId": assignment_id, "kind": "session-health",
+                        "health": "erroring", "healthDetail": detail,
+                    })
+                except httpx.HTTPError:
+                    pass
+                if _PROVIDER_LIMIT_RE.search(detail):
+                    # The provider shut the door — retrying before it reopens is pure noise.
+                    st = _RESUME_BACKOFF.setdefault(
+                        assignment_id, {"count": 0, "until": 0.0}
+                    )
+                    st["until"] = max(
+                        st["until"], time.monotonic() + PROVIDER_LIMIT_BACKOFF_SECONDS
+                    )
+                    _log("provider_limit_backoff", assignment=assignment_id,
+                         seconds=int(PROVIDER_LIMIT_BACKOFF_SECONDS))
 
     proc.wait()
     stderr_tail: list[str] = []

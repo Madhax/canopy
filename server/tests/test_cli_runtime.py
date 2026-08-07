@@ -335,6 +335,15 @@ def test_read_only_poll_loop_trips_stall_trigger(
     detail = client.get(f"/api/assignments/{a.id}").json()
     no_delta = [st for st in detail["steps"] if st["deltaKind"] == "none"]
     assert len(no_delta) >= 5  # read-only polls are not progress
+
+    # F14 changed the trigger's tempo, not its verdict: while the session streams, the
+    # adapter's liveness reports defer the no-delta gate (a thinking session is not a spin).
+    assert get_engine().sweep_triggers() == []  # fresh liveness → deferred, not gated
+    # Once the activity is stale past the grace window the spin gates as before — collapse
+    # the window rather than forging timestamps (which would scramble step ordering).
+    from canopy_server.engine.engine import ExecutionEngine
+
+    monkeypatch.setattr(ExecutionEngine, "NO_DELTA_ACTIVITY_GRACE_SECONDS", 0)
     gates = get_engine().sweep_triggers()
     gate = next(g for g in gates if g.reason.startswith("stall:no-delta"))
     assert gate.assignmentId == a.id

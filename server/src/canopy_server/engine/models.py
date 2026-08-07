@@ -85,6 +85,11 @@ class Assignment(BaseModel):
     createdAt: str
     updatedAt: str
     closedAt: str | None = None
+    # F14: runtime-reported liveness. None = a non-reporting runtime (loop); triggers then
+    # fall back to step inference.
+    lastActivityAt: str | None = None
+    sessionHealth: str | None = None  # running | erroring
+    sessionHealthDetail: str | None = None
 
 
 class Brief(BaseModel):

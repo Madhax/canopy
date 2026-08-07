@@ -576,10 +576,24 @@ class ExecutionEngine:
                 subject_ids=[a.id, gate.id], dedupe_key=f"{a.id}:{meter.allowance}",
             )
 
+    #: F14: with liveness reporting, a no-delta run only counts as spinning once the session
+    #: has also been silent this long — a manager mid-review settles nones while thinking.
+    NO_DELTA_ACTIVITY_GRACE_SECONDS = 120
+
     def sweep_triggers(self) -> list[Gate]:
-        """The 30 s sweep (engine.md §1): stall detection over every ``executing`` assignment —
-        no Step for ``stall_minutes``, or K consecutive no-delta steps. Idempotent via the gate
-        dedupe (keyed on the newest step id, so a fresh stall after progress re-fires)."""
+        """The 30 s sweep (engine.md §1): stall detection over every ``executing`` assignment.
+
+        Reworked per the live run's findings (phase3-debts.md F3/F11/F14):
+        - liveness anchors on the runtime's ``last_activity_at`` where reported — any stream
+          event is proof of life, so a long-thinking session is never "quiet";
+        - an ``erroring`` session is not a stall: it surfaces as a ``provider-limit`` /
+          ``session-error`` notification (the operator sees the cause, e.g. "session limit ·
+          resets 12:50am"), with NO intervention gate — the adapter backs off and resumes;
+        - the K-consecutive-no-delta trigger only fires once the session has ALSO been quiet
+          past a grace window, so a manager's wake-turn (status polls + thinking) stops
+          tripping it mid-turn.
+        A non-reporting runtime (loop) has no health columns and keeps the original step
+        inference unchanged. Idempotent via the gate dedupe (keyed on the newest step id)."""
         opened: list[Gate] = []
         stall_after = get_stall_minutes() * 60
         k = get_stall_none_steps()
@@ -587,13 +601,34 @@ class ExecutionEngine:
         for a in self.store.list_assignments(state="executing"):
             steps = self.store.list_steps(a.id)
             last_id = steps[-1].id if steps else "none"
+
+            # F11: a dead-with-error session is a provider problem, not a stall.
+            if a.sessionHealth == "erroring":
+                detail = a.sessionHealthDetail or "session error"
+                kind = ("provider-limit"
+                        if re.search(r"limit|resets|overloaded|quota", detail, re.I)
+                        else "session-error")
+                self.store.notify(
+                    a.orgId, "warning", kind, f"{a.nodeId} session failing: {detail}",
+                    subject_ids=[a.id], dedupe_key=f"{kind}:{a.id}:{detail[:80]}",
+                )
+                continue
+
+            anchors = [steps[-1].createdAt if steps else a.updatedAt]
+            if a.lastActivityAt:
+                anchors.append(a.lastActivityAt)
+            activity_age = (now - datetime.fromisoformat(max(anchors))).total_seconds()
+
             reason = None
-            anchor = steps[-1].createdAt if steps else a.updatedAt
-            age = (now - datetime.fromisoformat(anchor)).total_seconds()
-            if age >= stall_after:
+            if activity_age >= stall_after:
                 reason = f"stall:quiet:{a.id}:{last_id}"
-                detail = f"no step for {int(age // 60)} min"
-            elif len(steps) >= k and all(s.deltaKind == "none" for s in steps[-k:]):
+                detail = f"no step for {int(activity_age // 60)} min"
+            elif (
+                len(steps) >= k
+                and all(s.deltaKind == "none" for s in steps[-k:])
+                and (a.lastActivityAt is None
+                     or activity_age >= self.NO_DELTA_ACTIVITY_GRACE_SECONDS)
+            ):
                 reason = f"stall:no-delta:{a.id}:{last_id}"
                 detail = f"{k} consecutive steps with no delta"
             if reason is None:
@@ -789,8 +824,20 @@ class ExecutionEngine:
                 reserved=0, task_id=assignment_id,
             )
         # Trigger evaluation rides every step report (work-model.md §6): warn + hard-stop.
+        # (Liveness is NOT bumped here: last_activity_at belongs to the adapter's stream
+        # reports (F14) so a non-reporting runtime keeps pure step inference, and the step's
+        # own timestamp already anchors the quiet check.)
         self.check_budget_triggers(assignment_id)
         return step
+
+    def report_session_health(
+        self, assignment_id: str, health: str, detail: str | None = None,
+    ) -> None:
+        """F14: the adapter's liveness/health report — any stream event is 'running'; a session
+        that died with a provider error is 'erroring' with the error text. The stall sweep keys
+        on this instead of inferring life from settled steps."""
+        self._require(assignment_id)
+        self.store.set_session_health(assignment_id, health, detail)
 
     def update_stage(self, assignment_id: str, idx: int, state: str) -> None:
         """Advance a plan stage (the runtime's ``stage-update`` report). No-op if no plan yet."""

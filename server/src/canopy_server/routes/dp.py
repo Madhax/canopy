@@ -214,6 +214,7 @@ class EventBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     assignmentId: str
     kind: str  # intake-complete | step | stage-update | awaiting-reports | delivering
+    #          # | session-health (F14)
     inputTokens: int = 0
     outputTokens: int = 0
     cacheReadTokens: int = 0
@@ -229,6 +230,8 @@ class EventBody(BaseModel):
     sessionRef: str | None = None  # 'session-ref' events: the CLI resume handle
     settle: bool = False  # session steps: also land the SpendEvent (cli-runtime.md §5)
     model: str = "claude-cli"
+    health: str | None = None  # 'session-health' events (F14): running | erroring
+    healthDetail: str | None = None
 
 
 class DependsOnIn(BaseModel):
@@ -427,6 +430,12 @@ def assignment_events(
             if not body.sessionRef:
                 return _work_conflict(WorkError("session-ref needs sessionRef"))
             work_store.set_session_ref(body.assignmentId, body.sessionRef)
+        elif body.kind == "session-health":
+            # F14: the adapter's liveness report — any stream event is proof of life; a
+            # session dead with a provider error carries the cause for the sweep to surface.
+            if not body.health:
+                return _work_conflict(WorkError("session-health needs health"))
+            engine.report_session_health(body.assignmentId, body.health, body.healthDetail)
         elif body.kind == "delivering":
             pass  # advisory; the deliverable is submitted via /dp/finish
         else:
