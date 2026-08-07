@@ -44,6 +44,8 @@ def spend_rollup(
             rows = conn.execute(
                 f"SELECT {dim} AS key, SUM(e.input_tokens) AS input_tokens, "  # noqa: S608
                 "SUM(e.output_tokens) AS output_tokens, "
+                "SUM(e.cache_read_tokens) AS cache_read_tokens, "
+                "SUM(e.cache_creation_tokens) AS cache_creation_tokens, "
                 "SUM(e.est_cost_micros) AS est_cost_micros, COUNT(*) AS steps"
                 f"{split_cols} "
                 "FROM ledger_spend_event e "

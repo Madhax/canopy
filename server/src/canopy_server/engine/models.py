@@ -124,6 +124,9 @@ class Step(BaseModel):
     kind: StepKind
     inputTokens: int
     outputTokens: int
+    # F1: the cached context window, settled separately so the ledger sees real consumption.
+    cacheReadTokens: int = 0
+    cacheCreationTokens: int = 0
     durationMs: int
     deltaKind: DeltaKind
     deltaRef: str | None

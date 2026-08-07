@@ -127,6 +127,8 @@ CREATE TABLE IF NOT EXISTS work_step (
     kind            TEXT NOT NULL DEFAULT 'production',
     input_tokens    INTEGER NOT NULL,
     output_tokens   INTEGER NOT NULL,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
     duration_ms     INTEGER NOT NULL,
     delta_kind      TEXT NOT NULL DEFAULT 'none',
     delta_ref       TEXT,
@@ -333,8 +335,9 @@ def _step(r) -> Step:
     return Step(
         id=r["id"], assignmentId=r["assignment_id"], stageIdx=r["stage_idx"],
         sessionSpanId=r["session_span_id"], kind=r["kind"], inputTokens=r["input_tokens"],
-        outputTokens=r["output_tokens"], durationMs=r["duration_ms"], deltaKind=r["delta_kind"],
-        deltaRef=r["delta_ref"], createdAt=r["created_at"],
+        outputTokens=r["output_tokens"], cacheReadTokens=r["cache_read_tokens"],
+        cacheCreationTokens=r["cache_creation_tokens"], durationMs=r["duration_ms"],
+        deltaKind=r["delta_kind"], deltaRef=r["delta_ref"], createdAt=r["created_at"],
     )
 
 
@@ -365,6 +368,24 @@ def _gate(r) -> Gate:
     )
 
 
+def _migrate_step_cache_tokens(db: Db) -> None:
+    """F1 (phase3-debts.md live-run findings): the CLI adapter settles cache_read /
+    cache_creation input tokens alongside the uncached counts — the context window was
+    invisible to the ledger without them. ALTER ADD COLUMN with a default is safe; run once
+    for pre-F1 dev DBs."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_step)").fetchall()}
+    if not cols or "cache_read_tokens" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute(
+            "ALTER TABLE work_step ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE work_step ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 def _migrate_stage_timestamps(db: Db) -> None:
     """E2b adds ``started_at``/``completed_at`` to work_plan_stage (amendment D-4). ALTER TABLE
     ADD COLUMN is safe for nullable columns; run once for pre-E2b dev DBs."""
@@ -382,6 +403,7 @@ class WorkStore:
         self.db = db
         _migrate_meter_nullable(db)
         _migrate_stage_timestamps(db)
+        _migrate_step_cache_tokens(db)
 
     # ----------------------------------------------------------------- intents
     def create_intent(
@@ -812,6 +834,7 @@ class WorkStore:
         self, assignment_id: str, *, input_tokens: int, output_tokens: int, duration_ms: int,
         kind: str = "production", stage_idx: int | None = None, session_span_id: str | None = None,
         delta_kind: str = "none", delta_ref: str | None = None, step_id: str | None = None,
+        cache_read_tokens: int = 0, cache_creation_tokens: int = 0,
     ) -> Step:
         """Record an observed Step. ``step_id`` may carry the gateway's SpendEvent id so the
         observability row and the money row share one id (the unified Step) and a redelivered
@@ -821,14 +844,18 @@ class WorkStore:
         with self.db.transaction() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO work_step (id, assignment_id, stage_idx, session_span_id, "
-                "kind, input_tokens, output_tokens, duration_ms, delta_kind, delta_ref, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "kind, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, "
+                "duration_ms, delta_kind, delta_ref, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (sid, assignment_id, stage_idx, session_span_id, kind, int(input_tokens),
-                 int(output_tokens), int(duration_ms), delta_kind, delta_ref, ts),
+                 int(output_tokens), int(cache_read_tokens), int(cache_creation_tokens),
+                 int(duration_ms), delta_kind, delta_ref, ts),
             )
         return Step(
             id=sid, assignmentId=assignment_id, stageIdx=stage_idx, sessionSpanId=session_span_id,
             kind=kind, inputTokens=int(input_tokens), outputTokens=int(output_tokens),
+            cacheReadTokens=int(cache_read_tokens),
+            cacheCreationTokens=int(cache_creation_tokens),
             durationMs=int(duration_ms), deltaKind=delta_kind, deltaRef=delta_ref, createdAt=ts,
         )
 

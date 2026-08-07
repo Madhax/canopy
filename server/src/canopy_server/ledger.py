@@ -60,12 +60,31 @@ CREATE TABLE IF NOT EXISTS ledger_spend_event (
     model           TEXT NOT NULL,
     input_tokens    INTEGER NOT NULL,
     output_tokens   INTEGER NOT NULL,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
     est_cost_micros INTEGER NOT NULL,
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_spend_org ON ledger_spend_event (org_id);
 """
 register_schema(SCHEMA)
+
+
+def _migrate_spend_cache_tokens(db: Db) -> None:
+    """F1: SpendEvents carry the cached-context components the CLI adapter now settles.
+    ALTER ADD COLUMN with a default is safe; run once for pre-F1 dev DBs."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(ledger_spend_event)").fetchall()}
+    if not cols or "cache_read_tokens" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute(
+            "ALTER TABLE ledger_spend_event ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE ledger_spend_event "
+            "ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0"
+        )
 
 MeterState = str  # "open" | "exhausted" | "closed"
 
@@ -109,6 +128,9 @@ class SpendEvent(BaseModel):
     model: str
     inputTokens: int
     outputTokens: int
+    # F1: cached-context components, priced cache-aware in estCostMicros.
+    cacheReadTokens: int = 0
+    cacheCreationTokens: int = 0
     estCostMicros: int
     createdAt: str
 
@@ -141,6 +163,7 @@ class BudgetLedger(ABC):
         self, meter_id: str, *, step_id: str, org_id: str, node_id: str, actuation_id: str,
         provider: str, model: str, input_tokens: int, output_tokens: int, est_cost_micros: int,
         reserved: int, task_id: str | None = None,
+        cache_read_tokens: int = 0, cache_creation_tokens: int = 0,
     ) -> RecordOutcome: ...
 
     @abstractmethod
@@ -181,6 +204,7 @@ def _row_to_meter(row) -> Meter:
 class SqliteLedger(BudgetLedger):
     def __init__(self, db: Db):
         self.db = db
+        _migrate_spend_cache_tokens(db)
 
     def open_meter(
         self, actuation_id, node_id, allowance, *,
@@ -238,6 +262,7 @@ class SqliteLedger(BudgetLedger):
     def record(
         self, meter_id, *, step_id, org_id, node_id, actuation_id, provider, model,
         input_tokens, output_tokens, est_cost_micros, reserved, task_id=None,
+        cache_read_tokens=0, cache_creation_tokens=0,
     ) -> RecordOutcome:
         tokens = int(input_tokens) + int(output_tokens)
         ts = now_iso()
@@ -287,10 +312,12 @@ class SqliteLedger(BudgetLedger):
             sid = new_spend_id()
             conn.execute(
                 "INSERT INTO ledger_spend_event (id, step_id, org_id, actuation_id, node_id, "
-                "task_id, provider, model, input_tokens, output_tokens, est_cost_micros, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, "
+                "cache_creation_tokens, est_cost_micros, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (sid, step_id, org_id, actuation_id, node_id, task_id, provider, model,
-                 int(input_tokens), int(output_tokens), int(est_cost_micros), ts),
+                 int(input_tokens), int(output_tokens), int(cache_read_tokens),
+                 int(cache_creation_tokens), int(est_cost_micros), ts),
             )
             mrow2 = conn.execute(
                 "SELECT * FROM ledger_meter WHERE id = ?", (meter_id,)
@@ -349,6 +376,8 @@ class SqliteLedger(BudgetLedger):
             rows = conn.execute(
                 f"SELECT {column} AS key, "  # noqa: S608 - column is from a fixed allowlist
                 "SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, "
+                "SUM(cache_read_tokens) AS cache_read_tokens, "
+                "SUM(cache_creation_tokens) AS cache_creation_tokens, "
                 "SUM(est_cost_micros) AS est_cost_micros, COUNT(*) AS steps "
                 "FROM ledger_spend_event WHERE org_id = ? GROUP BY key ORDER BY est_cost_micros "
                 "DESC",
@@ -369,6 +398,8 @@ def _spend_row_to_event(row) -> SpendEvent:
         model=row["model"],
         inputTokens=row["input_tokens"],
         outputTokens=row["output_tokens"],
+        cacheReadTokens=row["cache_read_tokens"],
+        cacheCreationTokens=row["cache_creation_tokens"],
         estCostMicros=row["est_cost_micros"],
         createdAt=row["created_at"],
     )

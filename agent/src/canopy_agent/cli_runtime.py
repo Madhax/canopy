@@ -211,6 +211,10 @@ def _observe_stream(
             usage = msg.get("usage") or {}
             in_tok = int(usage.get("input_tokens", 0))
             out_tok = int(usage.get("output_tokens", 0))
+            # F1: the context window rides the cache components — dropping them made the
+            # ledger blind to ~all input (a whole-corpus read recorded as 65 tokens).
+            cache_read = int(usage.get("cache_read_input_tokens", 0))
+            cache_creation = int(usage.get("cache_creation_input_tokens", 0))
             content = msg.get("content") or []
             tools = [c.get("name", "") for c in content if c.get("type") == "tool_use"]
             # Read-only status checks are NOT progress: a session that only polls must
@@ -231,9 +235,13 @@ def _observe_stream(
                 "assignmentId": assignment_id, "kind": "step",
                 "stepKind": "coordination" if is_manager else "production",
                 "inputTokens": in_tok, "outputTokens": out_tok,
+                "cacheReadTokens": cache_read, "cacheCreationTokens": cache_creation,
                 "durationMs": int((now - last_event) * 1000),
                 "deltaKind": delta, "deltaRef": tools[0] if tools else None,
                 "sessionSpanId": session_id, "settle": True,
+                # The session's model prices the settle (F1) — profile.model rides the same
+                # env var that sets --model; absent (fake CLI) falls back to the default.
+                "model": os.environ.get("CANOPY_CLI_MODEL") or "claude-cli",
             })
             last_event = now
             spent += in_tok + out_tok

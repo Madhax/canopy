@@ -216,6 +216,8 @@ class EventBody(BaseModel):
     kind: str  # intake-complete | step | stage-update | awaiting-reports | delivering
     inputTokens: int = 0
     outputTokens: int = 0
+    cacheReadTokens: int = 0
+    cacheCreationTokens: int = 0
     durationMs: int = 0
     stepKind: StepKind = "production"
     stageIdx: int | None = None
@@ -408,6 +410,8 @@ def assignment_events(
                 duration_ms=body.durationMs, kind=body.stepKind, stage_idx=body.stageIdx,
                 delta_kind=body.deltaKind, delta_ref=body.deltaRef, step_id=body.stepId,
                 session_span_id=body.sessionSpanId, settle=body.settle, model=body.model,
+                cache_read_tokens=body.cacheReadTokens,
+                cache_creation_tokens=body.cacheCreationTokens,
             )
         elif body.kind == "stage-update":
             if body.stageIdx is None or body.stageState is None:

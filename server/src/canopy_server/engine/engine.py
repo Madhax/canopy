@@ -25,6 +25,7 @@ from ..activity import ActivityLog
 from ..artifacts import ArtifactMeta, ArtifactStore
 from ..config import get_rework_grant_pct, get_stall_minutes, get_stall_none_steps
 from ..deps import now_iso
+from ..gateway.service import estimate_cost_micros
 from ..ids import new_assignment_id, new_step_id
 from ..ledger import BudgetLedger
 from ..models import Agent, Organization
@@ -55,7 +56,7 @@ class ExecutionEngine:
     def __init__(
         self, store: WorkStore, ledger: BudgetLedger, artifacts: ArtifactStore,
         org_store: OrgStore, *, activity: ActivityLog | None = None, bus=None,
-        executors: dict | None = None,
+        executors: dict | None = None, prices: dict | None = None,
     ):
         self.store = store
         self.ledger = ledger
@@ -66,6 +67,9 @@ class ExecutionEngine:
         # Governed-action executors (envelope §3.4): action name -> callable(payload) -> result.
         # The engine runs one ONLY from a resolved ApprovalGate (invariant 9).
         self.executors = executors or {}
+        # Price table for the settle path (F1): CLI-reported steps estimate cost here, since
+        # they never pass through the gateway. Same data the gateway holds (deps injects both).
+        self.prices = prices or {}
         self.gates = GateService(store, activity=activity)
         # Gate resolutions wake the resumed node through the same delivery path as dispatch.
         self.gates.on_resume = lambda a: self._publish_wake(a, "resume")
@@ -744,6 +748,7 @@ class ExecutionEngine:
         kind: str = "production", stage_idx: int | None = None, delta_kind: str = "none",
         delta_ref: str | None = None, step_id: str | None = None,
         session_span_id: str | None = None, settle: bool = False, model: str = "claude-cli",
+        cache_read_tokens: int = 0, cache_creation_tokens: int = 0,
     ):
         """Record an observable Step.
 
@@ -753,18 +758,34 @@ class ExecutionEngine:
         report ALSO lands the SpendEvent in the ledger (``provider='claude-cli'``, step-id
         idempotent — a redelivered report never double-charges). Overshoot past the allowance is
         accepted and immediately trips the hard-stop trigger (debt E-D1: enforcement is
-        per-turn, not per-call)."""
+        per-turn, not per-call).
+
+        Cache tokens (F1): the CLI reports the cached context window as separate usage
+        components; they ride the Step and the SpendEvent and are priced cache-aware. The
+        METER still charges input+output only — the meter currency stays raw uncached tokens
+        until allowances are re-sized (the F1 debt row records the decision); est_cost is the
+        honest number."""
         a = self._require(assignment_id)
         step = self.store.add_step(
             assignment_id, input_tokens=input_tokens, output_tokens=output_tokens,
             duration_ms=duration_ms, kind=kind, stage_idx=stage_idx, delta_kind=delta_kind,
             delta_ref=delta_ref, step_id=step_id, session_span_id=session_span_id,
+            cache_read_tokens=cache_read_tokens, cache_creation_tokens=cache_creation_tokens,
         )
         if settle and a.meterId is not None:
+            # The CLI reports the model it ran; price it like the gateway would (anthropic
+            # rates apply to claude-cli sessions — the provider is the transport, not the
+            # billing identity).
+            est_cost, _known = estimate_cost_micros(
+                self.prices, "anthropic", model, input_tokens, output_tokens,
+                cache_read_tokens, cache_creation_tokens,
+            )
             self.ledger.record(
                 a.meterId, step_id=step.id, org_id=a.orgId, node_id=a.nodeId,
                 actuation_id=a.actuationId, provider="claude-cli", model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens, est_cost_micros=0,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens, est_cost_micros=est_cost,
                 reserved=0, task_id=assignment_id,
             )
         # Trigger evaluation rides every step report (work-model.md §6): warn + hard-stop.

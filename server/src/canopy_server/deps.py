@@ -170,6 +170,7 @@ def get_gateway():
 
 @lru_cache(maxsize=8)
 def _engine_for(path_str: str, data_dir_str: str):
+    from .config import get_prices
     from .engine.engine import ExecutionEngine
 
     repos = _repos_for(data_dir_str, _repo_source_str())
@@ -183,6 +184,7 @@ def _engine_for(path_str: str, data_dir_str: str):
         executors={  # governed actions (E4): consented via ApprovalGate, then executed here
             "repo-merge": lambda p: repos.merge(p["orgId"], p["branch"]),
         },
+        prices=get_prices(),  # settle-path cost estimation (F1) — same table the gateway holds
     )
 
 
