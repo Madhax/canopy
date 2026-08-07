@@ -228,6 +228,7 @@ class EventBody(BaseModel):
     sessionSpanId: str | None = None
     stageState: str | None = None
     sessionRef: str | None = None  # 'session-ref' events: the CLI resume handle
+    transcriptPath: str | None = None  # 'session-ref' events (F16): the transcript pointer
     settle: bool = False  # session steps: also land the SpendEvent (cli-runtime.md §5)
     model: str = "claude-cli"
     health: str | None = None  # 'session-health' events (F14): running | erroring
@@ -429,7 +430,8 @@ def assignment_events(
             # handle (cli-runtime.md §1) — a gated assignment is a suspended conversation.
             if not body.sessionRef:
                 return _work_conflict(WorkError("session-ref needs sessionRef"))
-            work_store.set_session_ref(body.assignmentId, body.sessionRef)
+            work_store.set_session_ref(body.assignmentId, body.sessionRef,
+                                       transcript_path=body.transcriptPath)
         elif body.kind == "session-health":
             # F14: the adapter's liveness report — any stream event is proof of life; a
             # session dead with a provider error carries the cause for the sweep to surface.

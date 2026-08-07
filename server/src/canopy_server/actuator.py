@@ -163,6 +163,7 @@ class Actuator:
         agent_pythonpath: str,
         boot_timeout_s: int,
         sandboxes_root: Path,
+        work_root: Path | None = None,
         router: MessageRouter | None = None,
     ):
         self.db = db
@@ -179,6 +180,9 @@ class Actuator:
         self.agent_pythonpath = agent_pythonpath
         self.boot_timeout_s = boot_timeout_s
         self.sandboxes_root = sandboxes_root
+        # F13/F16: the actuation-INDEPENDENT home for assignment work and logs — the position
+        # owns its conversations and audit trail, the way it already owns work/meters/memory.
+        self.work_root = work_root if work_root is not None else sandboxes_root.parent / "work"
         self.router = router
 
     # -- readiness ---------------------------------------------------------- #
@@ -320,12 +324,18 @@ class Actuator:
             meter_id=meter.id, charter=json.dumps(charter.model_dump() if charter else {}),
         )
         workspace_root = self.sandboxes_root / actuation_id / agent.id / "workspace"
+        # F13: the assignment tree lives at an actuation-independent path (org + node), so the
+        # CLI's per-directory conversation key — and with it --resume — survives re-actuation.
+        node_work_root = self.work_root / top.id / agent.id
+        node_work_root.mkdir(parents=True, exist_ok=True)
         runtime_kind = self._node_runtime(top, agent)
         spec = SandboxSpec(
             actuation_id=actuation_id, node_id=agent.id, org_id=top.id,
             workspace_root=workspace_root,
+            log_dir=node_work_root / "logs",  # F16: the adapter log outlives the actuation
             env=self._build_env(token, agent.id, actuation_id, runtime_kind=runtime_kind,
-                                model=profile.model if profile else None),
+                                model=profile.model if profile else None,
+                                work_root=node_work_root),
             a2a_port=None,
         )
         handle = await self.sandbox.create(spec)
@@ -340,7 +350,7 @@ class Actuator:
 
     def _build_env(
         self, token: str, node_id: str, actuation_id: str, *, runtime_kind: str = "loop",
-        model: str | None = None,
+        model: str | None = None, work_root: Path | None = None,
     ) -> dict[str, str]:
         env = {
             "CANOPY_CP_URL": self.cp_url,
@@ -351,6 +361,8 @@ class Actuator:
             "CANOPY_A2A_PORT": "0",  # bind ephemeral, report endpoint at register
             "CANOPY_RUNTIME": runtime_kind,
         }
+        if work_root is not None:
+            env["CANOPY_WORK_ROOT"] = str(work_root)
         if self.agent_pythonpath:
             env["PYTHONPATH"] = self.agent_pythonpath
         # Minimal host vars needed for the interpreter to start (Windows needs SystemRoot).

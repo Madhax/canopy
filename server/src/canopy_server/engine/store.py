@@ -89,7 +89,9 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     -- block by splitting on the first semicolon.
     last_activity_at      TEXT,
     session_health        TEXT,
-    session_health_detail TEXT
+    session_health_detail TEXT,
+    -- F16: adapter-reported pointer to the CLI conversation transcript for this assignment.
+    transcript_path       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_assignment_node   ON work_assignment (actuation_id, node_id, state);
 -- Work belongs to the position (org+node), like agent_memory — the E6 re-actuation lookups.
@@ -305,6 +307,7 @@ def _assignment(r) -> Assignment:
         sessionRef=r["session_ref"], createdAt=r["created_at"], updatedAt=r["updated_at"],
         closedAt=r["closed_at"], lastActivityAt=r["last_activity_at"],
         sessionHealth=r["session_health"], sessionHealthDetail=r["session_health_detail"],
+        transcriptPath=r["transcript_path"],
     )
 
 
@@ -391,6 +394,17 @@ def _migrate_session_health(db: Db) -> None:
         conn.execute("ALTER TABLE work_assignment ADD COLUMN session_health_detail TEXT")
 
 
+def _migrate_transcript_path(db: Db) -> None:
+    """F16: the transcript pointer on work_assignment. Same ordering constraint as
+    ``_migrate_session_health`` — must land before the meter rebuild's ``SELECT *`` copy."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_assignment)").fetchall()}
+    if not cols or "transcript_path" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN transcript_path TEXT")
+
+
 def _migrate_step_cache_tokens(db: Db) -> None:
     """F1 (phase3-debts.md live-run findings): the CLI adapter settles cache_read /
     cache_creation input tokens alongside the uncached counts — the context window was
@@ -425,6 +439,7 @@ class WorkStore:
     def __init__(self, db: Db):
         self.db = db
         _migrate_session_health(db)  # before the meter rebuild — see its docstring
+        _migrate_transcript_path(db)  # ditto (appends in DDL order, keeping the copy aligned)
         _migrate_meter_nullable(db)
         _migrate_stage_timestamps(db)
         _migrate_step_cache_tokens(db)
@@ -694,12 +709,21 @@ class WorkStore:
                 (deliverable_id, now_iso(), assignment_id),
             )
 
-    def set_session_ref(self, assignment_id: str, session_ref: str) -> None:
+    def set_session_ref(
+        self, assignment_id: str, session_ref: str, transcript_path: str | None = None,
+    ) -> None:
         with self.db.transaction() as conn:
-            conn.execute(
-                "UPDATE work_assignment SET session_ref=?, updated_at=? WHERE id=?",
-                (session_ref, now_iso(), assignment_id),
-            )
+            if transcript_path:
+                conn.execute(
+                    "UPDATE work_assignment SET session_ref=?, transcript_path=?, updated_at=? "
+                    "WHERE id=?",
+                    (session_ref, transcript_path, now_iso(), assignment_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE work_assignment SET session_ref=?, updated_at=? WHERE id=?",
+                    (session_ref, now_iso(), assignment_id),
+                )
 
     def set_session_health(
         self, assignment_id: str, health: str | None, detail: str | None = None,

@@ -24,6 +24,9 @@ class SandboxSpec(BaseModel):
     org_id: str
     runtime: str = "canopy-agent"  # entrypoint identity; later: image ref for containers
     workspace_root: Path
+    # F16: stable (actuation-independent) home for the adapter log; None keeps the legacy
+    # per-actuation ``<workspace parent>/logs`` shard.
+    log_dir: Path | None = None
     env: dict[str, str]  # STRICT WHITELIST built by the Actuator — never inherited
     a2a_host: str = "127.0.0.1"
     a2a_port: int | None = None  # None ⇒ provider picks a free loopback port

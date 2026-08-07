@@ -301,6 +301,7 @@ def _actuator_for(path_str: str, data_dir_str: str):
         agent_pythonpath=get_agent_pythonpath(),
         boot_timeout_s=get_boot_timeout_s(),
         sandboxes_root=Path(data_dir_str) / "sandboxes",
+        work_root=Path(data_dir_str) / "work",
         router=_router_for(path_str),
     )
 

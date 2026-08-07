@@ -20,6 +20,18 @@ from .base import SandboxHandle, SandboxProvider, SandboxSpec, SandboxStatus
 
 _RUNTIME_MODULE = "canopy_agent"
 
+#: F16 retention: the adapter log rotates at this size, keeping one predecessor (``.1``) —
+#: an org-owned audit trail that cannot grow without bound across actuations.
+_LOG_ROTATE_BYTES = 8 * 1024 * 1024
+
+
+def _rotate_if_large(path: Path, cap: int = _LOG_ROTATE_BYTES) -> None:
+    try:
+        if path.is_file() and path.stat().st_size >= cap:
+            path.replace(path.with_suffix(path.suffix + ".1"))
+    except OSError:
+        pass  # rotation is best-effort; appending to an oversized log beats losing it
+
 
 def _free_loopback_port(host: str = "127.0.0.1") -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -59,7 +71,9 @@ class SubprocessSandbox(SandboxProvider):
     async def create(self, spec: SandboxSpec) -> SandboxHandle:
         workspace = spec.workspace_root
         workspace.mkdir(parents=True, exist_ok=True)
-        logs_dir = workspace.parent / "logs"
+        # F16: prefer the stable (actuation-independent) log home so the record of what the
+        # node's process did survives deactuate → re-actuate alongside its work.
+        logs_dir = spec.log_dir if spec.log_dir is not None else workspace.parent / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         hid = self._hid(spec)
         self._specs[hid] = spec
@@ -80,6 +94,7 @@ class SubprocessSandbox(SandboxProvider):
         if spec is None:
             raise RuntimeError(f"sandbox {handle.id} was not created before start()")
 
+        _rotate_if_large(self._logfiles[handle.id])
         log_fh = open(self._logfiles[handle.id], "ab")  # noqa: SIM115 - closed in stop/destroy
         kwargs: dict = {
             "cwd": str(spec.workspace_root),

@@ -137,6 +137,51 @@ def _write_session_config(
     (workdir / "CLAUDE.md").write_text("\n\n".join(p for p in parts if p), encoding="utf-8")
 
 
+#: F16 retention: per-assignment stderr rotates at this size, keeping one predecessor.
+_STDERR_ROTATE_BYTES = 1024 * 1024
+
+
+def _rotate_if_large(path: Path, cap: int = _STDERR_ROTATE_BYTES) -> None:
+    try:
+        if path.is_file() and path.stat().st_size >= cap:
+            path.replace(path.with_suffix(path.suffix + ".1"))
+    except OSError:
+        pass  # rotation is best-effort; appending to an oversized log beats losing it
+
+
+def _work_root() -> Path:
+    """F13: the assignment tree's stable home. The actuator passes an actuation-independent
+    path (``data/work/<orgId>/<nodeId>``) so the CLI's per-directory conversation key — and
+    with it ``--resume`` — survives deactuate → re-actuate. Absent (tests, older actuators),
+    the sandbox cwd keeps the legacy per-actuation shape."""
+    raw = os.environ.get("CANOPY_WORK_ROOT")
+    return Path(raw) if raw else Path.cwd()
+
+
+def _transcript_path(workdir: Path, session_id: str) -> Path:
+    """Where the CLI writes this session's conversation (F16's pointer): the config dir's
+    ``projects/<key>/<sessionId>.jsonl``, where the key is the workdir path with every
+    non-alphanumeric character flattened to ``-`` (the CLI's own munge)."""
+    raw = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(raw) if raw else Path.home() / ".claude"
+    key = re.sub(r"[^A-Za-z0-9]", "-", str(workdir))
+    return base / "projects" / key / f"{session_id}.jsonl"
+
+
+def _archive_transcript(workroot: Path, workdir: Path, session_id: str) -> None:
+    """F16: copy the session transcript into the assignment's own home — the org owns the
+    complete record of what its agent said and did, not the operator's CLI profile."""
+    src = _transcript_path(workdir, session_id)
+    try:
+        if src.is_file():
+            dest = workroot / "transcripts"
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest / f"{session_id}.jsonl")
+            _log("transcript_archived", session=session_id, path=str(dest))
+    except OSError as exc:
+        _log("transcript_archive_failed", session=session_id, error=str(exc))
+
+
 def _cli_command() -> list[str]:
     raw = os.environ.get("CANOPY_CLI_CMD", "claude")
     cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
@@ -192,7 +237,7 @@ _RESUME_FALLBACK: set[str] = set()
 
 def _observe_stream(
     client: httpx.Client, proc: subprocess.Popen, assignment_id: str, *,
-    budget_remaining: int, is_manager: bool,
+    budget_remaining: int, is_manager: bool, workroot: Path, workdir: Path,
 ) -> None:
     """Parse stream-json → settled Step reports; kill the tree when spend crosses the budget."""
     session_id: str | None = None
@@ -229,6 +274,8 @@ def _observe_stream(
                 client.post("/api/dp/assignment/events", json={
                     "assignmentId": assignment_id, "kind": "session-ref",
                     "sessionRef": session_id,
+                    # F16: the org's pointer to the conversation's ground truth.
+                    "transcriptPath": str(_transcript_path(workdir, session_id)),
                 })
                 _log("session_init", assignment=assignment_id, session=session_id)
 
@@ -307,10 +354,12 @@ def _observe_stream(
                          seconds=int(PROVIDER_LIMIT_BACKOFF_SECONDS))
 
     proc.wait()
+    if session_id:
+        _archive_transcript(workroot, workdir, session_id)
     stderr_tail: list[str] = []
     if proc.returncode:
         try:
-            stderr_log = Path.cwd() / "assignments" / assignment_id / "session.stderr.log"
+            stderr_log = workroot / "session.stderr.log"
             stderr_tail = stderr_log.read_text(encoding="utf-8", errors="replace")\
                 .strip().splitlines()[-3:]
         except OSError:
@@ -354,7 +403,7 @@ def _start_session(
 ) -> None:
     a = cur["assignment"]
     aid = a["id"]
-    workroot = Path.cwd() / "assignments" / aid
+    workroot = _work_root() / "assignments" / aid
     workdir = workroot / "work"
     workdir.mkdir(parents=True, exist_ok=True)
     (workroot / "out").mkdir(parents=True, exist_ok=True)
@@ -400,6 +449,7 @@ def _start_session(
     # CLI stderr goes to a per-assignment file, not DEVNULL: when a session dies at
     # startup (auth, bad flag), this file is the only place the reason lands.
     stderr_path = workroot / "session.stderr.log"
+    _rotate_if_large(stderr_path)
     popen_kw: dict = {
         "cwd": str(workdir), "stdin": subprocess.PIPE, "stdout": subprocess.PIPE,
         "stderr": open(stderr_path, "ab"),  # noqa: SIM115 - fd is inherited by the child
@@ -432,7 +482,8 @@ def _start_session(
     is_manager = bool(charter.get("reportNodeIds"))
     session.thread = threading.Thread(
         target=_observe_stream, args=(client, proc, aid),
-        kwargs={"budget_remaining": remaining or 10**9, "is_manager": is_manager},
+        kwargs={"budget_remaining": remaining or 10**9, "is_manager": is_manager,
+                "workroot": workroot, "workdir": workdir},
         daemon=True,
     )
     session.thread.start()
@@ -488,7 +539,7 @@ def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
         return "engaged"  # session is driving; nothing for the adapter to do
 
     if state in ("briefed", "intake"):
-        _materialize_brief(client, Path.cwd() / "assignments" / aid, cur.get("brief"))
+        _materialize_brief(client, _work_root() / "assignments" / aid, cur.get("brief"))
         client.post("/api/dp/assignment/events",
                     json={"assignmentId": aid, "kind": "intake-complete"})
         return "engaged"

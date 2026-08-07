@@ -90,6 +90,9 @@ class Assignment(BaseModel):
     lastActivityAt: str | None = None
     sessionHealth: str | None = None  # running | erroring
     sessionHealthDetail: str | None = None
+    # F16: where the CLI writes this assignment's conversation transcript (adapter-reported
+    # pointer; the adapter also archives a copy under the assignment's work home at exit).
+    transcriptPath: str | None = None
 
 
 class Brief(BaseModel):

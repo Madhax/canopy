@@ -78,6 +78,7 @@ function fixture(): AgentState {
     ],
     session: {
       sessionRef: "sess-42",
+      transcriptPath: null,
       toolEvents: [{
         id: "te_1", tool: "repo_pr", outcome: "denied", detail: "GRANT_DENIED",
         assignment_id: "as_cur", created_at: "2026-07-28T10:05:00Z",
