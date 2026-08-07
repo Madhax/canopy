@@ -369,3 +369,48 @@ def test_pr_artifact_content_round_trips(client, pod):
     body = json.loads(base64.b64decode(got["contentBase64"]))
     assert set(body) == {"branch", "baseSha", "headSha", "diff", "testOutput"}
     assert got["meta"]["type"] == "PullRequest"
+
+
+# ------------------------------------------------------------- F8: per-org repo source
+def test_per_org_repo_source_binds_without_restart(client, make_org, tmp_path):
+    """F8: an org bound to its own source repo clones THAT repo as its work target — set at
+    runtime through the operator API, no boot config involved; an unbound org keeps the
+    fixture fallback unchanged."""
+    import subprocess
+
+    from canopy_server.deps import get_repos
+
+    def git(cwd, *args):
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+    src = tmp_path / "proj"
+    src.mkdir()
+    (src / "README.md").write_text("the real project\n", encoding="utf-8")
+    git(src, "init", "-b", "main")
+    git(src, "config", "user.email", "t@t")
+    git(src, "config", "user.name", "t")
+    git(src, "add", "-A")
+    git(src, "commit", "-m", "init")
+
+    bound = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Bound")
+    plain = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Plain")
+
+    # Bind through the operator API; a non-repo path fails loud at bind time.
+    bad = client.put(f"/api/organizations/{bound['id']}/repo-source",
+                     json={"source": str(tmp_path / "nope")})
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "BAD_REPO_SOURCE"
+    r = client.put(f"/api/organizations/{bound['id']}/repo-source",
+                   json={"source": str(src)})
+    assert r.status_code == 200 and r.json()["source"] == str(src)
+    assert client.get(f"/api/organizations/{bound['id']}/repo-source").json()["source"] == str(src)
+
+    repos = get_repos()
+    bound_repo = repos.ensure_repo(bound["id"])
+    assert bound_repo.name == "proj" and (bound_repo / "README.md").is_file()
+    plain_repo = repos.ensure_repo(plain["id"])
+    assert plain_repo.name == "target-app"  # fixture fallback untouched
+
+    # Clearing the binding restores the fallback for FUTURE materialization.
+    r = client.put(f"/api/organizations/{bound['id']}/repo-source", json={"source": None})
+    assert r.status_code == 200 and r.json()["source"] is None
+    assert client.get(f"/api/organizations/{bound['id']}/repo-source").json()["source"] is None
