@@ -130,9 +130,14 @@ def _write_session_config(
 
 def _cli_command() -> list[str]:
     raw = os.environ.get("CANOPY_CLI_CMD", "claude")
-    if raw.strip().startswith("["):
-        return json.loads(raw)
-    return [raw]
+    cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
+    # Windows: CreateProcess never applies PATHEXT to a bare name, so an npm shim like
+    # claude.cmd is invisible to Popen even though `claude` resolves in every shell.
+    # Resolve through PATH here so the probe and the spawn agree on one real path.
+    resolved = shutil.which(cmd[0])
+    if resolved:
+        cmd[0] = resolved
+    return cmd
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -316,8 +321,12 @@ def _start_session(
         extra = []
 
     max_turns = int(os.environ.get("CANOPY_MAX_TURNS", str(MAX_TURNS_DEFAULT)))
+    # The prompt goes over STDIN, never argv: on Windows the npm shim (claude.cmd) runs
+    # through cmd.exe, which treats embedded newlines as command separators — a multi-line
+    # brief silently strips every flag after it (the session answers in plain text and the
+    # observer sees zero events). Stdin also sidesteps the 32K command-line ceiling.
     cmd = _cli_command() + [
-        "-p", prompt, "--output-format", "stream-json", "--verbose",
+        "-p", "--output-format", "stream-json", "--verbose",
         "--max-turns", str(max_turns), "--permission-mode", "default",
         "--mcp-config", ".mcp.json", "--strict-mcp-config", *extra,
     ]
@@ -330,7 +339,7 @@ def _start_session(
     # startup (auth, bad flag), this file is the only place the reason lands.
     stderr_path = workroot / "session.stderr.log"
     popen_kw: dict = {
-        "cwd": str(workdir), "stdout": subprocess.PIPE,
+        "cwd": str(workdir), "stdin": subprocess.PIPE, "stdout": subprocess.PIPE,
         "stderr": open(stderr_path, "ab"),  # noqa: SIM115 - fd is inherited by the child
         "text": True, "encoding": "utf-8",
     }
@@ -343,6 +352,18 @@ def _start_session(
     except OSError as exc:
         _log("session_spawn_failed", assignment=aid, error=str(exc))
         return
+
+    def _feed_stdin(p: subprocess.Popen, text: str) -> None:
+        # Own thread: a brief larger than the pipe buffer would otherwise block the tick
+        # until the CLI drains it. Closing stdin ends the CLI's 3s stdin wait immediately.
+        try:
+            assert p.stdin is not None
+            p.stdin.write(text)
+            p.stdin.close()
+        except OSError:
+            pass
+
+    threading.Thread(target=_feed_stdin, args=(proc, prompt), daemon=True).start()
 
     session = _Session(aid)
     session.proc = proc

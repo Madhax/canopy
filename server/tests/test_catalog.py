@@ -11,7 +11,7 @@ def test_catalog_loads_clean():
 def test_catalog_shape():
     catalog = get_catalog()
     assert len(catalog.organizationTypes) == 26
-    assert len(catalog.roles) == 87
+    assert len(catalog.roles) == 88
     assert len(catalog.formations) == 17
 
 

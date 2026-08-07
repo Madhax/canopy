@@ -118,7 +118,12 @@ def _cli_available() -> bool:
 
     raw = os.environ.get("CANOPY_CLI_CMD", "claude")
     cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
-    if shutil.which(cmd[0]) is None and not Path(cmd[0]).exists():
+    # Windows: CreateProcess never applies PATHEXT to a bare name, so resolve the npm
+    # shim (claude.cmd) to its real path before spawning — bare "claude" is WinError 2.
+    resolved = shutil.which(cmd[0])
+    if resolved:
+        cmd[0] = resolved
+    elif not Path(cmd[0]).exists():
         return False
     try:
         r = subprocess.run([*cmd, "--version"], capture_output=True, timeout=15, check=False)
