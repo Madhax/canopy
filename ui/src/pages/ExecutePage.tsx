@@ -181,7 +181,7 @@ export function ExecutePage() {
           )}
         </main>
       ) : (
-        <main className="mx-auto grid max-w-6xl grid-cols-[1fr_320px] gap-6 px-6 py-6">
+        <main className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_320px] gap-6 px-6 py-6">
           <div className="flex flex-col gap-6">
             {/* F4: open gates ARE the main column's first content — the operator's single
                 most urgent action must not sit in a side rail. */}
