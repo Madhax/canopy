@@ -34,7 +34,10 @@ export function PlanOutline(props: Props) {
   const [text, setText] = useState("");
   const a = node.assignment;
   const openGates = node.gates.filter((g) => g.state === "open");
-  const cursor = node.plan?.stages.find((s) => s.state === "active");
+  // closed = accepted: the plan is complete even if the agent finished mid-stage
+  // without stamping the last stage(s) done.
+  const closed = a.state === "closed";
+  const cursor = closed ? undefined : node.plan?.stages.find((s) => s.state === "active");
 
   return (
     <div className={depth > 0 ? "ml-5 border-l border-border pl-4" : ""}>
@@ -72,7 +75,9 @@ export function PlanOutline(props: Props) {
         {node.plan && node.plan.stages.length > 0 && (
           <StageProgress
             progress={{
-              done: node.plan.stages.filter((s) => s.state === "done").length,
+              done: closed
+                ? node.plan.stages.length
+                : node.plan.stages.filter((s) => s.state === "done").length,
               total: node.plan.stages.length,
             }}
           />
@@ -121,17 +126,20 @@ export function PlanOutline(props: Props) {
 
       {node.plan && (
         <ol className="mb-1 flex flex-col">
-          {node.plan.stages.map((s) => (
-            <li key={s.idx} className="flex items-center gap-2 text-xs">
-              <span className={s.state === "done" ? "text-ink-muted" : s.state === "active" ? "text-accent" : "text-ink-muted/60"}>
-                {s.state === "done" ? "✓" : s.state === "active" ? "▶" : "○"}
-              </span>
-              <span className={s.state === "active" ? "font-medium text-ink" : "text-ink-muted"}>
-                {s.title}
-              </span>
-              {s === cursor && <span className="text-[10px] text-accent">← cursor</span>}
-            </li>
-          ))}
+          {node.plan.stages.map((s) => {
+            const state = closed ? "done" : s.state;
+            return (
+              <li key={s.idx} className="flex items-center gap-2 text-xs">
+                <span className={state === "done" ? "text-ink-muted" : state === "active" ? "text-accent" : "text-ink-muted/60"}>
+                  {state === "done" ? "✓" : state === "active" ? "▶" : "○"}
+                </span>
+                <span className={state === "active" ? "font-medium text-ink" : "text-ink-muted"}>
+                  {s.title}
+                </span>
+                {s === cursor && <span className="text-[10px] text-accent">← cursor</span>}
+              </li>
+            );
+          })}
         </ol>
       )}
 
