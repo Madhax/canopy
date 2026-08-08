@@ -202,6 +202,71 @@ def _t_repo_merge_request(rec, engine, work_store, args) -> dict:
             "note": "the merge awaits operator approval (governed action)"}
 
 
+def _github_binding(rec, grant_key: str):
+    """Resolve the calling NODE's instance for a github grant (builder-connectors.md §4) —
+    the per-call scope check on top of the role-level grant filter. Raises WorkError (→ a
+    recorded denial) when the org has no instance in this node's reach."""
+    from ..catalog import get_catalog
+    from ..deps import get_connector_store
+
+    binding = get_connector_store().resolve(get_catalog(), rec.orgId, rec.nodeId, grant_key)
+    if binding is None or binding.instance.packKey != "github":
+        raise WorkError(f"no GitHub connector instance serves {grant_key} for this node")
+    return binding
+
+
+def _github_token(binding) -> str:
+    from ..deps import get_secret_store
+
+    sid = binding.instance.secretBindings.get("scm-token")
+    return (get_secret_store().reveal(sid) or "") if sid else ""
+
+
+def _t_github_list_issues(rec, engine, work_store, args) -> dict:
+    from ..deps import get_github_client
+
+    binding = _github_binding(rec, "connector.github.issues.read")
+    cfg = binding.instance.config
+    issues = get_github_client().list_issues(
+        _github_token(binding), cfg.get("owner", ""), cfg.get("repo", ""),
+        state=args.get("state", "open"),
+        labels=args.get("labels") or None,
+    )
+    return {"issues": [{"number": i.get("number"), "title": i.get("title"),
+                        "state": i.get("state"), "url": i.get("html_url"),
+                        "labels": [lbl.get("name") for lbl in i.get("labels", [])]}
+                       for i in issues]}
+
+
+def _t_github_get_issue(rec, engine, work_store, args) -> dict:
+    from ..deps import get_github_client
+
+    binding = _github_binding(rec, "connector.github.issues.read")
+    cfg = binding.instance.config
+    i = get_github_client().get_issue(
+        _github_token(binding), cfg.get("owner", ""), cfg.get("repo", ""),
+        int(args["number"]),
+    )
+    return {"issue": {"number": i.get("number"), "title": i.get("title"),
+                      "state": i.get("state"), "url": i.get("html_url"),
+                      "body": i.get("body") or "",
+                      "labels": [lbl.get("name") for lbl in i.get("labels", [])],
+                      "author": (i.get("user") or {}).get("login", "")}}
+
+
+def _t_github_create_pr(rec, engine, work_store, args) -> dict:
+    a = _current(work_store, rec)
+    _github_binding(rec, "connector.github.pr.create")  # scope check before the gate opens
+    gate = engine.open_governed_action(
+        a.id, "pr-create",
+        {"orgId": a.orgId, "branch": args["branch"],
+         "title": args.get("title", args["branch"]), "body": args.get("body", "")},
+    )
+    return {"gateId": gate.id, "state": "gated",
+            "note": "the pull request awaits operator approval (governed action); "
+                    "approval pushes the branch and opens the PR"}
+
+
 def _t_accept(rec, engine, work_store, args) -> dict:
     a = engine.accept(args["assignmentId"], note=args.get("note"))
     return {"assignmentId": a.id, "state": a.state}
@@ -318,6 +383,31 @@ TOOLS: dict[str, dict[str, Any]] = {
                        "ApprovalGate for the operator.",
         "schema": _obj({"branch": _STR}, ["branch"]),
         "handler": _t_repo_merge_request, "manager": False, "grants": ("repo.merge",),
+    },
+    # ---- connector tools (builder-connectors.md §4): grant-filtered at the surface, and the
+    # handler re-resolves the node's instance per call — scope + mask + kill switch. ----
+    "github_list_issues": {
+        "description": "List issues in the connected GitHub repository (optionally filtered "
+                       "by state and labels).",
+        "schema": _obj({"state": _STR,
+                        "labels": {"type": "array", "items": _STR}}, []),
+        "handler": _t_github_list_issues, "manager": False,
+        "grants": ("issues.read", "connector.github.issues.read"),
+    },
+    "github_get_issue": {
+        "description": "Read one issue (title, body, labels, author) from the connected "
+                       "GitHub repository.",
+        "schema": _obj({"number": {"type": "integer"}}, ["number"]),
+        "handler": _t_github_get_issue, "manager": False,
+        "grants": ("issues.read", "connector.github.issues.read"),
+    },
+    "github_create_pr": {
+        "description": "Request a pull request on the connected GitHub repository from your "
+                       "canopy/* work branch; opens an ApprovalGate for the operator, whose "
+                       "approval pushes the branch and creates the PR.",
+        "schema": _obj({"branch": _STR, "title": _STR, "body": _STR}, ["branch"]),
+        "handler": _t_github_create_pr, "manager": False,
+        "grants": ("connector.github.pr.create",),
     },
 }
 

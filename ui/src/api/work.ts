@@ -90,6 +90,9 @@ export interface Intent {
   createdAt: string;
   rootAssignmentId: string | null;
   cadenceId: string | null;
+  // Trigger provenance (standing-orgs.md §3): the ⚡ chip and its external key.
+  triggerId?: string | null;
+  externalKey?: string | null;
 }
 
 // A standing schedule (E7, engine.md §4): each due occurrence fires an ordinary intent.
@@ -103,6 +106,31 @@ export interface Cadence {
   lastFiredAt: string | null;
   nextFireAt: string | null; // server-computed; null when disabled
   createdAt: string;
+}
+
+// An event-driven work source (standing-orgs.md §2): polls a connector instance, opens one
+// episodic intent per new external event, deduped by the server's fire ledger.
+export interface Trigger {
+  id: string;
+  orgId: string;
+  name: string;
+  kind: string; // 'github-issues' (v1)
+  nodeId: string | null;
+  instanceId: string;
+  config: { labels?: string[]; state?: string; createdAfter?: string };
+  intentTemplate: string;
+  enabled: boolean;
+  cursor: { since?: string } | null;
+  lastCheckedAt: string | null;
+  lastFiredAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TriggerDryRun {
+  candidates: { key: string; title: string; url: string }[];
+  renderedFirst: string | null;
 }
 
 export interface Step {
@@ -243,7 +271,7 @@ function useInvalidateWork(orgId: string | null) {
   const qc = useQueryClient();
   return () => {
     for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments",
-                       "spend", "assignment-detail", "cadences"]) {
+                       "spend", "assignment-detail", "cadences", "triggers"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
     void orgId;
@@ -316,6 +344,70 @@ export function useDeleteCadence(orgId: string | null) {
     mutationFn: (cadenceId: string) =>
       apiSend("DELETE", `/organizations/${orgId}/cadences/${cadenceId}`),
     onSuccess: invalidate,
+  });
+}
+
+// ---- triggers (standing-orgs.md §4) ----
+export function useTriggers(orgId: string | null) {
+  return useQuery({
+    queryKey: ["triggers", orgId],
+    queryFn: () => apiGet<{ triggers: Trigger[] }>(`/organizations/${orgId}/triggers`),
+    enabled: !!orgId,
+    refetchInterval: usePollInterval(),
+    select: (d) => d.triggers,
+  });
+}
+
+export interface TriggerBody {
+  name: string;
+  instanceId: string;
+  intentTemplate: string;
+  nodeId?: string | null;
+  config?: Trigger["config"];
+}
+
+export function useCreateTrigger(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (body: TriggerBody) =>
+      apiSend<Trigger>("POST", `/organizations/${orgId}/triggers`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateTrigger(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: ({ triggerId, body }: { triggerId: string; body: Partial<TriggerBody> & { enabled?: boolean } }) =>
+      apiSend<Trigger>("PUT", `/organizations/${orgId}/triggers/${triggerId}`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteTrigger(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (triggerId: string) =>
+      apiSend("DELETE", `/organizations/${orgId}/triggers/${triggerId}`),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCheckTrigger(orgId: string | null) {
+  const invalidate = useInvalidateWork(orgId);
+  return useMutation({
+    mutationFn: (triggerId: string) =>
+      apiSend<{ fired: string[]; candidates: number }>(
+        "POST", `/organizations/${orgId}/triggers/${triggerId}/check`,
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDryRunTrigger(orgId: string | null) {
+  return useMutation({
+    mutationFn: (triggerId: string) =>
+      apiSend<TriggerDryRun>("POST", `/organizations/${orgId}/triggers/${triggerId}/dry-run`),
   });
 }
 

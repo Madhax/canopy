@@ -23,6 +23,7 @@ import { useAssignments } from "../api/work";
 import { Button, CenteredSpinner, EmptyState, Markdown } from "../components/common";
 import { InspectorPanel } from "../components/execute/AgentInspector";
 import { CadenceSection, type CadenceSeed } from "../components/execute/CadenceSection";
+import { TriggerSection } from "../components/execute/TriggerSection";
 import { CostSection } from "../components/execute/CostExplorer";
 import { MissionControl, OrgPulse } from "../components/execute/MissionControl";
 import { GateCard } from "../components/execute/GateCard";
@@ -267,6 +268,11 @@ export function ExecutePage() {
                           ↻
                         </span>
                       )}
+                      {i.triggerId && (
+                        <span className="mr-1" title={`Fired by a trigger (${i.externalKey ?? "event"})`}>
+                          ⚡{i.externalKey ? i.externalKey.replace("issue:", "#") : ""}
+                        </span>
+                      )}
                       {firstLine.slice(0, 48)}
                       {firstLine.length > 48 ? "…" : ""}
                       <span className="ml-1 text-[10px] uppercase">{i.state}</span>
@@ -342,12 +348,18 @@ export function ExecutePage() {
               )}
             </section>
 
-            {/* Cadences: put this org on a schedule (E7) */}
+            {/* Standing work (standing-orgs-ux.md §2): time fires cadences; events fire
+                triggers. Both open ordinary intents — sources are governable objects. */}
             <CadenceSection
               orgId={effectiveOrg}
               nodeName={nodeName}
               seed={cadenceSeed}
               onSeedConsumed={() => setCadenceSeed(null)}
+            />
+            <TriggerSection
+              orgId={effectiveOrg}
+              nodeName={nodeName}
+              nodes={(orgDoc.data?.agents ?? []).map((a) => ({ id: a.id, name: a.name }))}
             />
           </div>
 

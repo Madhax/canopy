@@ -113,6 +113,10 @@ def new_cadence_id() -> str:
     return _prefixed("cd")
 
 
+def new_trigger_id() -> str:
+    return _prefixed("tr")
+
+
 def new_notification_id() -> str:
     return _prefixed("nt")
 

@@ -64,9 +64,14 @@ def test_tool_grants_resolve_and_cover_the_mvp_roles():
     resolves, and the three MVP roles carry exactly the grants mvp.md §1's table needs."""
     catalog = get_catalog()
     grants = {g.key: g for g in catalog.toolGrants}
+    # The merged vocabulary (connectors/01 §6): the native base + issues.read + the two v1
+    # packs' contributions (github, local-git).
     assert set(grants) == {
         "workspace.rw", "repo.read", "code.repo.write", "docs.repo.write", "test.unit.run",
-        "test.run", "repo.merge",
+        "test.run", "repo.merge", "issues.read",
+        "connector.github.issues.read", "connector.github.repo.read",
+        "connector.github.repo.write", "connector.github.pr.create",
+        "connector.local-git.repo.read", "connector.local-git.repo.write",
     }
     # Execute-class grants carry the hard tier floor (envelope §3.1); merge is governed.
     assert grants["test.run"].riskClass == "execute" and grants["test.run"].minSandboxTier == 2

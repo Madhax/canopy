@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..deps import (
     get_activity,
@@ -439,6 +439,177 @@ def delete_cadence(
     work_store.delete_cadence(cadence_id)
     activity.log("operator", "cadence.deleted", org_id=org_id, subject_ids=[cadence_id])
     return JSONResponse(status_code=204, content=None)
+
+
+# --------------------------------------------------------------------------- #
+# Triggers (standing-orgs.md §4): CRUD over work_trigger + the check-now / dry-run verbs.
+# The 60 s poll loop in main.py does the firing; these routes manage the source rows.
+# --------------------------------------------------------------------------- #
+class TriggerBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    kind: str = "github-issues"
+    instanceId: str
+    intentTemplate: str
+    nodeId: str | None = None  # None ⇒ the org root at fire time
+    config: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class TriggerUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = None
+    instanceId: str | None = None
+    intentTemplate: str | None = None
+    nodeId: str | None = None  # None ⇒ unchanged (retarget-to-root = recreate)
+    config: dict[str, Any] | None = None
+    enabled: bool | None = None
+
+
+def _check_trigger_template(template: str) -> JSONResponse | None:
+    import re
+
+    from ..github_client import TEMPLATE_VARS
+
+    for var in re.findall(r"\{\{(\w+)\}\}", template):
+        if var not in TEMPLATE_VARS:
+            return _error(422, "BAD_TEMPLATE",
+                          f"unknown placeholder {{{{{var}}}}} — "
+                          f"vocabulary: {', '.join(TEMPLATE_VARS)}")
+    return None
+
+
+def _check_trigger_source(org_id: str, instance_id: str) -> JSONResponse | None:
+    """The instance must exist, be enabled, and serve issues.read (standing-orgs.md §4)."""
+    from ..catalog import get_catalog
+    from ..deps import get_connector_store
+
+    connectors = get_connector_store()
+    inst = connectors.get(instance_id)
+    if inst is None or inst.organizationId != org_id:
+        return _error(422, "BAD_TRIGGER_SOURCE", f"no connector instance {instance_id!r}")
+    if not inst.enabled:
+        return _error(422, "BAD_TRIGGER_SOURCE", f"instance {inst.name!r} is disabled")
+    binding = connectors.resolve(get_catalog(), org_id, None, "issues.read")
+    if binding is None or binding.instance.id != instance_id:
+        # Resolve directly against this instance: it must carry an enabled issues-read grant.
+        pack = next((p for p in get_catalog().connectorPacks if p.key == inst.packKey), None)
+        serves = pack is not None and any(
+            g.key in inst.enabledGrants and ("issues.read" in g.provides)
+            for g in pack.grants
+        )
+        if not serves:
+            return _error(422, "BAD_TRIGGER_SOURCE",
+                          f"instance {inst.name!r} does not serve issues.read — "
+                          "enable the issue-read capability on it first")
+    return None
+
+
+@router.get("/organizations/{org_id}/triggers")
+def list_triggers(org_id: str, work_store=Depends(get_work_store)) -> Any:
+    return {"triggers": [t.model_dump() for t in work_store.list_triggers(org_id)]}
+
+
+@router.post("/organizations/{org_id}/triggers", status_code=201)
+def create_trigger(
+    org_id: str, body: TriggerBody, store=Depends(get_store),
+    work_store=Depends(get_work_store), activity=Depends(get_activity),
+) -> Any:
+    if not store.exists(org_id):
+        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    if not body.name.strip() or not body.intentTemplate.strip():
+        return _error(422, "BAD_TRIGGER", "name and intentTemplate are required")
+    if body.kind != "github-issues":
+        return _error(422, "BAD_TRIGGER", f"unknown trigger kind {body.kind!r}")
+    if (err := _check_trigger_template(body.intentTemplate)) is not None:
+        return err
+    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+        return err
+    if (err := _check_trigger_source(org_id, body.instanceId)) is not None:
+        return err
+    config = dict(body.config)
+    # A new trigger never replays history unless asked (standing-orgs-ux.md §2.1).
+    config.setdefault("createdAfter", now_iso())
+    trigger = work_store.create_trigger(
+        org_id, body.name.strip(), body.kind, body.instanceId,
+        body.intentTemplate.strip(), node_id=body.nodeId, config=config,
+        enabled=body.enabled,
+    )
+    activity.log("operator", "trigger.created", org_id=org_id, subject_ids=[trigger.id],
+                 payload={"kind": trigger.kind, "instanceId": trigger.instanceId})
+    return trigger.model_dump()
+
+
+@router.put("/organizations/{org_id}/triggers/{trigger_id}")
+def update_trigger(
+    org_id: str, trigger_id: str, body: TriggerUpdateBody, store=Depends(get_store),
+    work_store=Depends(get_work_store), activity=Depends(get_activity),
+) -> Any:
+    existing = work_store.get_trigger(trigger_id)
+    if existing is None or existing.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
+    if body.intentTemplate is not None:
+        if (err := _check_trigger_template(body.intentTemplate)) is not None:
+            return err
+    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+        return err
+    if body.instanceId is not None:
+        if (err := _check_trigger_source(org_id, body.instanceId)) is not None:
+            return err
+    changes: dict[str, Any] = {}
+    for field, key in (("name", "name"), ("instanceId", "instanceId"),
+                       ("intentTemplate", "intentTemplate"), ("nodeId", "nodeId"),
+                       ("config", "config"), ("enabled", "enabled")):
+        val = getattr(body, field)
+        if val is not None:
+            changes[key] = val
+    trigger = work_store.update_trigger(trigger_id, changes)
+    activity.log("operator", "trigger.updated", org_id=org_id, subject_ids=[trigger_id],
+                 payload={"enabled": trigger.enabled})
+    return trigger.model_dump()
+
+
+@router.delete("/organizations/{org_id}/triggers/{trigger_id}", status_code=204)
+def delete_trigger(
+    org_id: str, trigger_id: str, work_store=Depends(get_work_store),
+    activity=Depends(get_activity),
+):
+    existing = work_store.get_trigger(trigger_id)
+    if existing is None or existing.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
+    work_store.delete_trigger(trigger_id)
+    activity.log("operator", "trigger.deleted", org_id=org_id, subject_ids=[trigger_id])
+    return JSONResponse(status_code=204, content=None)
+
+
+@router.post("/organizations/{org_id}/triggers/{trigger_id}/check")
+def check_trigger(
+    org_id: str, trigger_id: str, work_store=Depends(get_work_store),
+) -> Any:
+    """One synchronous poll for this trigger — the operator's *check now* button."""
+    from ..deps import get_trigger_scheduler
+
+    existing = work_store.get_trigger(trigger_id)
+    if existing is None or existing.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
+    return get_trigger_scheduler().check_now(trigger_id)
+
+
+@router.post("/organizations/{org_id}/triggers/{trigger_id}/dry-run")
+def dry_run_trigger(
+    org_id: str, trigger_id: str, work_store=Depends(get_work_store),
+) -> Any:
+    """The poll without the firing: what WOULD fire, with the first intent rendered."""
+    from ..deps import get_trigger_scheduler
+    from ..github_client import GitHubError
+
+    existing = work_store.get_trigger(trigger_id)
+    if existing is None or existing.orgId != org_id:
+        return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
+    try:
+        return get_trigger_scheduler().dry_run(trigger_id)
+    except (GitHubError, LookupError) as exc:
+        return _error(502, "TRIGGER_SOURCE_ERROR", str(exc))
 
 
 # --------------------------------------------------------------------------- #

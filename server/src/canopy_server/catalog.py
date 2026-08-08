@@ -71,14 +71,52 @@ def check_integrity(catalog: Catalog) -> list[str]:
             if d.to not in slots:
                 problems.append(f"formation {f.key!r} dependency to unknown slot {d.to!r}")
 
-    grant_keys: set[str] = set()
+    # Base vocabulary. Pack grants merge into toolGrants at load (connectors/01 §6), so a
+    # merged catalog re-validates cleanly: connector-namespaced entries are validated through
+    # their packs below, not double-counted here.
+    base_grant_keys: set[str] = set()
     for g in catalog.toolGrants:
         if not _GRANT_KEY_RE.match(g.key):
             problems.append(f"toolGrant key not dotted-kebab: {g.key!r}")
-        if g.key in grant_keys:
+        if g.key.startswith("connector."):
+            continue
+        if g.key in base_grant_keys:
             problems.append(f"duplicate toolGrant key: {g.key!r}")
-        grant_keys.add(g.key)
+        base_grant_keys.add(g.key)
 
+    # Connector packs (connectors/01): pack keys unique; pack grant keys live under
+    # connector.<packKey>.; provides targets must exist in the base vocabulary; a grant's
+    # credentialKind must be declared by the pack's secrets.
+    pack_keys: set[str] = set()
+    pack_grant_keys: set[str] = set()
+    for p in catalog.connectorPacks:
+        if not _KEY_RE.match(p.key):
+            problems.append(f"connectorPack key not kebab-case: {p.key!r}")
+        if p.key in pack_keys:
+            problems.append(f"duplicate connectorPack key: {p.key!r}")
+        pack_keys.add(p.key)
+        declared_kinds = {s.credentialKind for s in p.secrets}
+        for g in p.grants:
+            if not g.key.startswith(f"connector.{p.key}."):
+                problems.append(
+                    f"connectorPack {p.key!r} grant {g.key!r} outside its namespace"
+                )
+            if g.key in base_grant_keys or g.key in pack_grant_keys:
+                problems.append(f"connectorPack {p.key!r} grant collides: {g.key!r}")
+            pack_grant_keys.add(g.key)
+            for target in g.provides:
+                if target not in base_grant_keys:
+                    problems.append(
+                        f"connectorPack {p.key!r} grant {g.key!r} provides "
+                        f"unknown abstract key {target!r}"
+                    )
+            if g.credentialKind and g.credentialKind not in declared_kinds:
+                problems.append(
+                    f"connectorPack {p.key!r} grant {g.key!r} needs undeclared "
+                    f"credentialKind {g.credentialKind!r}"
+                )
+
+    grant_keys = base_grant_keys | pack_grant_keys
     for r in catalog.roles:
         s = r.defaultSalary
         if not (isinstance(s.perAssignmentAllowance, int) and s.perAssignmentAllowance > 0):
@@ -101,6 +139,14 @@ def load_catalog(path: Path = _CATALOG_PATH) -> Catalog:
             f"catalog.json failed integrity checks ({len(problems)}):\n  - "
             + "\n  - ".join(problems)
         )
+    # Pack grants merge into the ONE grant vocabulary (connectors/01 §6): surface filtering,
+    # readiness (GRANT_UNKNOWN), and tier derivation treat them identically to native grants.
+    merged = {g.key for g in catalog.toolGrants}
+    for p in catalog.connectorPacks:
+        for g in p.grants:
+            if g.key not in merged:
+                catalog.toolGrants.append(g)
+                merged.add(g.key)
     return catalog
 
 

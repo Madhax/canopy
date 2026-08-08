@@ -22,8 +22,15 @@ import { Breadcrumbs } from "../components/editor/Breadcrumbs";
 import { Toolbar } from "../components/editor/Toolbar";
 import { ActuationControls } from "../components/editor/ActuationControls";
 import { ConflictDialog } from "../components/editor/ConflictDialog";
+import {
+  useConnectorInstances,
+  useConnectorPacks,
+  useCreateInstance,
+  useUpdateInstance,
+} from "../api/connectors";
 import { OrgCanvas } from "../components/editor/canvas/OrgCanvas";
 import { Palette } from "../components/editor/palette/Palette";
+import { ConnectorPanel } from "../components/editor/inspector/ConnectorPanel";
 import { Inspector } from "../components/editor/inspector/Inspector";
 import { JsonDrawer } from "../components/editor/JsonDrawer";
 import { ChildOrgDialog } from "../components/editor/palette/ChildOrgDialog";
@@ -95,6 +102,76 @@ export function EditorPage() {
     doc,
     catalog.data,
     path,
+  );
+
+  // Connectors (builder-connectors.md §7): server truth beside the chart, canvas overlay +
+  // panel. Only shown at the ROOT canvas — instances don't scope into child orgs in v1.
+  const { data: connectorPacks } = useConnectorPacks(doc?.id);
+  const { data: connectorInstances } = useConnectorInstances(doc?.id);
+  const createInstance = useCreateInstance(doc?.id);
+  const updateInstance = useUpdateInstance(doc?.id);
+  const [connectorSel, setConnectorSel] = useState<string | null>(null);
+  const atRoot = path.length === 0;
+  const connectorGoverned = useMemo(() => {
+    const governed = new Set<string>();
+    for (const inst of connectorInstances ?? []) {
+      const pack = connectorPacks?.find((p) => p.key === inst.packKey);
+      if (pack?.grants.some((g) => inst.enabledGrants.includes(g.key) && g.governedActions.length)) {
+        governed.add(inst.id);
+      }
+    }
+    return governed;
+  }, [connectorInstances, connectorPacks]);
+
+  const placeConnector = useCallback(
+    (packKey: string) => {
+      const pack = connectorPacks?.find((p) => p.key === packKey);
+      if (!pack) return;
+      const config: Record<string, string> = {};
+      for (const [field, decl] of Object.entries(pack.configSchema)) {
+        if (decl.default) config[field] = decl.default;
+        else if (decl.required) config[field] = "";
+      }
+      const n = (connectorInstances ?? []).filter((i) => i.packKey === packKey).length;
+      createInstance.mutate(
+        {
+          packKey,
+          name: n ? `${pack.title} ${n + 1}` : pack.title,
+          config,
+          enabledGrants: pack.grants
+            .filter((g) => !g.governedActions.length && g.riskClass === "read")
+            .map((g) => g.key),
+          nodeLinks: [], // parked unlinked — scope is an explicit gesture
+        },
+        {
+          onSuccess: (inst) => setConnectorSel(inst.id),
+          onError: (e) => toast((e as Error).message, "error"),
+        },
+      );
+    },
+    [connectorPacks, connectorInstances, createInstance, toast],
+  );
+
+  const linkConnector = useCallback(
+    (instanceId: string, targetNodeId: string) => {
+      const inst = connectorInstances?.find((i) => i.id === instanceId);
+      if (!inst || !org) return;
+      const root = org.agents.find((a) => a.managerId === null);
+      if (root && targetNodeId === root.id) {
+        updateInstance.mutate({ id: instanceId, patch: { linkScope: "org" } });
+        toast("Linked org-wide — every node can reach it.", "success");
+      } else {
+        const links = new Set(inst.nodeLinks ?? []);
+        links.add(targetNodeId);
+        updateInstance.mutate({
+          id: instanceId,
+          patch: { linkScope: "nodes", nodeLinks: [...links] },
+        });
+        toast("Linked to the node — only linked nodes can reach it.", "success");
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connectorInstances, updateInstance, toast, doc, path],
   );
 
   // Live actuation status (A2): map each node on the CURRENT canvas to its status pill.
@@ -285,6 +362,8 @@ export function EditorPage() {
             }
             setChildDialog(true);
           }}
+          connectorPacks={atRoot ? connectorPacks : undefined}
+          onPlaceConnector={placeConnector}
         />
 
         <div className="min-w-0 flex-1">
@@ -295,16 +374,34 @@ export function EditorPage() {
             issueDepIds={issueDepIds}
             onOpenChild={(childOrgId) => setPath([...path, childOrgId])}
             nodeStatus={nodeStatus}
+            connectors={atRoot ? connectorInstances : undefined}
+            connectorGoverned={connectorGoverned}
+            selectedConnectorId={connectorSel}
+            onSelectConnector={setConnectorSel}
+            onLinkConnector={linkConnector}
+            onDropConnector={placeConnector}
           />
         </div>
 
-        <Inspector
-          org={org}
-          catalog={catalog.data}
-          issues={currentIssues}
-          onFocusIssue={focusIssue}
-          onOpenChild={(childOrgId) => setPath([...path, childOrgId])}
-        />
+        {connectorSel && connectorInstances?.some((i) => i.id === connectorSel) ? (
+          <ConnectorPanel
+            orgId={doc.id}
+            instance={connectorInstances.find((i) => i.id === connectorSel)!}
+            pack={connectorPacks?.find(
+              (p) => p.key === connectorInstances.find((i) => i.id === connectorSel)!.packKey,
+            )}
+            org={org}
+            onClose={() => setConnectorSel(null)}
+          />
+        ) : (
+          <Inspector
+            org={org}
+            catalog={catalog.data}
+            issues={currentIssues}
+            onFocusIssue={focusIssue}
+            onOpenChild={(childOrgId) => setPath([...path, childOrgId])}
+          />
+        )}
 
         <JsonDrawer doc={doc} open={jsonOpen} onClose={() => setJsonOpen(false)} />
       </div>

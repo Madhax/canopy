@@ -76,6 +76,69 @@ def get_profile_store():
 
 
 @lru_cache(maxsize=8)
+def _connector_store_for(path_str: str):
+    from .connectors import ConnectorStore
+
+    return ConnectorStore(_db_for(path_str))
+
+
+def get_connector_store():
+    return _connector_store_for(str(get_db_path()))
+
+
+@lru_cache(maxsize=8)
+def _github_client_for(path_str: str):
+    from .github_client import GitHubClient
+
+    return GitHubClient()
+
+
+def get_github_client():
+    """The GitHub REST client (builder-connectors.md §6). Tests override this dependency
+    with a client wired to the in-memory transport — CI never touches the network."""
+    return _github_client_for(str(get_db_path()))
+
+
+def _connector_repo_source(path_str: str, data_dir_str: str):
+    """org_id -> repo source: connector instance serving the repo family (an https URL for
+    github, a local path for local-git) → F8 binding → None (boot [repo] source / fixture)."""
+    from .catalog import get_catalog
+
+    connectors = _connector_store_for(path_str)
+    profiles = _profile_store_for(path_str)
+
+    def resolve(org_id: str):
+        binding = connectors.resolve(get_catalog(), org_id, None, "repo.read")
+        if binding is not None:
+            if binding.instance.packKey == "github":
+                cfg = binding.instance.config
+                return f"https://github.com/{cfg.get('owner')}/{cfg.get('repo')}.git"
+            if binding.instance.packKey == "local-git":
+                return binding.instance.config.get("source")
+        return profiles.get_repo_source(org_id)
+
+    return resolve
+
+
+def _connector_repo_auth(path_str: str, data_dir_str: str):
+    """org_id -> token for URL sources — revealed inside the control-plane process at call
+    time only (invariant 10); never stored on the RepoManager or on disk."""
+    from .catalog import get_catalog
+
+    connectors = _connector_store_for(path_str)
+    secrets = _secret_store_for(path_str, data_dir_str)
+
+    def resolve(org_id: str):
+        binding = connectors.resolve(get_catalog(), org_id, None, "repo.read")
+        if binding is None:
+            return None
+        sid = binding.instance.secretBindings.get("scm-token")
+        return secrets.reveal(sid) if sid else None
+
+    return resolve
+
+
+@lru_cache(maxsize=8)
 def _ledger_for(path_str: str):
     from .ledger import SqliteLedger
 
@@ -183,9 +246,38 @@ def _engine_for(path_str: str, data_dir_str: str):
         bus=_bus_for(path_str),  # dispatch/resume wake-ups ride the A3 delivery workers (E3)
         executors={  # governed actions (E4): consented via ApprovalGate, then executed here
             "repo-merge": lambda p: repos.merge(p["orgId"], p["branch"]),
+            # The O2 step-1 executor (builder-connectors.md §5): push the work branch to the
+            # org's GitHub instance and open the PR — only ever reached through an approved
+            # ApprovalGate; the deny path leaves nothing outside the machine.
+            "pr-create": _pr_create_executor(path_str, data_dir_str),
         },
         prices=get_prices(),  # settle-path cost estimation (F1) — same table the gateway holds
     )
+
+
+def _pr_create_executor(path_str: str, data_dir_str: str):
+    from .catalog import get_catalog
+
+    def execute(p: dict) -> dict:
+        org_id = p["orgId"]
+        repos = _repos_for(data_dir_str, _repo_source_str(), path_str)
+        pushed = repos.push_branch(org_id, p["branch"])
+        binding = _connector_store_for(path_str).resolve(
+            get_catalog(), org_id, None, "connector.github.pr.create"
+        )
+        if binding is None:
+            # Local-git round: the push IS the deliverable; the PR is the operator's.
+            return {**pushed, "prUrl": None}
+        cfg = binding.instance.config
+        token = _connector_repo_auth(path_str, data_dir_str)(org_id) or ""
+        pr = _github_client_for(path_str).create_pr(
+            token, cfg.get("owner", ""), cfg.get("repo", ""),
+            title=p.get("title", pushed["branch"]), body=p.get("body", ""),
+            head=pushed["branch"], base=cfg.get("targetBranch", "main"),
+        )
+        return {**pushed, "prUrl": pr.get("html_url"), "prNumber": pr.get("number")}
+
+    return execute
 
 
 def _repo_source_str() -> str:
@@ -199,13 +291,13 @@ def _repo_source_str() -> str:
 def _repos_for(data_dir_str: str, source_str: str, path_str: str):
     from .repos import RepoManager
 
-    profiles = _profile_store_for(path_str)
     return RepoManager(
         Path(data_dir_str) / "repos",
         source=Path(source_str) if source_str else None,
-        # F8: the org's own binding (live DB read — mutable at runtime, no restart)
-        # outranks the boot-time [repo] source.
-        source_resolver=profiles.get_repo_source,
+        # Connector instance (live DB read) outranks the F8 binding outranks the boot-time
+        # [repo] source — all mutable at runtime, no restart (builder-connectors.md §4).
+        source_resolver=_connector_repo_source(path_str, data_dir_str),
+        auth_resolver=_connector_repo_auth(path_str, data_dir_str),
     )
 
 
@@ -231,6 +323,27 @@ def _cadence_scheduler_for(path_str: str, data_dir_str: str):
 
 def get_cadence_scheduler():
     return _cadence_scheduler_for(str(get_db_path()), str(get_data_dir()))
+
+
+@lru_cache(maxsize=8)
+def _trigger_scheduler_for(path_str: str, data_dir_str: str):
+    from .catalog import get_catalog
+    from .engine.triggers import TriggerScheduler
+
+    return TriggerScheduler(
+        _work_store_for(path_str),
+        _engine_for(path_str, data_dir_str),
+        _actuator_for(path_str, data_dir_str),
+        _connector_store_for(path_str),
+        _secret_store_for(path_str, data_dir_str),
+        _github_client_for(path_str),
+        get_catalog(),
+        activity=_activity_for(path_str),
+    )
+
+
+def get_trigger_scheduler():
+    return _trigger_scheduler_for(str(get_db_path()), str(get_data_dir()))
 
 
 @lru_cache(maxsize=8)

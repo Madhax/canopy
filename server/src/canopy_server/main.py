@@ -20,6 +20,7 @@ from .catalog import get_catalog
 from .config import get_ui_dist
 from .routes import actuations as actuation_routes
 from .routes import catalog as catalog_routes
+from .routes import connectors as connector_routes
 from .routes import dp as dp_routes
 from .routes import health as health_routes
 from .routes import inspector as inspector_routes
@@ -76,6 +77,22 @@ async def _cadence_loop() -> None:
         except Exception:  # noqa: BLE001 - the scheduler must survive any single bad pass
             pass
         await asyncio.sleep(30)
+
+
+async def _trigger_poll_loop() -> None:
+    """Every 60 s, poll enabled event triggers and open intents for new external events
+    (standing-orgs.md §3). Stateless: the fire ledger + per-trigger cursor are the only
+    state, so restarts resume with zero replays and zero drops."""
+    while True:
+        try:
+            from .config import get_trigger_poll_seconds
+            from .deps import get_trigger_scheduler
+
+            await asyncio.to_thread(get_trigger_scheduler().run_once)
+            delay = get_trigger_poll_seconds()
+        except Exception:  # noqa: BLE001 - the scheduler must survive any single bad pass
+            delay = 60.0
+        await asyncio.sleep(delay)
 
 
 async def _forward_to_agent(endpoint_url: str, envelope) -> bool:
@@ -135,6 +152,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.create_task(_delivery_loop()),
         asyncio.create_task(_trigger_sweep_loop()),
         asyncio.create_task(_cadence_loop()),
+        asyncio.create_task(_trigger_poll_loop()),
     ]
     try:
         yield
@@ -164,6 +182,7 @@ def create_app() -> FastAPI:
     api.include_router(catalog_routes.router)
     api.include_router(organization_routes.router)
     api.include_router(profiles_routes.router)  # profiles / bindings / secrets (A1)
+    api.include_router(connector_routes.router)  # connector instances (builder-connectors.md)
     api.include_router(operations_routes.router)  # spend rollups + activity feed (A1)
     api.include_router(actuation_routes.router)  # actuate / deactuate / current (A2)
     api.include_router(dp_routes.router)  # data plane /api/dp/* (gateway + charter/register/hb)

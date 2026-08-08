@@ -148,6 +148,46 @@ class OrgType(Strict):
     formations: list[str] = Field(default_factory=list)
 
 
+class ConnectorSecretDecl(Strict):
+    """One credential an instance of this pack must bind (connectors/01 §2)."""
+
+    credentialKind: str
+    required: bool = True
+    scopesHint: list[str] = Field(default_factory=list)
+
+
+class ConnectorConfigField(Strict):
+    """One field of a pack's per-instance config schema. ``narrowable`` marks the axes
+    roles/nodes may tighten (connectors/02 §4); non-narrowable fields are instance-fixed."""
+
+    type: Literal["string"] = "string"
+    required: bool = False
+    default: str | None = None
+    narrowable: bool = False
+
+
+class ConnectorGrant(ToolGrant):
+    """A pack-contributed ToolGrant (connectors/01 §6): merged into the one grant vocabulary
+    at catalog load, plus the pack-only fields — the MCP tools it curates and the abstract
+    keys it serves (connectors/01 §4, the two-layer rule)."""
+
+    tools: list[str] = Field(default_factory=list)
+    provides: list[str] = Field(default_factory=list)
+
+
+class ConnectorPack(Strict):
+    """A connector, declared (connectors/01 §2). v1 ships ``native`` packs only — the
+    platform-side executor family; ``mcp-server``/``http-api`` are later steps (05 §2)."""
+
+    key: str
+    version: int = 1
+    title: str
+    kind: Literal["native", "mcp-server", "http-api"] = "native"
+    secrets: list[ConnectorSecretDecl] = Field(default_factory=list)
+    configSchema: dict[str, ConnectorConfigField] = Field(default_factory=dict)
+    grants: list[ConnectorGrant] = Field(default_factory=list)
+
+
 class Catalog(Strict):
     kind: Literal["canopy.catalog"] = "canopy.catalog"
     catalogVersion: int = CATALOG_VERSION
@@ -155,6 +195,7 @@ class Catalog(Strict):
     roles: list[CatalogRole] = Field(default_factory=list)
     formations: list[Formation] = Field(default_factory=list)
     toolGrants: list[ToolGrant] = Field(default_factory=list)
+    connectorPacks: list[ConnectorPack] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
