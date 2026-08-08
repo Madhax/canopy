@@ -10,11 +10,19 @@ export interface PulseNode {
   managerId: string | null;
   roleKey: string;
   status: string;
-  current: { assignmentId: string; state: string; briefPreview: string } | null;
+  current: {
+    assignmentId: string;
+    state: string;
+    briefPreview: string;
+    /** F15: completed stages over the living plan — the honest progress headline. */
+    stageProgress?: { done: number; total: number } | null;
+  } | null;
   queueDepth: number;
   wip: number;
   meter: { spent: number; allowance: number; warned: boolean; state: string } | null;
   openGateKinds: string[];
+  /** F5: owner distinguishes operator work (🔒 needs you) from internal wiring (🔗). */
+  openGates?: { kind: string; owner: string }[];
   runtimeKind: string;
 }
 

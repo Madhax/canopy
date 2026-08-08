@@ -85,9 +85,30 @@ describe("PlanOutline", () => {
                         onIntervene={() => {}} onAccept={() => {}} onReject={() => {}} />);
     expect(screen.getByText("Engineering Lead")).toBeTruthy();
     expect(screen.getByText("gated")).toBeTruthy();
-    expect(screen.getByText(/🔒 dependency/)).toBeTruthy();
-    expect(screen.getByText("85%")).toBeTruthy();
+    // F5: a system-owned dependency gate is internal wiring (🔗), not operator work (🔒).
+    expect(screen.getByText(/🔗 dependency/)).toBeTruthy();
+    // F15: stage progress leads; the meter is a labeled budget number.
+    expect(screen.getByText("1/2 stages")).toBeTruthy();
+    expect(screen.getByText(/budget 85%/)).toBeTruthy();
     expect(screen.getByText(/prefer the streaming writer/)).toBeTruthy();
     expect(screen.getByText("← cursor")).toBeTruthy();
+  });
+
+  it("F4: an operator-owned gate rings in danger tone", () => {
+    const node: PlanNode = {
+      assignment: { id: "as_x", intentId: "in_1", nodeId: "a_lead", parentId: null,
+                    issuedBy: "operator", state: "gated",
+                    briefVersion: 1, contractKind: "artifact", contractType: "Deliverable",
+                    meterId: null, priority: 0, sessionRef: null, createdAt: "" },
+      brief: null, plan: null,
+      gates: [{ id: "g2", assignmentId: "as_x", kind: "escalation", openedBy: "a_lead",
+                owner: "operator", reason: "which auth scheme?", payload: {}, state: "open",
+                resolution: null, createdAt: "" }],
+      meter: null, deliverable: null, notes: [], children: [],
+    };
+    render(<PlanOutline node={node} nodeName={() => "Lead"} onNote={() => {}}
+                        onIntervene={() => {}} onAccept={() => {}} onReject={() => {}} />);
+    const chip = screen.getByText(/🔒 escalation/);
+    expect(chip.className).toContain("text-danger");
   });
 });

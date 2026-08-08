@@ -425,6 +425,9 @@ export function AgentInspector({
             <Field label="Session ref">
               {state.session.sessionRef ?? "— (no CLI session recorded)"}
             </Field>
+            {state.session.transcriptPath && (
+              <Field label="Transcript">{state.session.transcriptPath}</Field>
+            )}
             <span className="text-[10px] uppercase tracking-wide text-ink-muted">
               Tool calls ({state.session.toolEvents.length})
             </span>

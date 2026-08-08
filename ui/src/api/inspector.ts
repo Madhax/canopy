@@ -68,7 +68,12 @@ export interface AgentState {
   gates: { open: Gate[]; recent: Gate[] };
   spend: { nodeTokens: number; orgTokens: number; sharePct: number };
   memory: { seq: number; entry: Record<string, unknown>; createdAt: string }[];
-  session: { sessionRef: string | null; toolEvents: ToolEvent[]; logTail: string[] };
+  session: {
+    sessionRef: string | null;
+    transcriptPath: string | null;
+    toolEvents: ToolEvent[];
+    logTail: string[];
+  };
   workspace: { root: string; files: WorkspaceFile[]; truncated: boolean } | null;
 }
 

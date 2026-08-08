@@ -298,6 +298,63 @@ def test_two_node_delegate_demo_on_fake_cli(
     assert "reports_status" in events
 
 
+def test_work_root_is_stable_and_transcript_recorded(
+    client, make_org, mint_session, live_server, tmp_path, monkeypatch,
+):
+    """F13 + F16: with CANOPY_WORK_ROOT set, the assignment tree materializes under the
+    actuation-independent home (NOT the sandbox cwd — the CLI's conversation key must not
+    embed the actuation id), the transcript pointer lands on the assignment, and the
+    transcript is archived into the assignment's own home at session exit."""
+    from canopy_server.deps import get_engine
+
+    sandbox_cwd = tmp_path / "sandboxes" / "act-ephemeral" / "n1" / "workspace"
+    sandbox_cwd.mkdir(parents=True)
+    stable = tmp_path / "work" / "org1" / "n1"
+    monkeypatch.chdir(sandbox_cwd)
+    monkeypatch.setenv("CANOPY_WORK_ROOT", str(stable))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+
+    org = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Stable")
+    node = _node(org, "backend-engineer")
+    s = mint_session(org["id"], node_id=node["id"])
+    _seed_charter(org, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(org["id"], s["actuationId"], "stable home",
+                                   target_node=node["id"], allowance_override=50_000).assignment
+
+    _write_script(tmp_path, monkeypatch, {
+        "sessionId": "sess-stable",
+        "turns": [
+            {"tools": [{"name": "declare_plan",
+                        "arguments": {"stages": [{"title": "implement"}]}},
+                       {"name": "produce_artifact",
+                        "arguments": {"name": "out", "type": "Document",
+                                      "content": "done"}},
+                       {"name": "finish", "arguments": {"summary": "done"}}],
+             "usage": [100, 20]},
+        ],
+    })
+    # The CLI would write the transcript at the munged-workdir key; simulate it so the
+    # exit-time archive has something to copy.
+    workdir = stable / "assignments" / a.id / "work"
+    transcript = cli_runtime._transcript_path(workdir, "sess-stable")
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text('{"type":"conversation"}', encoding="utf-8")
+
+    agent = _agent(s["token"])
+    cfg = _cfg(live_server, s, node["id"])
+    cli_runtime.cli_tick(agent, cfg)  # intake
+    cli_runtime.cli_tick(agent, cfg)  # session
+    _wait_session_done(a.id)
+
+    # The tree lives in the stable home; the per-actuation cwd stayed clean.
+    assert (workdir / ".mcp.json").is_file()
+    assert not (sandbox_cwd / "assignments").exists()
+    detail = client.get(f"/api/assignments/{a.id}").json()
+    assert detail["assignment"]["transcriptPath"] == str(transcript)
+    archived = stable / "assignments" / a.id / "transcripts" / "sess-stable.jsonl"
+    assert archived.is_file() and archived.read_text() == '{"type":"conversation"}'
+
+
 def test_read_only_poll_loop_trips_stall_trigger(
     client, make_org, mint_session, live_server, tmp_path, monkeypatch,
 ):
@@ -335,6 +392,15 @@ def test_read_only_poll_loop_trips_stall_trigger(
     detail = client.get(f"/api/assignments/{a.id}").json()
     no_delta = [st for st in detail["steps"] if st["deltaKind"] == "none"]
     assert len(no_delta) >= 5  # read-only polls are not progress
+
+    # F14 changed the trigger's tempo, not its verdict: while the session streams, the
+    # adapter's liveness reports defer the no-delta gate (a thinking session is not a spin).
+    assert get_engine().sweep_triggers() == []  # fresh liveness → deferred, not gated
+    # Once the activity is stale past the grace window the spin gates as before — collapse
+    # the window rather than forging timestamps (which would scramble step ordering).
+    from canopy_server.engine.engine import ExecutionEngine
+
+    monkeypatch.setattr(ExecutionEngine, "NO_DELTA_ACTIVITY_GRACE_SECONDS", 0)
     gates = get_engine().sweep_triggers()
     gate = next(g for g in gates if g.reason.startswith("stall:no-delta"))
     assert gate.assignmentId == a.id

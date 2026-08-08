@@ -95,6 +95,9 @@ class GateService:
         if a is not None:
             self._log("gate.resolved", a.orgId, [a.id, gate.id],
                       {"kind": gate.kind, "action": resolution.get("action", "")})
+            # F9: the gate's unread notifications are now stale facts — auto-read them so the
+            # inbox only rings for things that still need someone.
+            self.store.mark_notifications_read_for_subject(a.orgId, gate.id)
         return updated or gate
 
     # ------------------------------------------------- dependency machinery

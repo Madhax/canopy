@@ -121,3 +121,53 @@ def test_reject_requeues_to_planning(client, make_org, mint_session):
     assert eng.store.get_assignment(a.id).state == "planning"
     assert eng.store.get_deliverable(d.id).accepted is False
     assert eng.store.get_assignment(a.id).briefVersion == 2  # revised brief recorded
+
+
+def test_settle_step_records_cache_tokens_and_cache_aware_cost(client, make_org, mint_session):
+    """F1 (phase3-debts.md live-run findings): the CLI adapter settles cache_read /
+    cache_creation components; the Step and SpendEvent carry them, and est_cost prices them
+    cache-aware (read = 0.1x input rate, creation = 1.25x) from the canopy.toml table."""
+    from canopy_server.deps import get_db, get_engine, get_ledger
+
+    eng = get_engine()
+    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(org)
+    s = mint_session(org["id"], node_id=root["id"])
+    a = eng.submit_intent(
+        org["id"], s["actuationId"], "read the corpus", target_node=root["id"]
+    ).assignment
+
+    step = eng.record_step(
+        a.id, input_tokens=100, output_tokens=200, duration_ms=10, settle=True,
+        model="claude-fable-5", cache_read_tokens=10_000, cache_creation_tokens=1_000,
+    )
+    assert step.cacheReadTokens == 10_000 and step.cacheCreationTokens == 1_000
+
+    def spend_row(step_id):
+        with get_db().connect() as conn:
+            return conn.execute(
+                "SELECT * FROM ledger_spend_event WHERE step_id = ?", (step_id,)
+            ).fetchone()
+
+    ev = spend_row(step.id)
+    assert ev is not None
+    assert ev["cache_read_tokens"] == 10_000 and ev["cache_creation_tokens"] == 1_000
+    # claude-fable-5 @ $10 in / $50 out per MTok:
+    # 100*10 + 200*50 + 10000*10*0.1 + 1000*10*1.25 (all /1M USD) = 0.0335 USD = 33_500 micros
+    assert ev["est_cost_micros"] == 33_500
+    # The METER currency stays raw input+output (F1 decision): cache tokens don't charge it.
+    assert get_ledger().get_meter(a.meterId).spent == 300
+
+    # An unpriced model settles with zero cost but full token truth (IM-5 honesty is the
+    # display layer's job -- F2).
+    step2 = eng.record_step(
+        a.id, input_tokens=5, output_tokens=5, duration_ms=1, settle=True,
+        model="no-such-model", cache_read_tokens=7,
+    )
+    ev2 = spend_row(step2.id)
+    assert ev2["est_cost_micros"] == 0 and ev2["cache_read_tokens"] == 7
+
+    # The spend rollup surfaces the cache components (cost explorer's feed).
+    r = client.get(f"/api/organizations/{org['id']}/spend?groupBy=assignment")
+    row = next(x for x in r.json()["rows"] if x["key"] == a.id)
+    assert row["cache_read_tokens"] == 10_007 and row["cache_creation_tokens"] == 1_000

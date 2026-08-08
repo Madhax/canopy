@@ -106,6 +106,33 @@ def _est_input_tokens(req: CompletionRequest) -> int:
     return max(1, chars // 4)
 
 
+# Cache-aware price weights, as fractions of the model's INPUT rate (industry-standard
+# billing shape; risk IM-4 keeps the per-model dollar figures in canopy.toml as data):
+# a cache read bills ~0.1x input, a cache write ~1.25x input.
+CACHE_READ_INPUT_WEIGHT = 0.1
+CACHE_CREATION_INPUT_WEIGHT = 1.25
+
+
+def estimate_cost_micros(
+    prices: dict, provider: str, model: str, in_tok: int, out_tok: int,
+    cache_read_tok: int = 0, cache_creation_tok: int = 0,
+) -> tuple[int, bool]:
+    """Estimated cost in micro-USD for one step, cache-aware (finding F1). Returns
+    ``(micros, priceKnown)`` — an unpriced model is (0, False), surfaced as such, never
+    silently zero (IM-5)."""
+    entry = prices.get(provider, {}).get(model)
+    if not entry:
+        return 0, False
+    p_in, p_out = entry.get("input", 0), entry.get("output", 0)
+    usd = (
+        in_tok / 1_000_000 * p_in
+        + out_tok / 1_000_000 * p_out
+        + cache_read_tok / 1_000_000 * p_in * CACHE_READ_INPUT_WEIGHT
+        + cache_creation_tok / 1_000_000 * p_in * CACHE_CREATION_INPUT_WEIGHT
+    )
+    return round(usd * 1_000_000), True
+
+
 class DefaultModelGateway(ModelGateway):
     def __init__(
         self,
@@ -142,13 +169,7 @@ class DefaultModelGateway(ModelGateway):
         return self._sems[provider]
 
     def _price(self, provider: str, model: str, in_tok: int, out_tok: int) -> tuple[int, bool]:
-        entry = self.prices.get(provider, {}).get(model)
-        if not entry:
-            return 0, False
-        usd = in_tok / 1_000_000 * entry.get("input", 0) + out_tok / 1_000_000 * entry.get(
-            "output", 0
-        )
-        return round(usd * 1_000_000), True
+        return estimate_cost_micros(self.prices, provider, model, in_tok, out_tok)
 
     async def complete(self, run_token, req, *, kind="production", task_id=None) -> GatewayResult:
         rec = self.runtokens.resolve(run_token)

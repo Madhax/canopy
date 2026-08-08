@@ -67,8 +67,38 @@ describe("CostExplorer", () => {
     renderExplorer();
     expect(screen.getAllByText("$0.0123").length).toBeGreaterThan(0); // 12_345 micros
     expect(screen.getAllByText("1,000").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("25%").length).toBeGreaterThan(0); // 250 / 1000 coordination
+    // F2: the split bar names its metric — the bare % read as share-of-total spend.
+    expect(screen.getAllByText("25% coord").length).toBeGreaterThan(0); // 250 / 1000
     expect(screen.getByText(/Costs are estimates/)).toBeTruthy(); // IM-5, always labeled
+  });
+
+  it("F2: an unpriced model shows — with a no-price caption, never $0.0000", () => {
+    renderExplorer({
+      byIntent: [{ key: "in_1", input_tokens: 600, output_tokens: 400, est_cost_micros: 0,
+                   steps: 5, coordination_tokens: 250, production_tokens: 750 }],
+      byNode: [{ key: "a_lead", input_tokens: 600, output_tokens: 400, est_cost_micros: 0,
+                 steps: 5 }],
+      byAssignment: [],
+    });
+    expect(screen.queryByText("$0.0000")).toBeNull();
+    expect(screen.getByText(/no price for this model/)).toBeTruthy();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("F1: cached context totals surface next to the token headline and per step", () => {
+    renderExplorer({
+      byIntent: [{ key: "in_1", input_tokens: 600, output_tokens: 400, est_cost_micros: 12_345,
+                   steps: 5, cache_read_tokens: 1_200, cache_creation_tokens: 300 }],
+      openAssignmentId: "as_be",
+      openAssignmentSteps: [
+        { id: "st_00000001", assignmentId: "as_be", stageIdx: 0, kind: "production",
+          inputTokens: 5, outputTokens: 3, cacheReadTokens: 901, cacheCreationTokens: 100,
+          durationMs: 10, deltaKind: "artifact", deltaRef: null, createdAt: "" },
+      ],
+    });
+    expect(screen.getByText("+ 1,500 cached context")).toBeTruthy();
+    fireEvent.click(screen.getByText(/Add CSV export/));
+    expect(screen.getByText("1,001", { selector: "td" })).toBeTruthy(); // 901 + 100 cached
   });
 
   it("by-intent rows carry the intent text and drill down to assignments with spend + rework", () => {

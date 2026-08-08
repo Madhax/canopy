@@ -60,11 +60,12 @@ test("the software team runs an intent end to end", async ({ page, request }) =>
 
   // ---- Children run and deliver; the manager reviews and synthesizes; the root's
   //      deliverable waits on the operator in the living plan. Anchor on the LEAD's row —
-  //      children hit "delivering" first, and their acceptance is the manager's job, not ours.
+  //      children deliver first, and their acceptance is the manager's job, not ours.
+  //      (F5 relabels the raw `delivering` state as "awaiting review" in the UI.)
   const rootRow = page
     .locator("div.group")
     .filter({ hasText: "Engineering Lead" })
-    .filter({ hasText: "delivering" });
+    .filter({ hasText: "awaiting review" });
   await expect(rootRow).toBeVisible({ timeout: 150_000 });
   await rootRow.hover();
   await rootRow.getByRole("button", { name: "accept", exact: true }).click();

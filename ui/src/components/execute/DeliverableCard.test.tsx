@@ -28,6 +28,8 @@ describe("DeliverableView", () => {
                        onToggleRef={() => {}} />,
     );
     expect(screen.getByText(/Completed: hello world/)).toBeTruthy();
+    // F7: resolved/non-reviewable work starts collapsed — expand to see the body.
+    fireEvent.click(screen.getByText(/Completed: hello world/));
     expect(screen.getByText("deliverable@1")).toBeTruthy();
     expect(screen.getByText("print('hello world')")).toBeTruthy();
   });
@@ -61,7 +63,22 @@ describe("DeliverableView", () => {
         onToggleRef={() => {}} />,
     );
     expect(screen.getByText("accepted")).toBeTruthy();
+    fireEvent.click(screen.getByText("accepted")); // F7: recedes collapsed once resolved
     expect(screen.getByText(/Binary content/)).toBeTruthy();
     expect(screen.getByText(/review note: ship it/)).toBeTruthy();
+  });
+
+  it("F7: markdown-typed artifacts render as markdown, not monospace", () => {
+    render(
+      <DeliverableView
+        deliverable={deliverable()} reviewable
+        openRef="org://acme/a_lead/deliverable@1"
+        preview={{ ...preview, meta: { ...preview.meta, name: "report.md" },
+                   content: "# Findings\n\n- one\n- two" }}
+        onToggleRef={() => {}} />,
+    );
+    expect(screen.getByText("Findings")).toBeTruthy();
+    expect(screen.getByText("one")).toBeTruthy(); // a list item, not raw "- one"
+    expect(screen.queryByText(/^- one/)).toBeNull();
   });
 });

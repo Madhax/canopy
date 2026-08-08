@@ -20,7 +20,8 @@ function pulse(): Pulse {
       {
         nodeId: "a_lead", name: "Engineering Lead", managerId: null, roleKey: "engineering-lead",
         status: "engaged", runtimeKind: "loop",
-        current: { assignmentId: "as_root", state: "executing", briefPreview: "Add CSV export" },
+        current: { assignmentId: "as_root", state: "executing", briefPreview: "Add CSV export",
+                   stageProgress: { done: 1, total: 2 } },
         queueDepth: 0, wip: 1,
         meter: { spent: 150_000, allowance: 200_000, warned: false, state: "open" },
         openGateKinds: [],
@@ -43,7 +44,7 @@ function pulse(): Pulse {
 }
 
 describe("OrgPulse", () => {
-  it("shows actuation, intents, burn, gates by kind, and the attention badge", () => {
+  it("shows actuation, intents, burn, the narrative, and the attention badge", () => {
     render(<OrgPulse pulse={pulse()} />);
     expect(screen.getByText("live")).toBeTruthy();
     expect(
@@ -51,8 +52,12 @@ describe("OrgPulse", () => {
     ).toBeTruthy();
     expect(screen.getByText(/1,234/)).toBeTruthy();
     expect(screen.getByText(/\$42\.00\/hr/)).toBeTruthy();
-    expect(screen.getByText(/1 escalation · 2 intervention/)).toBeTruthy();
-    expect(screen.getByText("2 need you")).toBeTruthy();
+    // F5: internal wiring is a quiet count; operator work is the loud badge (F4).
+    expect(
+      screen.getByText((_, el) => el?.textContent === "1 internal gate (wiring)"),
+    ).toBeTruthy();
+    expect(screen.getByText("2 gates need you")).toBeTruthy();
+    expect(screen.getByText(/1 working/)).toBeTruthy(); // the F5 narrative line
   });
 });
 
@@ -66,7 +71,10 @@ describe("MissionControl", () => {
     expect(screen.getByText("wip 3")).toBeTruthy();
     expect(screen.getByText("🔒 escalation")).toBeTruthy();
     expect(screen.getByText("no active work")).toBeTruthy(); // the idle QA card
-    expect(screen.getByText(/95%/)).toBeTruthy(); // the warned meter arc
+    // F15: the budget number is labeled as budget, never a bare "progress" arc.
+    expect(screen.getByText(/budget 95%/)).toBeTruthy();
+    // F15: stage progress is the headline when a plan exists.
+    expect(screen.getByText("1/2 stages")).toBeTruthy();
   });
 
   it("cards deep-link into the inspector", () => {

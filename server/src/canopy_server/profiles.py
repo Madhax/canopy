@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS profiles_binding (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_binding_node
     ON profiles_binding (organization_id, agent_node_id, org_path);
 CREATE INDEX IF NOT EXISTS ix_binding_org ON profiles_binding (organization_id);
+
+-- F8: the org's work-target repo binding (operator data, mutable at runtime, no restart).
+-- NULL/absent falls back to the boot-time [repo] source, then the fixture.
+CREATE TABLE IF NOT EXISTS org_repo_source (
+    organization_id TEXT PRIMARY KEY,
+    source          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
 """
 register_schema(SCHEMA)
 
@@ -260,3 +268,26 @@ class ProfileStore:
                 "SELECT * FROM profiles_binding WHERE organization_id = ?", (org_id,)
             ).fetchall()
         return [self._row_to_binding(r) for r in rows]
+
+    # -- repo source (F8) --------------------------------------------------- #
+    def get_repo_source(self, org_id: str) -> str | None:
+        """The org's work-target repo binding, or None to fall back to config/fixture."""
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT source FROM org_repo_source WHERE organization_id = ?", (org_id,)
+            ).fetchone()
+        return row["source"] if row else None
+
+    def set_repo_source(self, org_id: str, source: str | None) -> None:
+        with self.db.transaction() as conn:
+            if source:
+                conn.execute(
+                    "INSERT INTO org_repo_source (organization_id, source, updated_at) "
+                    "VALUES (?, ?, ?) ON CONFLICT(organization_id) "
+                    "DO UPDATE SET source=excluded.source, updated_at=excluded.updated_at",
+                    (org_id, source, now_iso()),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM org_repo_source WHERE organization_id = ?", (org_id,)
+                )

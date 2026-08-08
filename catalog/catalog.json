@@ -18,7 +18,9 @@
         "code-reviewer",
         "tech-writer",
         "editor",
-        "product-manager"
+        "product-manager",
+        "platform-architect",
+        "security-engineer"
       ],
       "formations": [
         "product-engineering-pod",
@@ -1014,6 +1016,8 @@
     {
       "key": "security-engineer",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read"],
+      "defaultRuntime": "cli-claude",
       "title": "Security Engineer",
       "group": "infra-security-reliability",
       "purpose": "Application and infra security",
@@ -1209,6 +1213,8 @@
     {
       "key": "product-manager",
       "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read"],
+      "defaultRuntime": "cli-claude",
       "title": "Product Manager",
       "group": "product-design",
       "purpose": "What to build and why",
@@ -3003,6 +3009,44 @@
       "isManager": true,
       "defaultSalary": {
         "perAssignmentAllowance": 110000,
+        "warnThresholdPct": 80,
+        "hardStop": true
+      }
+    },
+    {
+      "key": "platform-architect",
+      "version": 1,
+      "toolGrants": ["workspace.rw", "repo.read"],
+      "defaultRuntime": "cli-claude",
+      "title": "Platform Architect",
+      "group": "software-engineering",
+      "purpose": "System boundaries, capability models, and cross-cutting integration design",
+      "responsibilities": [
+        {
+          "duty": "Draft architecture proposals",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "ArchitectureSpec"
+          }
+        },
+        {
+          "duty": "Evaluate integration options",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "TradeStudy"
+          }
+        },
+        {
+          "duty": "Define capability and grant models",
+          "deliverable": {
+            "kind": "artifact",
+            "type": "DesignSpec"
+          }
+        }
+      ],
+      "isManager": false,
+      "defaultSalary": {
+        "perAssignmentAllowance": 160000,
         "warnThresholdPct": 80,
         "hardStop": true
       }

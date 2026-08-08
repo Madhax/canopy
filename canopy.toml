@@ -60,6 +60,7 @@ mock = 64
 # else in the stack (risk IM-4). USD per 1,000,000 tokens. These are ESTIMATES, surfaced as such
 # in the UI (risk IM-5) — the gateway records provider-authoritative token counts either way.
 [prices.anthropic]
+claude-fable-5 = { input = 10.0, output = 50.0 }
 claude-opus-4-8 = { input = 15.0, output = 75.0 }
 claude-sonnet-5 = { input = 3.0, output = 15.0 }
 claude-haiku-4-5 = { input = 1.0, output = 5.0 }

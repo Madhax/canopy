@@ -59,6 +59,10 @@ class BindingBody(BaseModel):
     orgPath: list[str] = Field(default_factory=list)
 
 
+class RepoSourceBody(BaseModel):
+    source: str | None = None  # null / "" clears the binding (fall back to config/fixture)
+
+
 class SecretBody(BaseModel):
     name: str
     value: str
@@ -153,6 +157,39 @@ def delete_binding(
 # --------------------------------------------------------------------------- #
 # Secrets (write-only)
 # --------------------------------------------------------------------------- #
+@router.get("/organizations/{org_id}/repo-source")
+def get_repo_source(
+    org_id: str, profiles=Depends(get_profile_store), store=Depends(get_store)
+) -> Any:
+    """F8: the org's work-target repo binding — operator data beside profiles/secrets,
+    mutable at runtime (the boot-time [repo] source is only the fallback)."""
+    if (err := _require_org(store, org_id)) is not None:
+        return err
+    return {"organizationId": org_id, "source": profiles.get_repo_source(org_id)}
+
+
+@router.put("/organizations/{org_id}/repo-source")
+def set_repo_source(
+    org_id: str, body: RepoSourceBody,
+    profiles=Depends(get_profile_store), store=Depends(get_store),
+) -> Any:
+    if (err := _require_org(store, org_id)) is not None:
+        return err
+    source = (body.source or "").strip() or None
+    if source is not None:
+        from pathlib import Path
+
+        p = Path(source)
+        # Fail loud at bind time, not mid-assignment in a checkout (the F-series lesson:
+        # misconfiguration surfaces where the operator is looking).
+        if not (p / ".git").exists():
+            return _error(400, "BAD_REPO_SOURCE",
+                          f"not a git repository (no .git): {source}")
+        source = str(p)
+    profiles.set_repo_source(org_id, source)
+    return {"organizationId": org_id, "source": source}
+
+
 @router.get("/organizations/{org_id}/secrets")
 def list_secrets(org_id: str, secrets=Depends(get_secret_store)) -> Any:
     return [s.model_dump() for s in secrets.list(org_id)]

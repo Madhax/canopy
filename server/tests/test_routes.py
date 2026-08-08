@@ -9,7 +9,7 @@ def test_catalog(client):
     assert r.status_code == 200
     body = r.json()
     assert len(body["organizationTypes"]) == 26
-    assert len(body["roles"]) == 87
+    assert len(body["roles"]) == 88
     assert len(body["formations"]) == 17
 
 

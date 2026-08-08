@@ -112,6 +112,9 @@ export interface Step {
   kind: "coordination" | "production";
   inputTokens: number;
   outputTokens: number;
+  /** F1: cached context settled per step (older rows omit them). */
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
   durationMs: number;
   deltaKind: string;
   deltaRef: string | null;
@@ -123,6 +126,9 @@ export interface SpendRow {
   key: string;
   input_tokens: number;
   output_tokens: number;
+  /** F1: the cached context window, settled separately and priced cache-aware. */
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
   est_cost_micros: number;
   steps: number;
   coordination_tokens?: number;

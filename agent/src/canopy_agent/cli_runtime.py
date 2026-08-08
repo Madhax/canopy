@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,14 @@ import httpx
 from .runtime import AgentConfig, _log, runtime
 
 MAX_TURNS_DEFAULT = 30
+
+#: F14: how often the observer re-asserts "this session is alive" to the control plane.
+HEALTH_HEARTBEAT_SECONDS = 15.0
+#: F11: a provider-limit death backs off this long before the next resume attempt —
+#: hammering a closed window burns nothing but looks like (and used to be gated as) a stall.
+PROVIDER_LIMIT_BACKOFF_SECONDS = 600.0
+#: Error text that means "the provider shut the door", not "the session broke".
+_PROVIDER_LIMIT_RE = re.compile(r"limit|resets|overloaded|quota|rate.?limit", re.I)
 
 # Grant key -> Claude Code permission entries (cli-runtime.md §2's table, path-concrete in
 # target-app.md §5). Generated permissions are defense-in-depth; the MCP server's per-call
@@ -128,11 +137,61 @@ def _write_session_config(
     (workdir / "CLAUDE.md").write_text("\n\n".join(p for p in parts if p), encoding="utf-8")
 
 
+#: F16 retention: per-assignment stderr rotates at this size, keeping one predecessor.
+_STDERR_ROTATE_BYTES = 1024 * 1024
+
+
+def _rotate_if_large(path: Path, cap: int = _STDERR_ROTATE_BYTES) -> None:
+    try:
+        if path.is_file() and path.stat().st_size >= cap:
+            path.replace(path.with_suffix(path.suffix + ".1"))
+    except OSError:
+        pass  # rotation is best-effort; appending to an oversized log beats losing it
+
+
+def _work_root() -> Path:
+    """F13: the assignment tree's stable home. The actuator passes an actuation-independent
+    path (``data/work/<orgId>/<nodeId>``) so the CLI's per-directory conversation key — and
+    with it ``--resume`` — survives deactuate → re-actuate. Absent (tests, older actuators),
+    the sandbox cwd keeps the legacy per-actuation shape."""
+    raw = os.environ.get("CANOPY_WORK_ROOT")
+    return Path(raw) if raw else Path.cwd()
+
+
+def _transcript_path(workdir: Path, session_id: str) -> Path:
+    """Where the CLI writes this session's conversation (F16's pointer): the config dir's
+    ``projects/<key>/<sessionId>.jsonl``, where the key is the workdir path with every
+    non-alphanumeric character flattened to ``-`` (the CLI's own munge)."""
+    raw = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(raw) if raw else Path.home() / ".claude"
+    key = re.sub(r"[^A-Za-z0-9]", "-", str(workdir))
+    return base / "projects" / key / f"{session_id}.jsonl"
+
+
+def _archive_transcript(workroot: Path, workdir: Path, session_id: str) -> None:
+    """F16: copy the session transcript into the assignment's own home — the org owns the
+    complete record of what its agent said and did, not the operator's CLI profile."""
+    src = _transcript_path(workdir, session_id)
+    try:
+        if src.is_file():
+            dest = workroot / "transcripts"
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest / f"{session_id}.jsonl")
+            _log("transcript_archived", session=session_id, path=str(dest))
+    except OSError as exc:
+        _log("transcript_archive_failed", session=session_id, error=str(exc))
+
+
 def _cli_command() -> list[str]:
     raw = os.environ.get("CANOPY_CLI_CMD", "claude")
-    if raw.strip().startswith("["):
-        return json.loads(raw)
-    return [raw]
+    cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
+    # Windows: CreateProcess never applies PATHEXT to a bare name, so an npm shim like
+    # claude.cmd is invisible to Popen even though `claude` resolves in every shell.
+    # Resolve through PATH here so the probe and the spawn agree on one real path.
+    resolved = shutil.which(cmd[0])
+    if resolved:
+        cmd[0] = resolved
+    return cmd
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -171,16 +230,20 @@ class _Session:
 
 _SESSIONS: dict[str, _Session] = {}
 _RESUME_BACKOFF: dict[str, dict[str, float]] = {}
+#: F13 interim: assignments whose conversation the CLI can no longer find — the next
+#: session starts fresh (full brief prompt) instead of retrying a doomed --resume.
+_RESUME_FALLBACK: set[str] = set()
 
 
 def _observe_stream(
     client: httpx.Client, proc: subprocess.Popen, assignment_id: str, *,
-    budget_remaining: int, is_manager: bool,
+    budget_remaining: int, is_manager: bool, workroot: Path, workdir: Path,
 ) -> None:
     """Parse stream-json → settled Step reports; kill the tree when spend crosses the budget."""
     session_id: str | None = None
     spent = 0
     last_event = time.monotonic()
+    last_health = 0.0
     assert proc.stdout is not None
     for line in proc.stdout:
         line = line.strip()
@@ -192,12 +255,27 @@ def _observe_stream(
             continue
         etype = event.get("type")
 
+        # F14: any stream event is proof of life — report it (throttled) so the stall sweep
+        # keys on real activity instead of inferring life from settled steps.
+        now_mono = time.monotonic()
+        if now_mono - last_health >= HEALTH_HEARTBEAT_SECONDS:
+            last_health = now_mono
+            try:
+                client.post("/api/dp/assignment/events", json={
+                    "assignmentId": assignment_id, "kind": "session-health",
+                    "health": "running",
+                })
+            except httpx.HTTPError:
+                pass  # liveness is best-effort; the next event retries
+
         if etype == "system" and event.get("subtype") == "init":
             session_id = event.get("session_id")
             if session_id:
                 client.post("/api/dp/assignment/events", json={
                     "assignmentId": assignment_id, "kind": "session-ref",
                     "sessionRef": session_id,
+                    # F16: the org's pointer to the conversation's ground truth.
+                    "transcriptPath": str(_transcript_path(workdir, session_id)),
                 })
                 _log("session_init", assignment=assignment_id, session=session_id)
 
@@ -206,6 +284,10 @@ def _observe_stream(
             usage = msg.get("usage") or {}
             in_tok = int(usage.get("input_tokens", 0))
             out_tok = int(usage.get("output_tokens", 0))
+            # F1: the context window rides the cache components — dropping them made the
+            # ledger blind to ~all input (a whole-corpus read recorded as 65 tokens).
+            cache_read = int(usage.get("cache_read_input_tokens", 0))
+            cache_creation = int(usage.get("cache_creation_input_tokens", 0))
             content = msg.get("content") or []
             tools = [c.get("name", "") for c in content if c.get("type") == "tool_use"]
             # Read-only status checks are NOT progress: a session that only polls must
@@ -226,9 +308,13 @@ def _observe_stream(
                 "assignmentId": assignment_id, "kind": "step",
                 "stepKind": "coordination" if is_manager else "production",
                 "inputTokens": in_tok, "outputTokens": out_tok,
+                "cacheReadTokens": cache_read, "cacheCreationTokens": cache_creation,
                 "durationMs": int((now - last_event) * 1000),
                 "deltaKind": delta, "deltaRef": tools[0] if tools else None,
                 "sessionSpanId": session_id, "settle": True,
+                # The session's model prices the settle (F1) — profile.model rides the same
+                # env var that sets --model; absent (fake CLI) falls back to the default.
+                "model": os.environ.get("CANOPY_CLI_MODEL") or "claude-cli",
             })
             last_event = now
             spent += in_tok + out_tok
@@ -245,16 +331,46 @@ def _observe_stream(
                  cost_usd=event.get("total_cost_usd"), turns=event.get("num_turns"),
                  is_error=bool(event.get("is_error")),
                  error=(str(err)[:200] if err is not None else None))
+            if event.get("is_error"):
+                # F11: surface the cause to the control plane instead of dying silently into
+                # a crash-loop the sweep reads as a stall.
+                detail = str(err)[:300] if err is not None else "session ended with an error"
+                try:
+                    client.post("/api/dp/assignment/events", json={
+                        "assignmentId": assignment_id, "kind": "session-health",
+                        "health": "erroring", "healthDetail": detail,
+                    })
+                except httpx.HTTPError:
+                    pass
+                if _PROVIDER_LIMIT_RE.search(detail):
+                    # The provider shut the door — retrying before it reopens is pure noise.
+                    st = _RESUME_BACKOFF.setdefault(
+                        assignment_id, {"count": 0, "until": 0.0}
+                    )
+                    st["until"] = max(
+                        st["until"], time.monotonic() + PROVIDER_LIMIT_BACKOFF_SECONDS
+                    )
+                    _log("provider_limit_backoff", assignment=assignment_id,
+                         seconds=int(PROVIDER_LIMIT_BACKOFF_SECONDS))
 
     proc.wait()
+    if session_id:
+        _archive_transcript(workroot, workdir, session_id)
     stderr_tail: list[str] = []
     if proc.returncode:
         try:
-            stderr_log = Path.cwd() / "assignments" / assignment_id / "session.stderr.log"
+            stderr_log = workroot / "session.stderr.log"
             stderr_tail = stderr_log.read_text(encoding="utf-8", errors="replace")\
                 .strip().splitlines()[-3:]
         except OSError:
             pass
+        # F13 interim: the CLI keys conversations by project directory, so a workdir that
+        # moved (re-actuation changes the sandbox path) makes --resume fail forever with
+        # "No conversation found". Fall back to a fresh session instead of crash-looping
+        # into the stall trigger; the durable work model re-briefs it.
+        if any("No conversation found" in line for line in stderr_tail):
+            _RESUME_FALLBACK.add(assignment_id)
+            _log("resume_conversation_lost", assignment=assignment_id)
     _log("session_exit", assignment=assignment_id, code=proc.returncode,
          stderr_tail=stderr_tail or None)
 
@@ -287,7 +403,7 @@ def _start_session(
 ) -> None:
     a = cur["assignment"]
     aid = a["id"]
-    workroot = Path.cwd() / "assignments" / aid
+    workroot = _work_root() / "assignments" / aid
     workdir = workroot / "work"
     workdir.mkdir(parents=True, exist_ok=True)
     (workroot / "out").mkdir(parents=True, exist_ok=True)
@@ -316,8 +432,12 @@ def _start_session(
         extra = []
 
     max_turns = int(os.environ.get("CANOPY_MAX_TURNS", str(MAX_TURNS_DEFAULT)))
+    # The prompt goes over STDIN, never argv: on Windows the npm shim (claude.cmd) runs
+    # through cmd.exe, which treats embedded newlines as command separators — a multi-line
+    # brief silently strips every flag after it (the session answers in plain text and the
+    # observer sees zero events). Stdin also sidesteps the 32K command-line ceiling.
     cmd = _cli_command() + [
-        "-p", prompt, "--output-format", "stream-json", "--verbose",
+        "-p", "--output-format", "stream-json", "--verbose",
         "--max-turns", str(max_turns), "--permission-mode", "default",
         "--mcp-config", ".mcp.json", "--strict-mcp-config", *extra,
     ]
@@ -329,8 +449,9 @@ def _start_session(
     # CLI stderr goes to a per-assignment file, not DEVNULL: when a session dies at
     # startup (auth, bad flag), this file is the only place the reason lands.
     stderr_path = workroot / "session.stderr.log"
+    _rotate_if_large(stderr_path)
     popen_kw: dict = {
-        "cwd": str(workdir), "stdout": subprocess.PIPE,
+        "cwd": str(workdir), "stdin": subprocess.PIPE, "stdout": subprocess.PIPE,
         "stderr": open(stderr_path, "ab"),  # noqa: SIM115 - fd is inherited by the child
         "text": True, "encoding": "utf-8",
     }
@@ -344,12 +465,25 @@ def _start_session(
         _log("session_spawn_failed", assignment=aid, error=str(exc))
         return
 
+    def _feed_stdin(p: subprocess.Popen, text: str) -> None:
+        # Own thread: a brief larger than the pipe buffer would otherwise block the tick
+        # until the CLI drains it. Closing stdin ends the CLI's 3s stdin wait immediately.
+        try:
+            assert p.stdin is not None
+            p.stdin.write(text)
+            p.stdin.close()
+        except OSError:
+            pass
+
+    threading.Thread(target=_feed_stdin, args=(proc, prompt), daemon=True).start()
+
     session = _Session(aid)
     session.proc = proc
     is_manager = bool(charter.get("reportNodeIds"))
     session.thread = threading.Thread(
         target=_observe_stream, args=(client, proc, aid),
-        kwargs={"budget_remaining": remaining or 10**9, "is_manager": is_manager},
+        kwargs={"budget_remaining": remaining or 10**9, "is_manager": is_manager,
+                "workroot": workroot, "workdir": workdir},
         daemon=True,
     )
     session.thread.start()
@@ -405,12 +539,17 @@ def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
         return "engaged"  # session is driving; nothing for the adapter to do
 
     if state in ("briefed", "intake"):
-        _materialize_brief(client, Path.cwd() / "assignments" / aid, cur.get("brief"))
+        _materialize_brief(client, _work_root() / "assignments" / aid, cur.get("brief"))
         client.post("/api/dp/assignment/events",
                     json={"assignmentId": aid, "kind": "intake-complete"})
         return "engaged"
     if state in ("planning", "executing"):
         resuming = bool(a.get("sessionRef")) and state == "executing"
+        if resuming and aid in _RESUME_FALLBACK:
+            # F13 interim: the conversation is gone — start over from the brief.
+            _RESUME_FALLBACK.discard(aid)
+            resuming = False
+            _log("resume_fallback_fresh", assignment=aid)
         if resuming:
             # A resume that follows a no-progress session backs off exponentially:
             # without this, a session that keeps ending with only status polls gets

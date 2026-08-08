@@ -70,14 +70,24 @@ def test_pulse_live_overlay(client, make_org, mint_session):
     assert node["current"]["assignmentId"] == a["id"]
     assert node["current"]["state"] == "executing"
     assert node["current"]["briefPreview"].startswith("Add CSV export")
+    # F15: the living plan's stage progress rides the pulse — the honest progress number.
+    assert node["current"]["stageProgress"] == {"done": 0, "total": 1}
     assert node["queueDepth"] == 0 and node["wip"] == 1
     assert node["meter"]["spent"] == 180
     assert p["burn"]["tokensPerMinute"] == 180 / 60
 
-    # An operator-owned gate shows up in the header counts and on the node.
+    client.post("/api/dp/assignment/events", headers=_h(s["token"]),
+                json={"assignmentId": a["id"], "kind": "stage-update", "stageIdx": 0,
+                      "stageState": "done"})
+    p = client.get(f"/api/organizations/{org['id']}/pulse").json()
+    assert p["nodes"][0]["current"]["stageProgress"] == {"done": 1, "total": 1}
+
+    # An operator-owned gate shows up in the header counts and on the node, owner-tagged
+    # (F5: the UI tones operator work apart from internal wiring).
     client.post(f"/api/assignments/{a['id']}/intervene", json={"note": "hold on"})
     p = client.get(f"/api/organizations/{org['id']}/pulse").json()
     assert p["gates"]["open"] == 1
     assert p["gates"]["byKind"] == {"intervention": 1}
     assert p["gates"]["attention"] == 1
     assert p["nodes"][0]["openGateKinds"] == ["intervention"]
+    assert p["nodes"][0]["openGates"] == [{"kind": "intervention", "owner": "operator"}]

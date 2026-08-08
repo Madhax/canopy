@@ -3,8 +3,9 @@
 // leave a note (D-5) or intervene (X1) inline. Read + act; the view stores nothing.
 import { useState } from "react";
 import type { PlanNode } from "../../api/work";
-import { Button } from "../common";
+import { Button, Markdown } from "../common";
 import { DeliverableCard } from "./DeliverableCard";
+import { BudgetChip, StageProgress, stateLabel } from "./MissionControl";
 
 interface Props {
   node: PlanNode;
@@ -26,19 +27,6 @@ const STATE_TONE: Record<string, string> = {
   cancelled: "text-ink-muted line-through",
   proposed: "text-ink-muted italic",
 };
-
-function MeterArc({ spent, allowance }: { spent: number; allowance: number }) {
-  const pct = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
-  const tone = pct >= 100 ? "bg-danger" : pct >= 80 ? "bg-warn" : "bg-accent";
-  return (
-    <span className="inline-flex items-center gap-1 text-[11px] text-ink-muted" title={`${spent}/${allowance} tokens`}>
-      <span className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-surface-2">
-        <span className={`block h-full ${tone}`} style={{ width: `${pct}%` }} />
-      </span>
-      {pct}%
-    </span>
-  );
-}
 
 export function PlanOutline(props: Props) {
   const { node, nodeName, depth = 0 } = props;
@@ -63,14 +51,38 @@ export function PlanOutline(props: Props) {
           <span className="text-sm font-medium text-ink">{nodeName(a.nodeId)}</span>
         )}
         <span className={`text-xs font-semibold ${STATE_TONE[a.state] ?? "text-ink"}`}>
-          {a.state}
+          {stateLabel(a.state)}
         </span>
-        {openGates.map((g) => (
-          <span key={g.id} className="rounded bg-warn/15 px-1.5 text-[11px] text-warn" title={g.reason}>
-            🔒 {g.kind}
-          </span>
-        ))}
-        {node.meter && <MeterArc spent={node.meter.spent} allowance={node.meter.allowance} />}
+        {/* F4/F5: gates awaiting the OPERATOR ring in danger; internal wiring stays quiet. */}
+        {openGates.map((g) =>
+          g.owner === "operator" ? (
+            <span key={g.id}
+                  className="rounded bg-danger/15 px-1.5 text-[11px] font-medium text-danger"
+                  title={`${g.reason} — needs you`}>
+              🔒 {g.kind}
+            </span>
+          ) : (
+            <span key={g.id} className="rounded bg-surface-2 px-1.5 text-[11px] text-ink-muted"
+                  title={`${g.reason} — internal (${g.owner}), not your action`}>
+              🔗 {g.kind}
+            </span>
+          ),
+        )}
+        {/* F15: progress = plan stages; budget is its own labeled number. */}
+        {node.plan && node.plan.stages.length > 0 && (
+          <StageProgress
+            progress={{
+              done: node.plan.stages.filter((s) => s.state === "done").length,
+              total: node.plan.stages.length,
+            }}
+          />
+        )}
+        {node.meter && (
+          <BudgetChip
+            meter={{ spent: node.meter.spent, allowance: node.meter.allowance,
+                     warned: node.meter.warned, state: node.meter.state }}
+          />
+        )}
         {a.briefVersion > 1 && (
           <span className="text-[11px] text-ink-muted">brief v{a.briefVersion}</span>
         )}
@@ -103,7 +115,8 @@ export function PlanOutline(props: Props) {
       </div>
 
       {node.brief && depth === 0 && (
-        <p className="mb-1 text-xs text-ink-muted">{node.brief.text}</p>
+        // F6: briefs are authored in markdown — render them that way.
+        <Markdown text={node.brief.text} className="mb-1 text-xs text-ink-muted" />
       )}
 
       {node.plan && (

@@ -48,30 +48,42 @@ def _git(cwd: Path, *args: str) -> str:
 
 class RepoManager:
     def __init__(self, repos_root: Path, *, fixture: Path = _FIXTURE,
-                 source: Path | None = None):
+                 source: Path | None = None, source_resolver=None):
         self.root = repos_root
         self.fixture = fixture
         self.source = source
-        self.repo_name = source.name if source is not None else "target-app"
+        # F8: org_id -> Path | None. An org's own repo binding (operator data, mutable at
+        # runtime) outranks the boot-time [repo] source; both absent means the fixture.
+        self.source_resolver = source_resolver
+
+    def _source_for(self, org_id: str) -> Path | None:
+        if self.source_resolver is not None:
+            per_org = self.source_resolver(org_id)
+            if per_org:
+                return Path(per_org)
+        return self.source
 
     def repo_path(self, org_id: str) -> Path:
-        return self.root / org_id / self.repo_name
+        source = self._source_for(org_id)
+        name = source.name if source is not None else "target-app"
+        return self.root / org_id / name
 
     def _worktrees_path(self, org_id: str) -> Path:
         return self.root / org_id / "worktrees"
 
     # ------------------------------------------------------------------ setup
     def ensure_repo(self, org_id: str) -> Path:
-        """Initialize the org's work target (idempotent): clone the configured source repo,
-        or copy the fixture in and git-init it."""
+        """Initialize the org's work target (idempotent): clone the org's bound source (F8),
+        else the global configured source, else copy the fixture in and git-init it."""
+        source = self._source_for(org_id)
         repo = self.repo_path(org_id)
         if (repo / ".git").exists():
             return repo
         repo.parent.mkdir(parents=True, exist_ok=True)
-        if self.source is not None:
-            if not (self.source / ".git").exists():
-                raise RepoError(f"[repo] source is not a git repository: {self.source}")
-            _git(repo.parent, "clone", str(self.source), str(repo))
+        if source is not None:
+            if not (source / ".git").exists():
+                raise RepoError(f"repo source is not a git repository: {source}")
+            _git(repo.parent, "clone", str(source), str(repo))
             try:
                 # DWIM-creates local main from origin/main when the source HEAD is elsewhere.
                 _git(repo, "checkout", "main")
@@ -79,7 +91,7 @@ class RepoManager:
                 # A half-initialized clone must not satisfy the idempotency check next call.
                 shutil.rmtree(repo, ignore_errors=True)
                 raise RepoError(
-                    f"[repo] source {self.source} has no 'main' branch — the executors "
+                    f"repo source {source} has no 'main' branch — the executors "
                     "protect and merge into 'main' (worktrees branch from it)"
                 ) from None
         else:
@@ -91,7 +103,7 @@ class RepoManager:
             _git(repo, "add", "-A")
         _git(repo, "config", "user.email", "canopy@localhost")
         _git(repo, "config", "user.name", "Canopy")
-        if self.source is None:
+        if source is None:
             _git(repo, "commit", "-m", "target-app: initial fixture state")
         return repo
 

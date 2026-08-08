@@ -5,3 +5,4 @@ export { ConfirmDialog } from "./ConfirmDialog";
 export { EmptyState } from "./EmptyState";
 export { Spinner, CenteredSpinner } from "./Spinner";
 export { ToastProvider, useToast } from "./Toast";
+export { Markdown } from "./Markdown";

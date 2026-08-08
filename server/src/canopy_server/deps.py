@@ -170,9 +170,10 @@ def get_gateway():
 
 @lru_cache(maxsize=8)
 def _engine_for(path_str: str, data_dir_str: str):
+    from .config import get_prices
     from .engine.engine import ExecutionEngine
 
-    repos = _repos_for(data_dir_str, _repo_source_str())
+    repos = _repos_for(data_dir_str, _repo_source_str(), path_str)
     return ExecutionEngine(
         _work_store_for(path_str),
         _ledger_for(path_str),
@@ -183,6 +184,7 @@ def _engine_for(path_str: str, data_dir_str: str):
         executors={  # governed actions (E4): consented via ApprovalGate, then executed here
             "repo-merge": lambda p: repos.merge(p["orgId"], p["branch"]),
         },
+        prices=get_prices(),  # settle-path cost estimation (F1) — same table the gateway holds
     )
 
 
@@ -194,15 +196,21 @@ def _repo_source_str() -> str:
 
 
 @lru_cache(maxsize=8)
-def _repos_for(data_dir_str: str, source_str: str):
+def _repos_for(data_dir_str: str, source_str: str, path_str: str):
     from .repos import RepoManager
 
-    return RepoManager(Path(data_dir_str) / "repos",
-                       source=Path(source_str) if source_str else None)
+    profiles = _profile_store_for(path_str)
+    return RepoManager(
+        Path(data_dir_str) / "repos",
+        source=Path(source_str) if source_str else None,
+        # F8: the org's own binding (live DB read — mutable at runtime, no restart)
+        # outranks the boot-time [repo] source.
+        source_resolver=profiles.get_repo_source,
+    )
 
 
 def get_repos():
-    return _repos_for(str(get_data_dir()), _repo_source_str())
+    return _repos_for(str(get_data_dir()), _repo_source_str(), str(get_db_path()))
 
 
 def get_engine():
@@ -293,6 +301,7 @@ def _actuator_for(path_str: str, data_dir_str: str):
         agent_pythonpath=get_agent_pythonpath(),
         boot_timeout_s=get_boot_timeout_s(),
         sandboxes_root=Path(data_dir_str) / "sandboxes",
+        work_root=Path(data_dir_str) / "work",
         router=_router_for(path_str),
     )
 

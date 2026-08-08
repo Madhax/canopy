@@ -85,6 +85,14 @@ class Assignment(BaseModel):
     createdAt: str
     updatedAt: str
     closedAt: str | None = None
+    # F14: runtime-reported liveness. None = a non-reporting runtime (loop); triggers then
+    # fall back to step inference.
+    lastActivityAt: str | None = None
+    sessionHealth: str | None = None  # running | erroring
+    sessionHealthDetail: str | None = None
+    # F16: where the CLI writes this assignment's conversation transcript (adapter-reported
+    # pointer; the adapter also archives a copy under the assignment's work home at exit).
+    transcriptPath: str | None = None
 
 
 class Brief(BaseModel):
@@ -124,6 +132,9 @@ class Step(BaseModel):
     kind: StepKind
     inputTokens: int
     outputTokens: int
+    # F1: the cached context window, settled separately so the ledger sees real consumption.
+    cacheReadTokens: int = 0
+    cacheCreationTokens: int = 0
     durationMs: int
     deltaKind: DeltaKind
     deltaRef: str | None

@@ -72,9 +72,47 @@ def _node_root(actuation_id: str, node_id: str) -> Path:
     return get_data_dir() / "sandboxes" / actuation_id / node_id
 
 
-def _list_workspace(actuation_id: str, node_id: str) -> dict[str, Any] | None:
-    """Read-only file listing of the node's sandbox workspace (rel path, size, mtime)."""
-    root = _node_root(actuation_id, node_id) / "workspace"
+def _work_home(org_id: str, node_id: str) -> Path:
+    """F13/F16: the position's actuation-independent home (assignments, logs, transcripts)."""
+    return get_data_dir() / "work" / org_id / node_id
+
+
+def _best_actuation(current_id: str | None, assignments, node_id: str) -> str | None:
+    """F12: the sandbox to inspect. The live actuation wins; deactuated, prefer the NEWEST
+    actuation whose sandbox actually exists on disk — continuation keeps an assignment's
+    original ``actuationId``, so the oldest row used to point the log tail at a dead
+    process's sandbox after a re-actuation."""
+    candidates = [current_id] if current_id else []
+    candidates += [
+        a.actuationId
+        for a in sorted(assignments, key=lambda a: a.updatedAt, reverse=True)
+    ]
+    seen: set[str] = set()
+    for cid in candidates:
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        if _node_root(cid, node_id).is_dir():
+            return cid
+    return candidates[0] if candidates else None
+
+
+def _workspace_root(org_id: str, node_id: str, actuation_id: str | None) -> Path | None:
+    """The root the operator inspects: the stable work home (F13 — where cli assignments,
+    logs and archived transcripts live) when it has content, else the actuation's sandbox
+    workspace (loop runtime / legacy layouts)."""
+    home = _work_home(org_id, node_id)
+    if home.is_dir() and any(home.iterdir()):
+        return home
+    if actuation_id:
+        legacy = _node_root(actuation_id, node_id) / "workspace"
+        if legacy.is_dir():
+            return legacy
+    return None
+
+
+def _list_workspace(root: Path) -> dict[str, Any] | None:
+    """Read-only file listing of the node's inspected root (rel path, size, mtime)."""
     if not root.is_dir():
         return None
     files = []
@@ -92,9 +130,12 @@ def _list_workspace(actuation_id: str, node_id: str) -> dict[str, Any] | None:
     return {"root": str(root), "files": files, "truncated": False}
 
 
-def _log_tail(actuation_id: str, node_id: str) -> list[str]:
-    """The node's subprocess log, last ~200 lines — the Session tab's raw feed."""
-    log = _node_root(actuation_id, node_id) / "logs" / f"{node_id}.log"
+def _log_tail(org_id: str, node_id: str, actuation_id: str | None) -> list[str]:
+    """The node's subprocess log, last ~200 lines — the Session tab's raw feed. The stable
+    work home (F16) wins; the per-actuation shard remains as the pre-F16 fallback."""
+    log = _work_home(org_id, node_id) / "logs" / f"{node_id}.log"
+    if not log.is_file() and actuation_id:
+        log = _node_root(actuation_id, node_id) / "logs" / f"{node_id}.log"
     if not log.is_file():
         return []
     with log.open("rb") as f:
@@ -189,11 +230,13 @@ def agent_state(
 
     # ---- Session: resume ref, tool events, subprocess log tail (best actuation we know of)
     session_ref = next((a.sessionRef for a in assignments if a.sessionRef), None)
-    session_actuation = actuation_id or (assignments[0].actuationId if assignments else None)
+    transcript_path = next((a.transcriptPath for a in assignments if a.transcriptPath), None)
+    session_actuation = _best_actuation(actuation_id, assignments, node_id)
     tool_events = (
         work_store.list_tool_events(session_actuation, node_id)[-_TOOL_EVENT_LIMIT:]
         if session_actuation else []
     )
+    inspect_root = _workspace_root(org_id, node_id, session_actuation)
 
     return {
         "nodeId": node_id,
@@ -237,12 +280,11 @@ def agent_state(
         "memory": [m.model_dump() for m in work_store.get_memory(org_id, node_id, limit=50)],
         "session": {
             "sessionRef": session_ref,
+            "transcriptPath": transcript_path,
             "toolEvents": tool_events,
-            "logTail": _log_tail(session_actuation, node_id) if session_actuation else [],
+            "logTail": _log_tail(org_id, node_id, session_actuation),
         },
-        "workspace": (
-            _list_workspace(session_actuation, node_id) if session_actuation else None
-        ),
+        "workspace": _list_workspace(inspect_root) if inspect_root else None,
     }
 
 
@@ -274,13 +316,14 @@ def workspace_file(
     """Text preview of one workspace file (≤ 256 KB). Path is relative to the node's
     workspace root; anything escaping it is rejected."""
     current_view = actuator.get_current(org_id)
-    actuation_id = current_view.id if current_view else None
-    if actuation_id is None:
-        assignments = work_store.list_assignments(org_id=org_id, node_id=node_id)
-        actuation_id = assignments[0].actuationId if assignments else None
-    if actuation_id is None:
+    assignments = work_store.list_assignments(org_id=org_id, node_id=node_id)
+    actuation_id = _best_actuation(
+        current_view.id if current_view else None, assignments, node_id
+    )
+    base = _workspace_root(org_id, node_id, actuation_id)
+    if base is None:
         return _error(404, "NOT_FOUND", "No workspace for this node")
-    root = (_node_root(actuation_id, node_id) / "workspace").resolve()
+    root = base.resolve()
     target = (root / path).resolve()
     if root not in target.parents and target != root:
         return _error(422, "BAD_PATH", "Path escapes the workspace")

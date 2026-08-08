@@ -45,6 +45,39 @@ def test_spawn_status_stop(tmp_path):
     asyncio.run(run())
 
 
+def test_stable_log_dir_wins_and_survives_destroy(tmp_path):
+    """F16: with ``log_dir`` set, the adapter log lands in the stable home (not the
+    per-actuation shard) and outlives destroy — the org keeps its process record."""
+    sandbox = SubprocessSandbox(
+        argv=[sys.executable, "-c", "print('proof of boot')"]
+    )
+    stable_logs = tmp_path / "work" / "o1" / "n3" / "logs"
+    spec = SandboxSpec(
+        actuation_id="act1",
+        node_id="n3",
+        org_id="o1",
+        workspace_root=tmp_path / "sandboxes" / "act1" / "n3" / "workspace",
+        log_dir=stable_logs,
+        env=_env(),
+        keep_workspace_on_destroy=False,
+    )
+
+    async def run():
+        handle = await sandbox.create(spec)
+        handle = await sandbox.start(handle)
+        for _ in range(50):
+            if (await sandbox.status(handle)).state == "exited":
+                break
+            await asyncio.sleep(0.1)
+        await sandbox.destroy(handle)
+
+    asyncio.run(run())
+    log = stable_logs / "n3.log"
+    assert log.is_file() and "proof of boot" in log.read_text()
+    assert not (tmp_path / "sandboxes" / "act1" / "n3").exists()  # scratch pruned
+    assert not (tmp_path / "sandboxes" / "act1" / "n3" / "logs").exists()
+
+
 def test_destroy_removes_workspace_when_requested(tmp_path):
     sandbox = SubprocessSandbox(argv=[sys.executable, "-c", "pass"])
     spec = SandboxSpec(

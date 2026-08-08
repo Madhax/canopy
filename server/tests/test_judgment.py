@@ -355,3 +355,111 @@ def test_notifications_feed_and_read_cursor(pod, client):
     assert client.get(
         f"/api/organizations/{root.orgId}/notifications?unread=true"
     ).json()["notifications"] == []
+
+
+def test_gate_resolution_auto_reads_its_notifications(pod, client):
+    """F9: a resolved gate's unread notifications stop ringing — stale unread rows read as
+    pending operator actions during the live run."""
+    eng, root = pod["engine"], pod["root"]
+    eng.delegate(root.id, pod["backend"]["id"], "implement")
+    eng.finish_turn(root.id)  # -> plan-review gate + plan-review-waiting notification
+
+    unread = client.get(
+        f"/api/organizations/{root.orgId}/notifications?unread=true"
+    ).json()["notifications"]
+    assert any(n["kind"] == "plan-review-waiting" for n in unread)
+
+    gate = next(g for g in eng.store.list_gates(assignment_id=root.id, state="open")
+                if g.kind == "approval")
+    eng.resolve_gate(gate.id, action="approve")
+
+    unread = client.get(
+        f"/api/organizations/{root.orgId}/notifications?unread=true"
+    ).json()["notifications"]
+    assert not any(n["kind"] == "plan-review-waiting" for n in unread)
+
+
+# ------------------------------------------------- F3 / F11 / F14: liveness-aware triggers
+def test_no_delta_run_suppressed_while_session_is_live(pod):
+    """F3+F14: a manager wake-turn settles no-delta steps while the session is actively
+    streaming — with fresh liveness reported, the no-delta trigger must NOT gate it."""
+    eng = pod["engine"]
+    child = _fanout_child(pod)
+    eng.mark_intake_complete(child.id)
+    eng.declare_plan(child.id, [{"title": "w"}])
+    for i in range(5):
+        eng.record_step(child.id, input_tokens=10, output_tokens=1, duration_ms=5,
+                        delta_kind="none", step_id=f"st_live{i}")
+    eng.report_session_health(child.id, "running")  # the adapter's heartbeat, just now
+
+    assert eng.sweep_triggers() == []
+    assert eng.store.get_assignment(child.id).state == "executing"
+
+
+def test_no_delta_run_fires_once_activity_goes_quiet(pod):
+    """F14's other half: the same no-delta run DOES gate once the reported activity is
+    stale past the grace window — dead spinning, not mid-thought."""
+    from datetime import UTC, datetime, timedelta
+
+    from canopy_server.deps import get_db
+
+    eng = pod["engine"]
+    child = _fanout_child(pod)
+    eng.mark_intake_complete(child.id)
+    eng.declare_plan(child.id, [{"title": "w"}])
+    for i in range(5):
+        eng.record_step(child.id, input_tokens=10, output_tokens=1, duration_ms=5,
+                        delta_kind="none", step_id=f"st_dead{i}")
+    # Activity stale past the no-delta grace but short of the quiet-stall threshold —
+    # isolates the no-delta trigger from the quiet one.
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    with get_db().transaction() as conn:
+        conn.execute(
+            "UPDATE work_assignment SET last_activity_at=? WHERE id=?", (stale, child.id),
+        )
+        conn.execute("UPDATE work_step SET created_at=? WHERE assignment_id=?",
+                     (stale, child.id))
+
+    opened = eng.sweep_triggers()
+    assert any(g.assignmentId == child.id and "no-delta" in g.reason for g in opened)
+
+
+def test_fresh_activity_defers_the_quiet_stall(pod):
+    """F14: stale steps + fresh adapter liveness = a long-thinking session, not a stall."""
+    from canopy_server.deps import get_db
+
+    eng = pod["engine"]
+    child = _fanout_child(pod)
+    eng.mark_intake_complete(child.id)
+    eng.declare_plan(child.id, [{"title": "w"}])
+    eng.record_step(child.id, input_tokens=10, output_tokens=1, duration_ms=5,
+                    delta_kind="tool-effect", step_id="st_old")
+    with get_db().transaction() as conn:
+        conn.execute("UPDATE work_step SET created_at=? WHERE assignment_id=?",
+                     ("2020-01-01T00:00:00+00:00", child.id))
+    eng.report_session_health(child.id, "running")  # stream events still flowing
+
+    assert eng.sweep_triggers() == []
+
+
+def test_erroring_session_surfaces_provider_limit_not_stall(pod):
+    """F11: a session dying on a provider limit is a provider-limit notification carrying
+    the cause — never a stall intervention gate."""
+    eng = pod["engine"]
+    child = _fanout_child(pod)
+    eng.mark_intake_complete(child.id)
+    eng.declare_plan(child.id, [{"title": "w"}])
+    eng.report_session_health(
+        child.id, "erroring",
+        "You've hit your session limit - resets 12:50am (America/Los_Angeles)",
+    )
+
+    assert eng.sweep_triggers() == []  # no intervention gates opened
+    assert eng.store.get_assignment(child.id).state == "executing"  # never suspended
+    notes = eng.store.list_notifications(child.orgId)
+    limit_notes = [n for n in notes if n.kind == "provider-limit"]
+    assert len(limit_notes) == 1 and "resets 12:50am" in limit_notes[0].text
+    # Idempotent across sweeps: the same failure never spams the feed.
+    eng.sweep_triggers()
+    assert len([n for n in eng.store.list_notifications(child.orgId)
+                if n.kind == "provider-limit"]) == 1

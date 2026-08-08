@@ -81,7 +81,17 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     session_ref     TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
-    closed_at       TEXT
+    closed_at       TEXT,
+    -- F14: first-class liveness, reported by the runtime adapter. Any stream event = alive.
+    -- session_health is running or erroring, detail carries the last error. NULL = a
+    -- non-reporting runtime (loop) and the triggers fall back to step inference unchanged.
+    -- NOTE keep this comment semicolon-free: the meter-nullable rebuild extracts this DDL
+    -- block by splitting on the first semicolon.
+    last_activity_at      TEXT,
+    session_health        TEXT,
+    session_health_detail TEXT,
+    -- F16: adapter-reported pointer to the CLI conversation transcript for this assignment.
+    transcript_path       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_assignment_node   ON work_assignment (actuation_id, node_id, state);
 -- Work belongs to the position (org+node), like agent_memory — the E6 re-actuation lookups.
@@ -127,6 +137,8 @@ CREATE TABLE IF NOT EXISTS work_step (
     kind            TEXT NOT NULL DEFAULT 'production',
     input_tokens    INTEGER NOT NULL,
     output_tokens   INTEGER NOT NULL,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
     duration_ms     INTEGER NOT NULL,
     delta_kind      TEXT NOT NULL DEFAULT 'none',
     delta_ref       TEXT,
@@ -293,7 +305,9 @@ def _assignment(r) -> Assignment:
         contractType=r["contract_type"], meterId=r["meter_id"], priority=r["priority"],
         deliverableId=r["deliverable_id"], reassignedFrom=r["reassigned_from"],
         sessionRef=r["session_ref"], createdAt=r["created_at"], updatedAt=r["updated_at"],
-        closedAt=r["closed_at"],
+        closedAt=r["closed_at"], lastActivityAt=r["last_activity_at"],
+        sessionHealth=r["session_health"], sessionHealthDetail=r["session_health_detail"],
+        transcriptPath=r["transcript_path"],
     )
 
 
@@ -333,8 +347,9 @@ def _step(r) -> Step:
     return Step(
         id=r["id"], assignmentId=r["assignment_id"], stageIdx=r["stage_idx"],
         sessionSpanId=r["session_span_id"], kind=r["kind"], inputTokens=r["input_tokens"],
-        outputTokens=r["output_tokens"], durationMs=r["duration_ms"], deltaKind=r["delta_kind"],
-        deltaRef=r["delta_ref"], createdAt=r["created_at"],
+        outputTokens=r["output_tokens"], cacheReadTokens=r["cache_read_tokens"],
+        cacheCreationTokens=r["cache_creation_tokens"], durationMs=r["duration_ms"],
+        deltaKind=r["delta_kind"], deltaRef=r["delta_ref"], createdAt=r["created_at"],
     )
 
 
@@ -365,6 +380,49 @@ def _gate(r) -> Gate:
     )
 
 
+def _migrate_session_health(db: Db) -> None:
+    """F14: liveness columns on work_assignment. Must run BEFORE ``_migrate_meter_nullable``:
+    that rebuild copies with ``SELECT *``, so an old table has to reach the new column count
+    first. ALTER ADD COLUMN appends in DDL order, keeping the copy aligned."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_assignment)").fetchall()}
+    if not cols or "last_activity_at" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN last_activity_at TEXT")
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN session_health TEXT")
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN session_health_detail TEXT")
+
+
+def _migrate_transcript_path(db: Db) -> None:
+    """F16: the transcript pointer on work_assignment. Same ordering constraint as
+    ``_migrate_session_health`` — must land before the meter rebuild's ``SELECT *`` copy."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_assignment)").fetchall()}
+    if not cols or "transcript_path" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute("ALTER TABLE work_assignment ADD COLUMN transcript_path TEXT")
+
+
+def _migrate_step_cache_tokens(db: Db) -> None:
+    """F1 (phase3-debts.md live-run findings): the CLI adapter settles cache_read /
+    cache_creation input tokens alongside the uncached counts — the context window was
+    invisible to the ledger without them. ALTER ADD COLUMN with a default is safe; run once
+    for pre-F1 dev DBs."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_step)").fetchall()}
+    if not cols or "cache_read_tokens" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute(
+            "ALTER TABLE work_step ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE work_step ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 def _migrate_stage_timestamps(db: Db) -> None:
     """E2b adds ``started_at``/``completed_at`` to work_plan_stage (amendment D-4). ALTER TABLE
     ADD COLUMN is safe for nullable columns; run once for pre-E2b dev DBs."""
@@ -380,8 +438,11 @@ def _migrate_stage_timestamps(db: Db) -> None:
 class WorkStore:
     def __init__(self, db: Db):
         self.db = db
+        _migrate_session_health(db)  # before the meter rebuild — see its docstring
+        _migrate_transcript_path(db)  # ditto (appends in DDL order, keeping the copy aligned)
         _migrate_meter_nullable(db)
         _migrate_stage_timestamps(db)
+        _migrate_step_cache_tokens(db)
 
     # ----------------------------------------------------------------- intents
     def create_intent(
@@ -648,11 +709,32 @@ class WorkStore:
                 (deliverable_id, now_iso(), assignment_id),
             )
 
-    def set_session_ref(self, assignment_id: str, session_ref: str) -> None:
+    def set_session_ref(
+        self, assignment_id: str, session_ref: str, transcript_path: str | None = None,
+    ) -> None:
+        with self.db.transaction() as conn:
+            if transcript_path:
+                conn.execute(
+                    "UPDATE work_assignment SET session_ref=?, transcript_path=?, updated_at=? "
+                    "WHERE id=?",
+                    (session_ref, transcript_path, now_iso(), assignment_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE work_assignment SET session_ref=?, updated_at=? WHERE id=?",
+                    (session_ref, now_iso(), assignment_id),
+                )
+
+    def set_session_health(
+        self, assignment_id: str, health: str | None, detail: str | None = None,
+    ) -> None:
+        """F14: the runtime's liveness report. Deliberately does NOT bump ``updated_at`` —
+        a 15 s heartbeat must not churn the SSE change watermark."""
         with self.db.transaction() as conn:
             conn.execute(
-                "UPDATE work_assignment SET session_ref=?, updated_at=? WHERE id=?",
-                (session_ref, now_iso(), assignment_id),
+                "UPDATE work_assignment SET last_activity_at=?, session_health=?, "
+                "session_health_detail=? WHERE id=?",
+                (now_iso(), health, detail, assignment_id),
             )
 
     # ------------------------------------------------------------------ briefs
@@ -812,6 +894,7 @@ class WorkStore:
         self, assignment_id: str, *, input_tokens: int, output_tokens: int, duration_ms: int,
         kind: str = "production", stage_idx: int | None = None, session_span_id: str | None = None,
         delta_kind: str = "none", delta_ref: str | None = None, step_id: str | None = None,
+        cache_read_tokens: int = 0, cache_creation_tokens: int = 0,
     ) -> Step:
         """Record an observed Step. ``step_id`` may carry the gateway's SpendEvent id so the
         observability row and the money row share one id (the unified Step) and a redelivered
@@ -821,14 +904,18 @@ class WorkStore:
         with self.db.transaction() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO work_step (id, assignment_id, stage_idx, session_span_id, "
-                "kind, input_tokens, output_tokens, duration_ms, delta_kind, delta_ref, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "kind, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, "
+                "duration_ms, delta_kind, delta_ref, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (sid, assignment_id, stage_idx, session_span_id, kind, int(input_tokens),
-                 int(output_tokens), int(duration_ms), delta_kind, delta_ref, ts),
+                 int(output_tokens), int(cache_read_tokens), int(cache_creation_tokens),
+                 int(duration_ms), delta_kind, delta_ref, ts),
             )
         return Step(
             id=sid, assignmentId=assignment_id, stageIdx=stage_idx, sessionSpanId=session_span_id,
             kind=kind, inputTokens=int(input_tokens), outputTokens=int(output_tokens),
+            cacheReadTokens=int(cache_read_tokens),
+            cacheCreationTokens=int(cache_creation_tokens),
             durationMs=int(duration_ms), deltaKind=delta_kind, deltaRef=delta_ref, createdAt=ts,
         )
 
@@ -1075,6 +1162,18 @@ class WorkStore:
                 params,
             ).fetchall()
         return [_notification(r) for r in rows]
+
+    def mark_notifications_read_for_subject(self, org_id: str, subject_id: str) -> int:
+        """F9: a resolved fact must not keep ringing. Auto-read every unread notification
+        whose ``subjectIds`` include the given id (e.g. the gate that just resolved) — stale
+        unread rows were indistinguishable from pending operator actions."""
+        with self.db.transaction() as conn:
+            cur = conn.execute(
+                "UPDATE work_notification SET read_at=? WHERE org_id=? AND read_at IS NULL "
+                "AND subject_ids LIKE ?",
+                (now_iso(), org_id, f'%"{subject_id}"%'),
+            )
+        return cur.rowcount
 
     def mark_notifications_read(self, org_id: str, ids: list[str] | None = None) -> int:
         """Mark the given notifications read (or all unread for the org). Returns the count."""
