@@ -47,13 +47,22 @@ CODE_MESSAGES: dict[str, str] = {
     "TIER_UNSATISFIABLE": "This node holds execute-class grants that require a hardened sandbox "
                           "tier; the subprocess tier is refused unless "
                           "execution.allow_trusted_local is explicitly waived in canopy.toml.",
+    # Connector readiness (builder-connectors.md §4; connectors/02 §5).
+    "CONNECTOR_UNBOUND": "This node holds a connector-backed grant but no connector instance "
+                         "in its reach serves it — create one in the builder and link it.",
+    "CONNECTOR_SECRET_UNBOUND": "The serving connector instance is missing a required "
+                                "credential — paste it on the instance panel.",
+    "CONNECTOR_GRANT_DISABLED": "The role grants a connector capability the org's instance "
+                                "mask excludes — enable it on the instance, or strip it from "
+                                "the node.",
 }
 
 # Actuation-readiness codes are checked at actuate time, not against a document, so they have no
 # phase-1 document golden vectors — the coverage test excludes them.
 ACTUATION_CODES = frozenset(
     {"BINDING_MISSING", "PROFILE_DANGLING", "SECRET_DANGLING", "PROFILE_UNREACHABLE",
-     "GRANT_UNKNOWN", "CLI_UNAVAILABLE", "TIER_UNSATISFIABLE"}
+     "GRANT_UNKNOWN", "CLI_UNAVAILABLE", "TIER_UNSATISFIABLE",
+     "CONNECTOR_UNBOUND", "CONNECTOR_SECRET_UNBOUND", "CONNECTOR_GRANT_DISABLED"}
 )
 
 

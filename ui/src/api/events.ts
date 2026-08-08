@@ -11,7 +11,7 @@ export const useLiveStore = create<{ live: boolean }>(() => ({ live: false }));
 
 const ALL_WORK_KEYS = [
   "intents", "intent-plan", "assignments", "assignment-detail", "gates",
-  "notifications", "spend", "agent-state", "pulse", "cadences",
+  "notifications", "spend", "agent-state", "pulse", "cadences", "triggers",
 ];
 
 // Activity events carry engine transitions by kind (`intent.submitted`, `gate.opened`,
@@ -23,6 +23,8 @@ const ACTIVITY_KEYS: [RegExp, string[]][] = [
   [/^memory\./, ["agent-state"]],
   [/^actuation\./, ["pulse"]],
   [/^cadence\./, ["cadences", "intents", "notifications"]],
+  [/^trigger\./, ["triggers", "intents", "notifications"]],
+  [/^connector\./, ["connectors"]],
 ];
 
 // Coalesced per-family events (the server emits at most one per tick).

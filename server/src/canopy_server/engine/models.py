@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # --------------------------------------------------------------------------- #
 # State enums (the domain's, verbatim — work-model.md §1, §2.1, §4, §5).
@@ -63,6 +63,9 @@ class Intent(BaseModel):
     createdBy: str
     createdAt: str
     closedAt: str | None = None
+    # Trigger provenance (standing-orgs.md §3): the ⚡ chip and the dedupe key.
+    triggerId: str | None = None
+    externalKey: str | None = None
 
 
 class Assignment(BaseModel):
@@ -219,3 +222,25 @@ class Cadence(BaseModel):
     enabled: bool
     lastFiredAt: str | None = None
     createdAt: str
+
+
+class Trigger(BaseModel):
+    """An event-driven work source (standing-orgs.md §2): polls a connector instance and opens
+    one episodic intent per new external event, deduped by the fire ledger — the cursor is an
+    optimization, the ledger is the guarantee."""
+
+    id: str
+    orgId: str
+    name: str
+    kind: str  # 'github-issues' (v1's only kind)
+    nodeId: str | None = None
+    instanceId: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    intentTemplate: str
+    enabled: bool = True
+    cursor: dict[str, Any] | None = None
+    lastCheckedAt: str | None = None
+    lastFiredAt: str | None = None
+    lastError: str | None = None
+    createdAt: str
+    updatedAt: str

@@ -28,6 +28,7 @@ from ..ids import (
     new_plan_id,
     new_step_id,
     new_tool_event_id,
+    new_trigger_id,
 )
 from .models import (
     ASSIGNMENT_TERMINAL_STATES,
@@ -43,6 +44,7 @@ from .models import (
     Plan,
     PlanStage,
     Step,
+    Trigger,
 )
 
 SCHEMA = """
@@ -58,7 +60,9 @@ CREATE TABLE IF NOT EXISTS work_intent (
     cadence_id         TEXT,
     created_by         TEXT NOT NULL DEFAULT 'operator',
     created_at         TEXT NOT NULL,
-    closed_at          TEXT
+    closed_at          TEXT,
+    trigger_id         TEXT,
+    external_key       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_intent_org ON work_intent (org_id, created_at);
 
@@ -234,6 +238,37 @@ CREATE TABLE IF NOT EXISTS work_cadence (
 );
 CREATE INDEX IF NOT EXISTS ix_cadence_org ON work_cadence (org_id, created_at);
 
+-- Event-driven work sources (standing-orgs.md §2): a trigger polls a connector instance and
+-- opens one episodic intent per new external event.
+CREATE TABLE IF NOT EXISTS work_trigger (
+    id              TEXT PRIMARY KEY,
+    org_id          TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    kind            TEXT NOT NULL,             -- 'github-issues' (v1)
+    node_id         TEXT,                      -- NULL ⇒ the org root at fire time
+    instance_id     TEXT NOT NULL,             -- the connector instance polled
+    config          TEXT NOT NULL,             -- JSON {labels, state, createdAfter}
+    intent_template TEXT NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    cursor          TEXT,                      -- JSON {since}; advances only on success
+    last_checked_at TEXT,
+    last_fired_at   TEXT,
+    last_error      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_trigger_org ON work_trigger (org_id, created_at);
+
+-- The idempotency ledger: at most one intent per (trigger, external event), ever. The cursor
+-- is an optimization; THIS is the guarantee (standing-orgs.md §2).
+CREATE TABLE IF NOT EXISTS work_trigger_fire (
+    trigger_id   TEXT NOT NULL,
+    external_key TEXT NOT NULL,
+    intent_id    TEXT NOT NULL,
+    fired_at     TEXT NOT NULL,
+    PRIMARY KEY (trigger_id, external_key)
+);
+
 CREATE TABLE IF NOT EXISTS work_tool_event (
     id            TEXT PRIMARY KEY,
     org_id        TEXT NOT NULL,
@@ -281,11 +316,14 @@ def _migrate_meter_nullable(db: Db) -> None:
 # Row → model mappers
 # --------------------------------------------------------------------------- #
 def _intent(r) -> Intent:
+    keys = r.keys()
     return Intent(
         id=r["id"], orgId=r["org_id"], actuationId=r["actuation_id"], targetNode=r["target_node"],
         kind=r["kind"], text=r["text"], state=r["state"],
         rootAssignmentId=r["root_assignment_id"], cadenceId=r["cadence_id"],
         createdBy=r["created_by"], createdAt=r["created_at"], closedAt=r["closed_at"],
+        triggerId=r["trigger_id"] if "trigger_id" in keys else None,
+        externalKey=r["external_key"] if "external_key" in keys else None,
     )
 
 
@@ -405,6 +443,18 @@ def _migrate_transcript_path(db: Db) -> None:
         conn.execute("ALTER TABLE work_assignment ADD COLUMN transcript_path TEXT")
 
 
+def _migrate_intent_trigger(db: Db) -> None:
+    """standing-orgs.md §3: trigger provenance on work_intent. Additive, run once for
+    pre-trigger dev DBs."""
+    with db.connect() as conn:
+        cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_intent)").fetchall()}
+    if not cols or "trigger_id" in cols:
+        return
+    with db.transaction() as conn:
+        conn.execute("ALTER TABLE work_intent ADD COLUMN trigger_id TEXT")
+        conn.execute("ALTER TABLE work_intent ADD COLUMN external_key TEXT")
+
+
 def _migrate_step_cache_tokens(db: Db) -> None:
     """F1 (phase3-debts.md live-run findings): the CLI adapter settles cache_read /
     cache_creation input tokens alongside the uncached counts — the context window was
@@ -443,23 +493,37 @@ class WorkStore:
         _migrate_meter_nullable(db)
         _migrate_stage_timestamps(db)
         _migrate_step_cache_tokens(db)
+        _migrate_intent_trigger(db)
 
     # ----------------------------------------------------------------- intents
     def create_intent(
         self, org_id: str, actuation_id: str, target_node: str, text: str, *,
         kind: str = "episodic", created_by: str = "operator", cadence_id: str | None = None,
+        trigger_id: str | None = None, external_key: str | None = None,
     ) -> Intent:
         iid = new_intent_id()
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
                 "INSERT INTO work_intent (id, org_id, actuation_id, target_node, kind, text, "
-                "cadence_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (iid, org_id, actuation_id, target_node, kind, text, cadence_id, created_by, ts),
+                "cadence_id, created_by, created_at, trigger_id, external_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (iid, org_id, actuation_id, target_node, kind, text, cadence_id, created_by, ts,
+                 trigger_id, external_key),
             )
+            if trigger_id and external_key:
+                # The fire row rides the SAME transaction as the intent (standing-orgs.md §3):
+                # a crash cannot separate them, and the PK makes a concurrent duplicate raise
+                # here — before any funding — instead of double-firing.
+                conn.execute(
+                    "INSERT INTO work_trigger_fire (trigger_id, external_key, intent_id, "
+                    "fired_at) VALUES (?, ?, ?, ?)",
+                    (trigger_id, external_key, iid, ts),
+                )
         return Intent(
             id=iid, orgId=org_id, actuationId=actuation_id, targetNode=target_node, kind=kind,
             text=text, state="open", cadenceId=cadence_id, createdBy=created_by, createdAt=ts,
+            triggerId=trigger_id, externalKey=external_key,
         )
 
     def get_intent(self, intent_id: str) -> Intent | None:
@@ -567,6 +631,115 @@ class WorkStore:
                 (cadence_id,),
             ).fetchone()
         return _intent(r) if r else None
+
+    # ----------------------------------------------------------------- triggers
+    def _trigger(self, r) -> Trigger:
+        return Trigger(
+            id=r["id"], orgId=r["org_id"], name=r["name"], kind=r["kind"],
+            nodeId=r["node_id"], instanceId=r["instance_id"],
+            config=json.loads(r["config"]), intentTemplate=r["intent_template"],
+            enabled=bool(r["enabled"]),
+            cursor=json.loads(r["cursor"]) if r["cursor"] else None,
+            lastCheckedAt=r["last_checked_at"], lastFiredAt=r["last_fired_at"],
+            lastError=r["last_error"], createdAt=r["created_at"], updatedAt=r["updated_at"],
+        )
+
+    def create_trigger(
+        self, org_id: str, name: str, kind: str, instance_id: str, intent_template: str, *,
+        node_id: str | None = None, config: dict | None = None, enabled: bool = True,
+    ) -> Trigger:
+        tid = new_trigger_id()
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO work_trigger (id, org_id, name, kind, node_id, instance_id, "
+                "config, intent_template, enabled, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (tid, org_id, name, kind, node_id, instance_id,
+                 json.dumps(config or {}), intent_template, 1 if enabled else 0, ts, ts),
+            )
+        return Trigger(
+            id=tid, orgId=org_id, name=name, kind=kind, nodeId=node_id,
+            instanceId=instance_id, config=config or {}, intentTemplate=intent_template,
+            enabled=enabled, createdAt=ts, updatedAt=ts,
+        )
+
+    def update_trigger(self, trigger_id: str, changes: dict) -> Trigger | None:
+        current = self.get_trigger(trigger_id)
+        if current is None:
+            return None
+        merged = current.model_copy(update=changes)
+        merged.updatedAt = now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE work_trigger SET name=?, node_id=?, instance_id=?, config=?, "
+                "intent_template=?, enabled=?, updated_at=? WHERE id=?",
+                (merged.name, merged.nodeId, merged.instanceId, json.dumps(merged.config),
+                 merged.intentTemplate, 1 if merged.enabled else 0, merged.updatedAt,
+                 trigger_id),
+            )
+        return merged
+
+    def mark_trigger_checked(
+        self, trigger_id: str, *, cursor: dict | None = None, fired: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """One poll's outcome. The cursor only moves on success (standing-orgs.md §3):
+        pass ``cursor`` on clean passes; on failure pass ``error`` and the cursor stays."""
+        ts = now_iso()
+        sets, params = ["last_checked_at=?"], [ts]
+        if error is not None:
+            sets.append("last_error=?")
+            params.append(error)
+        else:
+            sets.append("last_error=NULL")
+            if cursor is not None:
+                sets.append("cursor=?")
+                params.append(json.dumps(cursor))
+        if fired:
+            sets.append("last_fired_at=?")
+            params.append(ts)
+        params.append(trigger_id)
+        with self.db.transaction() as conn:
+            conn.execute(f"UPDATE work_trigger SET {', '.join(sets)} WHERE id=?",  # noqa: S608
+                         params)
+
+    def get_trigger(self, trigger_id: str) -> Trigger | None:
+        with self.db.connect() as conn:
+            r = conn.execute("SELECT * FROM work_trigger WHERE id=?", (trigger_id,)).fetchone()
+        return self._trigger(r) if r else None
+
+    def list_triggers(
+        self, org_id: str | None = None, *, enabled_only: bool = False,
+    ) -> list[Trigger]:
+        clauses, params = [], []
+        if org_id is not None:
+            clauses.append("org_id=?")
+            params.append(org_id)
+        if enabled_only:
+            clauses.append("enabled=1")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM work_trigger {where} ORDER BY created_at, id",  # noqa: S608
+                params,
+            ).fetchall()
+        return [self._trigger(r) for r in rows]
+
+    def delete_trigger(self, trigger_id: str) -> None:
+        """Delete the source AND its fire ledger — intents it fired are ordinary history and
+        stay. Re-creating the trigger may therefore re-fire old events; the API's delete
+        confirm says so (standing-orgs.md §6)."""
+        with self.db.transaction() as conn:
+            conn.execute("DELETE FROM work_trigger WHERE id=?", (trigger_id,))
+            conn.execute("DELETE FROM work_trigger_fire WHERE trigger_id=?", (trigger_id,))
+
+    def trigger_fired_keys(self, trigger_id: str) -> set[str]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT external_key FROM work_trigger_fire WHERE trigger_id=?", (trigger_id,)
+            ).fetchall()
+        return {r["external_key"] for r in rows}
 
     # ------------------------------------------------------------- assignments
     def create_assignment(

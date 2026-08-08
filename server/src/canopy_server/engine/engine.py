@@ -126,7 +126,8 @@ class ExecutionEngine:
         self, org_id: str, actuation_id: str, text: str, *, target_node: str | None = None,
         kind: str = "episodic", created_by: str = "operator", allowance_override: int | None = None,
         contract_kind: str | None = None, contract_type: str | None = None,
-        cadence_id: str | None = None,
+        cadence_id: str | None = None, trigger_id: str | None = None,
+        external_key: str | None = None,
     ) -> RootAssignmentResult:
         """Create a work_intent and its root Assignment, funded from the target node's salary.
 
@@ -139,14 +140,14 @@ class ExecutionEngine:
         allowance = allowance_override or agent.salary.perAssignmentAllowance
         ckind = contract_kind or self._contract_for(agent)[0]
         ctype = contract_type or self._contract_for(agent)[1]
-        # A cadence occurrence is operator work from here on (engine.md §4: "indistinguishable
-        # from operator work") — gates and reviews route to the operator; provenance rides the
-        # intent's created_by + cadence_id.
-        issuer = "operator" if created_by == "cadence" else created_by
+        # A cadence occurrence — or a trigger firing (standing-orgs.md §3) — is operator work
+        # from here on (engine.md §4: "indistinguishable from operator work") — gates and
+        # reviews route to the operator; provenance rides created_by + cadence_id/trigger_id.
+        issuer = "operator" if created_by in ("cadence", "trigger") else created_by
 
         intent = self.store.create_intent(
             org_id, actuation_id, agent.id, text, kind=kind, created_by=created_by,
-            cadence_id=cadence_id,
+            cadence_id=cadence_id, trigger_id=trigger_id, external_key=external_key,
         )
         # Pre-mint the assignment id so the meter is bound to it in both directions.
         aid = new_assignment_id()

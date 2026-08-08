@@ -148,6 +148,12 @@ def get_runtime_override() -> str:
     return str(_raw_config()["execution"]["runtime_override"])
 
 
+def get_trigger_poll_seconds() -> float:
+    """Event-trigger poll interval (standing-orgs.md §3). Defaulted so existing configs need
+    no edit; tests shrink it."""
+    return float(_raw_config().get("work", {}).get("trigger_poll_seconds", 60))
+
+
 def get_stall_minutes() -> int:
     """No Step for this long while ``executing`` opens a stall InterventionGate."""
     return int(_raw_config()["work"]["stall_minutes"])

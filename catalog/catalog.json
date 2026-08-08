@@ -3709,6 +3709,109 @@
       "executor": "git-mediated",
       "governedActions": ["merge"],
       "params": { "targetBranch": "main" }
+    },
+    {
+      "key": "issues.read",
+      "title": "Read issue reports",
+      "riskClass": "read",
+      "minSandboxTier": 1,
+      "executor": "connector",
+      "params": {}
+    }
+  ],
+  "connectorPacks": [
+    {
+      "key": "github",
+      "version": 1,
+      "title": "GitHub",
+      "kind": "native",
+      "secrets": [
+        {
+          "credentialKind": "scm-token",
+          "required": true,
+          "scopesHint": ["contents:rw", "pull_requests:rw", "issues:ro"]
+        }
+      ],
+      "configSchema": {
+        "owner": { "type": "string", "required": true },
+        "repo": { "type": "string", "required": true },
+        "branchPattern": { "type": "string", "default": "canopy/*", "narrowable": true },
+        "targetBranch": { "type": "string", "default": "main" }
+      },
+      "grants": [
+        {
+          "key": "connector.github.issues.read",
+          "title": "Read GitHub issues",
+          "riskClass": "read",
+          "minSandboxTier": 1,
+          "executor": "connector",
+          "credentialKind": "scm-token",
+          "tools": ["github_list_issues", "github_get_issue"],
+          "provides": ["issues.read"],
+          "params": {}
+        },
+        {
+          "key": "connector.github.repo.read",
+          "title": "Read the GitHub repository",
+          "riskClass": "read",
+          "minSandboxTier": 1,
+          "executor": "git-mediated",
+          "credentialKind": "scm-token",
+          "provides": ["repo.read"],
+          "params": {}
+        },
+        {
+          "key": "connector.github.repo.write",
+          "title": "Push work branches to GitHub",
+          "riskClass": "write",
+          "minSandboxTier": 1,
+          "executor": "git-mediated",
+          "credentialKind": "scm-token",
+          "provides": ["docs.repo.write", "code.repo.write"],
+          "params": { "branchPattern": "canopy/*" }
+        },
+        {
+          "key": "connector.github.pr.create",
+          "title": "Open a pull request (governed)",
+          "riskClass": "write",
+          "minSandboxTier": 1,
+          "executor": "connector",
+          "credentialKind": "scm-token",
+          "tools": ["github_create_pr"],
+          "governedActions": ["create_pull_request"],
+          "params": { "branchPattern": "canopy/*" }
+        }
+      ]
+    },
+    {
+      "key": "local-git",
+      "version": 1,
+      "title": "Local git repository",
+      "kind": "native",
+      "secrets": [],
+      "configSchema": {
+        "source": { "type": "string", "required": true }
+      },
+      "grants": [
+        {
+          "key": "connector.local-git.repo.read",
+          "title": "Read the bound local repository",
+          "riskClass": "read",
+          "minSandboxTier": 1,
+          "executor": "git-mediated",
+          "provides": ["repo.read"],
+          "params": {}
+        },
+        {
+          "key": "connector.local-git.repo.write",
+          "title": "Write work branches in the bound local repository",
+          "riskClass": "write",
+          "minSandboxTier": 1,
+          "executor": "git-mediated",
+          "provides": ["docs.repo.write", "code.repo.write"],
+          "params": { "branchPattern": "canopy/*" }
+        }
+      ]
     }
   ]
 }

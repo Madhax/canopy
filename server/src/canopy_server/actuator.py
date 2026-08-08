@@ -214,10 +214,15 @@ class Actuator:
             i for i in validate_organization(org, "export", self.catalog) if i.severity == "error"
         ]
         grant_keys = {g.key: g for g in (self.catalog.toolGrants if self.catalog else [])}
+        from .connectors import ConnectorStore
+        from .connectors import readiness_issues as connector_readiness
+
+        conn_store = ConnectorStore(self.db)
         needs_cli = False
         for org_path, agent in enumerate_nodes(org):
             role = self._role_for(org, agent)
-            for gk in getattr(role, "toolGrants", []) or []:
+            role_grants = list(getattr(role, "toolGrants", []) or [])
+            for gk in role_grants:
                 grant = grant_keys.get(gk)
                 if grant is None:
                     issues.append(issue("GRANT_UNKNOWN", "error", agentIds=[agent.id],
@@ -227,6 +232,14 @@ class Actuator:
                     # need a hard wall (envelope §3.1) unless the operator waives it loudly
                     # (cli-runtime.md §8).
                     issues.append(issue("TIER_UNSATISFIABLE", "error", agentIds=[agent.id],
+                                        orgPath=org_path))
+            if self.catalog is not None:
+                # Connector readiness (builder-connectors.md §4): namespaced connector grants
+                # must resolve to an instance in this node's reach, credentials bound.
+                for code, _detail in connector_readiness(
+                    self.catalog, conn_store, org.id, agent.id, role_grants
+                ):
+                    issues.append(issue(code, "error", agentIds=[agent.id],
                                         orgPath=org_path))
             if self._node_runtime(org, agent) == "cli-claude":
                 needs_cli = True

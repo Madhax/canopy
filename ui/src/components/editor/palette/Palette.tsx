@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ConnectorPack } from "../../../api/connectors";
 import type { Catalog, OrgType } from "../../../schema/catalog";
 import { ROLE_GROUP_LABELS, roleGroupColor } from "../../../lib/theme";
 import { RoleRow } from "./RoleRow";
@@ -11,6 +12,16 @@ interface Props {
   onStampFormation: (formationKey: string) => void;
   onAddCustomRole: () => void;
   onAddChildOrg: () => void;
+  connectorPacks?: ConnectorPack[];
+  onPlaceConnector?: (packKey: string) => void;
+}
+
+// One line of what the pack puts in a team's hands — read/write summary + the gated marker.
+function packSummary(p: ConnectorPack): string {
+  const parts = p.grants.map((g) =>
+    g.governedActions.length ? `${g.title.toLowerCase()} (gated)` : g.title.toLowerCase(),
+  );
+  return parts.join(" · ");
 }
 
 export function Palette({
@@ -20,6 +31,8 @@ export function Palette({
   onStampFormation,
   onAddCustomRole,
   onAddChildOrg,
+  connectorPacks,
+  onPlaceConnector,
 }: Props) {
   const [query, setQuery] = useState("");
   const [wholeCatalog, setWholeCatalog] = useState(false);
@@ -113,6 +126,41 @@ export function Palette({
             </details>
           )}
         </div>
+
+        {/* Connectors (builder-connectors-ux.md §2.1): drag onto the canvas, then link. */}
+        {connectorPacks && connectorPacks.length > 0 && (
+          <div className="border-t border-border p-3">
+            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Connectors
+            </h3>
+            {connectorPacks
+              .filter((p) => !q || p.title.toLowerCase().includes(q) || p.key.includes(q))
+              .map((p) => (
+                <div
+                  key={p.key}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/canopy-connector", p.key);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onDoubleClick={() => onPlaceConnector?.(p.key)}
+                  title={packSummary(p)}
+                  className="cursor-grab rounded-md border border-transparent px-2 py-1.5 text-sm hover:border-border hover:bg-surface-2 active:cursor-grabbing"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 shrink-0 text-center text-[10px] text-ink-muted" aria-hidden>
+                      {p.key === "github" ? "◆" : "▣"}
+                    </span>
+                    <span className="truncate text-ink">{p.title}</span>
+                    <span className="ml-auto rounded-full bg-surface-2 px-1.5 text-[10px] text-ink-muted">
+                      {p.kind}
+                    </span>
+                  </div>
+                  <div className="ml-5 truncate text-[10px] text-ink-subtle">{packSummary(p)}</div>
+                </div>
+              ))}
+          </div>
+        )}
 
         {/* Special */}
         <div className="border-t border-border p-3">
