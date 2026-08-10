@@ -39,7 +39,7 @@ export function IssuesPanel({ issues, onFocus }: Props) {
             />
             <span>
               <span className="font-medium text-ink">{issue.code}</span>
-              {issue.orgPath && issue.orgPath.length > 0 && (
+              {issue.teamPath && issue.teamPath.length > 0 && (
                 <span className="text-ink-subtle"> · nested</span>
               )}
               <div className="text-ink-muted">{issue.message}</div>

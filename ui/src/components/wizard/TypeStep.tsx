@@ -34,7 +34,7 @@ export function TypeStep({ catalog, selectedKey, onSelect }: Props) {
         autoFocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search organization types…"
+        placeholder="Search team types…"
         className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
       />
       {SECTION_ORDER.filter((s) => grouped.has(s)).map((section) => (

@@ -27,8 +27,8 @@ CREATE TABLE IF NOT EXISTS runtoken (
     id               TEXT PRIMARY KEY,
     actuation_id     TEXT NOT NULL,
     node_id          TEXT NOT NULL,
-    org_id           TEXT NOT NULL,
-    org_path         TEXT NOT NULL DEFAULT '[]',
+    team_id           TEXT NOT NULL,
+    team_path         TEXT NOT NULL DEFAULT '[]',
     default_meter_id TEXT,
     token_hash       TEXT NOT NULL UNIQUE,
     revoked          INTEGER NOT NULL DEFAULT 0,
@@ -47,8 +47,8 @@ class RunTokenRecord(BaseModel):
     id: str
     actuationId: str
     nodeId: str
-    orgId: str
-    orgPath: list[str]
+    teamId: str
+    teamPath: list[str]
     defaultMeterId: str | None
     revoked: bool
     createdAt: str
@@ -61,8 +61,8 @@ def _row_to_record(row) -> RunTokenRecord:
         id=row["id"],
         actuationId=row["actuation_id"],
         nodeId=row["node_id"],
-        orgId=row["org_id"],
-        orgPath=json.loads(row["org_path"]),
+        teamId=row["team_id"],
+        teamPath=json.loads(row["team_path"]),
         defaultMeterId=row["default_meter_id"],
         revoked=bool(row["revoked"]),
         createdAt=row["created_at"],
@@ -77,9 +77,9 @@ class RunTokenStore:
         self,
         actuation_id: str,
         node_id: str,
-        org_id: str,
+        team_id: str,
         *,
-        org_path: list[str] | None = None,
+        team_path: list[str] | None = None,
         default_meter_id: str | None = None,
     ) -> tuple[str, RunTokenRecord]:
         """Mint a token; returns ``(plaintext_token, record)``. The plaintext is never stored."""
@@ -88,16 +88,16 @@ class RunTokenStore:
         token = new_run_token()
         rid = new_run_token_record_id()
         ts = now_iso()
-        path = org_path or []
+        path = team_path or []
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO runtoken (id, actuation_id, node_id, org_id, org_path, "
+                "INSERT INTO runtoken (id, actuation_id, node_id, team_id, team_path, "
                 "default_meter_id, token_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (rid, actuation_id, node_id, org_id, json.dumps(path), default_meter_id,
+                (rid, actuation_id, node_id, team_id, json.dumps(path), default_meter_id,
                  _hash(token), ts),
             )
         record = RunTokenRecord(
-            id=rid, actuationId=actuation_id, nodeId=node_id, orgId=org_id, orgPath=path,
+            id=rid, actuationId=actuation_id, nodeId=node_id, teamId=team_id, teamPath=path,
             defaultMeterId=default_meter_id, revoked=False, createdAt=ts,
         )
         return token, record

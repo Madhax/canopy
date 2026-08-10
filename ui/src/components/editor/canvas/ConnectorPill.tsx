@@ -41,7 +41,7 @@ export function ConnectorPill({ data }: NodeProps) {
       )}
       {d.enabled && d.orgWide && (
         <span className="rounded-full bg-surface-2 px-1.5 text-[10px] text-ink-muted">
-          org-wide
+          team-wide
         </span>
       )}
       <Handle

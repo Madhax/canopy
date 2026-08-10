@@ -159,14 +159,14 @@ export function DeliverableView({
 
 // ---------------------------------------------------------------------- wired
 export function DeliverableCard({
-  orgId,
+  teamId,
   deliverable,
   reviewable,
   busy,
   onAccept,
   onReject,
 }: {
-  orgId: string | null;
+  teamId: string | null;
   deliverable: Deliverable;
   reviewable: boolean;
   busy?: boolean;
@@ -177,7 +177,7 @@ export function DeliverableCard({
     // The review moment defaults to eyes-on: a single-artifact deliverable opens itself.
     reviewable && deliverable.artifactRefs.length === 1 ? deliverable.artifactRefs[0] : null,
   );
-  const preview = useArtifact(orgId, openRef);
+  const preview = useArtifact(teamId, openRef);
 
   return (
     <DeliverableView

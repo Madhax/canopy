@@ -16,19 +16,19 @@ from canopy_server.engine.cadence import (
 )
 
 
-def _seed_live_actuation(actuation_id: str, org_id: str) -> None:
+def _seed_live_actuation(actuation_id: str, team_id: str) -> None:
     from canopy_server.deps import get_db, now_iso
 
     ts = now_iso()
     with get_db().transaction() as conn:
         conn.execute(
-            "INSERT INTO actuation (id, org_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (actuation_id, org_id, "live", ts, ts),
+            "INSERT INTO actuation (id, team_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (actuation_id, team_id, "live", ts, ts),
         )
 
 
-def _root_of(org: dict) -> dict:
-    return next(a for a in org["agents"] if a["managerId"] is None)
+def _root_of(team: dict) -> dict:
+    return next(a for a in team["agents"] if a["managerId"] is None)
 
 
 # --------------------------------------------------------------------------- #
@@ -108,10 +108,10 @@ def test_next_fire_vixie_or_rule():
 # CRUD API
 # --------------------------------------------------------------------------- #
 def test_cadence_crud_over_http(client, make_org):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
 
-    r = client.post(f"/api/organizations/{org['id']}/cadences", json={
+    r = client.post(f"/api/teams/{team['id']}/cadences", json={
         "name": "daily standup", "cron": "0 9 * * 1-5",
         "intentText": "Report status of all current work", "nodeId": root["id"],
     })
@@ -120,24 +120,24 @@ def test_cadence_crud_over_http(client, make_org):
     assert cadence["enabled"] and cadence["lastFiredAt"] is None
     assert cadence["nextFireAt"] is not None  # computed for the management list
 
-    lst = client.get(f"/api/organizations/{org['id']}/cadences").json()["cadences"]
+    lst = client.get(f"/api/teams/{team['id']}/cadences").json()["cadences"]
     assert [c["id"] for c in lst] == [cadence["id"]]
 
     upd = client.put(
-        f"/api/organizations/{org['id']}/cadences/{cadence['id']}", json={"enabled": False}
+        f"/api/teams/{team['id']}/cadences/{cadence['id']}", json={"enabled": False}
     )
     assert upd.status_code == 200
     assert upd.json()["enabled"] is False and upd.json()["nextFireAt"] is None
 
     assert client.delete(
-        f"/api/organizations/{org['id']}/cadences/{cadence['id']}"
+        f"/api/teams/{team['id']}/cadences/{cadence['id']}"
     ).status_code == 204
-    assert client.get(f"/api/organizations/{org['id']}/cadences").json()["cadences"] == []
+    assert client.get(f"/api/teams/{team['id']}/cadences").json()["cadences"] == []
 
 
 def test_cadence_create_validates(client, make_org):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    url = f"/api/organizations/{org['id']}/cadences"
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    url = f"/api/teams/{team['id']}/cadences"
 
     bad_cron = client.post(url, json={"name": "x", "cron": "not cron", "intentText": "y"})
     assert bad_cron.status_code == 422 and bad_cron.json()["error"]["code"] == "BAD_CRON"
@@ -153,25 +153,25 @@ def test_cadence_create_validates(client, make_org):
     blank = client.post(url, json={"name": " ", "cron": "0 9 * * *", "intentText": "y"})
     assert blank.status_code == 422 and blank.json()["error"]["code"] == "BAD_CADENCE"
 
-    assert client.post("/api/organizations/nope/cadences", json={
+    assert client.post("/api/teams/nope/cadences", json={
         "name": "x", "cron": "0 9 * * *", "intentText": "y",
     }).status_code == 404
-    # Updating/deleting through the wrong org 404s (ownership check).
+    # Updating/deleting through the wrong team 404s (ownership check).
     other = make_org(name="Other")
     ok = client.post(url, json={"name": "x", "cron": "0 9 * * *", "intentText": "y"}).json()
     assert client.put(
-        f"/api/organizations/{other['id']}/cadences/{ok['id']}", json={"enabled": False}
+        f"/api/teams/{other['id']}/cadences/{ok['id']}", json={"enabled": False}
     ).status_code == 404
     assert client.delete(
-        f"/api/organizations/{other['id']}/cadences/{ok['id']}"
+        f"/api/teams/{other['id']}/cadences/{ok['id']}"
     ).status_code == 404
 
 
 # --------------------------------------------------------------------------- #
 # Scheduler semantics (engine.md §4): fire, misfire=skip, coalesce, provenance.
 # --------------------------------------------------------------------------- #
-def _standup(client, org, root, cron="0 9 * * *"):
-    r = client.post(f"/api/organizations/{org['id']}/cadences", json={
+def _standup(client, team, root, cron="0 9 * * *"):
+    r = client.post(f"/api/teams/{team['id']}/cadences", json={
         "name": "daily standup", "cron": cron,
         "intentText": "Report status of all current work as a StatusReport",
         "nodeId": root["id"],
@@ -180,20 +180,20 @@ def _standup(client, org, root, cron="0 9 * * *"):
     return r.json()
 
 
-def _activity_kinds(org_id: str) -> list[str]:
+def _activity_kinds(team_id: str) -> list[str]:
     from canopy_server.deps import get_activity
 
-    return [row["kind"] for row in get_activity().list(org_id, after_seq=0, limit=500)]
+    return [row["kind"] for row in get_activity().list(team_id, after_seq=0, limit=500)]
 
 
 def test_cadence_fires_an_ordinary_intent(client, make_org, mint_session):
     from canopy_server.deps import get_cadence_scheduler, get_work_store
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
-    cadence = _standup(client, org, root)
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
+    cadence = _standup(client, team, root)
 
     # The next 09:00 after creation is at most 24h out — two days out it is overdue.
     now = datetime.now(UTC) + timedelta(days=2)
@@ -207,26 +207,26 @@ def test_cadence_fires_an_ordinary_intent(client, make_org, mint_session):
     a = get_work_store().get_assignment(intent.rootAssignmentId)
     assert a.state == "briefed" and a.issuedBy == "operator" and a.meterId is not None
 
-    listed = client.get(f"/api/organizations/{org['id']}/intents").json()["intents"]
+    listed = client.get(f"/api/teams/{team['id']}/intents").json()["intents"]
     assert [i["cadenceId"] for i in listed] == [cadence["id"]]
-    notif = client.get(f"/api/organizations/{org['id']}/notifications").json()["notifications"]
+    notif = client.get(f"/api/teams/{team['id']}/notifications").json()["notifications"]
     assert [n["kind"] for n in notif if n["kind"] == "cadence-fired"] == ["cadence-fired"]
-    assert "cadence.fired" in _activity_kinds(org["id"])
+    assert "cadence.fired" in _activity_kinds(team["id"])
 
     # Same pass again: the occurrence was consumed (last_fired_at advanced) — nothing new.
     assert get_cadence_scheduler().run_once(now) == []
-    row = client.get(f"/api/organizations/{org['id']}/cadences").json()["cadences"][0]
+    row = client.get(f"/api/teams/{team['id']}/cadences").json()["cadences"][0]
     assert row["lastFiredAt"] is not None
 
 
 def test_cadence_misfire_skips_while_previous_open(client, make_org, mint_session):
     from canopy_server.deps import get_cadence_scheduler, get_engine, get_work_store
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
-    _standup(client, org, root)
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
+    _standup(client, team, root)
 
     scheduler = get_cadence_scheduler()
     first = scheduler.run_once(datetime.now(UTC) + timedelta(days=2))
@@ -234,8 +234,8 @@ def test_cadence_misfire_skips_while_previous_open(client, make_org, mint_sessio
 
     # Next day's occurrence, previous intent still open → skipped AND consumed.
     assert scheduler.run_once(datetime.now(UTC) + timedelta(days=3)) == []
-    assert "cadence.skipped" in _activity_kinds(org["id"])
-    intents = get_work_store().list_intents(org["id"])
+    assert "cadence.skipped" in _activity_kinds(team["id"])
+    intents = get_work_store().list_intents(team["id"])
     assert len(intents) == 1
 
     # Close it (cancel cascades from the root assignment) → the day after fires again.
@@ -248,16 +248,16 @@ def test_cadence_missed_occurrences_coalesce(client, make_org, mint_session):
     """Downtime does not backfill: N missed occurrences collapse into one fire."""
     from canopy_server.deps import get_cadence_scheduler, get_work_store
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
-    _standup(client, org, root)
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
+    _standup(client, team, root)
 
     # Ten days of "downtime" since creation → exactly one intent, not ten.
     fired = get_cadence_scheduler().run_once(datetime.now(UTC) + timedelta(days=10))
     assert len(fired) == 1
-    assert len(get_work_store().list_intents(org["id"])) == 1
+    assert len(get_work_store().list_intents(team["id"])) == 1
 
 
 def test_cadence_disabled_or_unactuated_never_fires(client, make_org, mint_session):
@@ -270,16 +270,16 @@ def test_cadence_disabled_or_unactuated_never_fires(client, make_org, mint_sessi
     assert get_cadence_scheduler().run_once(datetime.now(UTC) + timedelta(days=2)) == []
     assert get_work_store().list_intents(cold["id"]) == []
     assert "cadence.skipped" in _activity_kinds(cold["id"])
-    row = client.get(f"/api/organizations/{cold['id']}/cadences").json()["cadences"][0]
+    row = client.get(f"/api/teams/{cold['id']}/cadences").json()["cadences"][0]
     assert row["lastFiredAt"] is not None  # consumed, not deferred
 
     # Disabled: not even consumed — the schedule is simply off.
-    org = make_org(name="Warm", seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
-    cadence = _standup(client, org, root)
-    client.put(f"/api/organizations/{org['id']}/cadences/{cadence['id']}",
+    team = make_org(name="Warm", seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
+    cadence = _standup(client, team, root)
+    client.put(f"/api/teams/{team['id']}/cadences/{cadence['id']}",
                json={"enabled": False})
     assert get_cadence_scheduler().run_once(datetime.now(UTC) + timedelta(days=30)) == []
-    assert get_work_store().list_intents(org["id"]) == []
+    assert get_work_store().list_intents(team["id"]) == []

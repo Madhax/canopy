@@ -57,7 +57,7 @@ class GateService:
         )
         if suspend and assignment.state != "gated":
             self.store.set_assignment_state(assignment.id, "gated")
-            self._log("gate.opened", assignment.orgId, [assignment.id, gate.id],
+            self._log("gate.opened", assignment.teamId, [assignment.id, gate.id],
                       {"kind": kind, "reason": reason})
             # The suspend races the resolution sweep (E6): a watched upstream can deliver
             # between the gate insert above and this state flip. The sweep resolves the gate
@@ -93,11 +93,11 @@ class GateService:
             if self.on_resume is not None:
                 self.on_resume(self.store.get_assignment(a.id))
         if a is not None:
-            self._log("gate.resolved", a.orgId, [a.id, gate.id],
+            self._log("gate.resolved", a.teamId, [a.id, gate.id],
                       {"kind": gate.kind, "action": resolution.get("action", "")})
             # F9: the gate's unread notifications are now stale facts — auto-read them so the
             # inbox only rings for things that still need someone.
-            self.store.mark_notifications_read_for_subject(a.orgId, gate.id)
+            self.store.mark_notifications_read_for_subject(a.teamId, gate.id)
         return updated or gate
 
     # ------------------------------------------------- dependency machinery
@@ -209,7 +209,7 @@ class GateService:
         gates = self.store.list_gates(assignment_id=assignment_id, kind=kind, state="open")
         return gates[0] if gates else None
 
-    def _log(self, action: str, org_id: str, subject_ids: list[str], payload: dict) -> None:
+    def _log(self, action: str, team_id: str, subject_ids: list[str], payload: dict) -> None:
         if self.activity is not None:
-            self.activity.log("system", action, org_id=org_id, subject_ids=subject_ids,
+            self.activity.log("system", action, team_id=team_id, subject_ids=subject_ids,
                               payload=json.loads(json.dumps(payload)))

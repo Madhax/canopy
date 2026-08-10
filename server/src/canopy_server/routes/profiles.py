@@ -1,6 +1,6 @@
 """Profiles, bindings, and secrets — the operator-facing configuration API (control-plane.md §9).
 
-These attach the AI configuration to a chart without touching the Organization document
+These attach the AI configuration to a chart without touching the Team document
 (agent-profile.md): profiles are the reusable brains, bindings pin a profile to a node, secrets
 are the encrypted keys profiles reference. Secrets are **write-only** here — create / rotate /
 delete return metadata only; no route ever returns a key's plaintext (invariant 10).
@@ -24,9 +24,9 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
 
 
-def _require_org(store, org_id: str) -> JSONResponse | None:
-    if not store.exists(org_id):
-        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+def _require_org(store, team_id: str) -> JSONResponse | None:
+    if not store.exists(team_id):
+        return _error(404, "NOT_FOUND", f"No team {team_id!r}")
     return None
 
 
@@ -56,7 +56,7 @@ class ProfilePatch(BaseModel):
 class BindingBody(BaseModel):
     agentNodeId: str
     profileId: str
-    orgPath: list[str] = Field(default_factory=list)
+    teamPath: list[str] = Field(default_factory=list)
 
 
 class RepoSourceBody(BaseModel):
@@ -75,23 +75,23 @@ class SecretRotate(BaseModel):
 # --------------------------------------------------------------------------- #
 # Profiles
 # --------------------------------------------------------------------------- #
-@router.get("/organizations/{org_id}/profiles")
+@router.get("/teams/{team_id}/profiles")
 def list_profiles(
-    org_id: str, profiles=Depends(get_profile_store), store=Depends(get_store)
+    team_id: str, profiles=Depends(get_profile_store), store=Depends(get_store)
 ) -> Any:
-    if (err := _require_org(store, org_id)) is not None:
+    if (err := _require_org(store, team_id)) is not None:
         return err
-    return [p.model_dump() for p in profiles.list_profiles(org_id)]
+    return [p.model_dump() for p in profiles.list_profiles(team_id)]
 
 
-@router.post("/organizations/{org_id}/profiles", status_code=201)
+@router.post("/teams/{team_id}/profiles", status_code=201)
 def create_profile(
-    org_id: str, body: ProfileBody, profiles=Depends(get_profile_store), store=Depends(get_store)
+    team_id: str, body: ProfileBody, profiles=Depends(get_profile_store), store=Depends(get_store)
 ) -> Any:
-    if (err := _require_org(store, org_id)) is not None:
+    if (err := _require_org(store, team_id)) is not None:
         return err
     p = profiles.create_profile(
-        org_id,
+        team_id,
         name=body.name,
         provider=body.provider,
         model=body.model,
@@ -103,9 +103,9 @@ def create_profile(
     return JSONResponse(status_code=201, content=p.model_dump())
 
 
-@router.put("/organizations/{org_id}/profiles/{profile_id}")
+@router.put("/teams/{team_id}/profiles/{profile_id}")
 def update_profile(
-    org_id: str, profile_id: str, body: ProfilePatch, profiles=Depends(get_profile_store)
+    team_id: str, profile_id: str, body: ProfilePatch, profiles=Depends(get_profile_store)
 ) -> Any:
     changes = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if "params" in changes:
@@ -116,14 +116,14 @@ def update_profile(
     return updated.model_dump()
 
 
-@router.delete("/organizations/{org_id}/profiles/{profile_id}", status_code=204)
-def delete_profile(org_id: str, profile_id: str, profiles=Depends(get_profile_store)):
+@router.delete("/teams/{team_id}/profiles/{profile_id}", status_code=204)
+def delete_profile(team_id: str, profile_id: str, profiles=Depends(get_profile_store)):
     profiles.delete_profile(profile_id)
     return JSONResponse(status_code=204, content=None)
 
 
-@router.post("/organizations/{org_id}/profiles/{profile_id}/validate")
-async def validate_profile(org_id: str, profile_id: str, gateway=Depends(get_gateway)) -> Any:
+@router.post("/teams/{team_id}/profiles/{profile_id}/validate")
+async def validate_profile(team_id: str, profile_id: str, gateway=Depends(get_gateway)) -> Any:
     """Live-check: one cheap provider ping (agent-profile.md §3). Mock always passes."""
     result = await gateway.validate_profile(profile_id)
     return result.model_dump()
@@ -132,48 +132,48 @@ async def validate_profile(org_id: str, profile_id: str, gateway=Depends(get_gat
 # --------------------------------------------------------------------------- #
 # Bindings
 # --------------------------------------------------------------------------- #
-@router.get("/organizations/{org_id}/bindings")
-def list_bindings(org_id: str, profiles=Depends(get_profile_store)) -> Any:
-    return [b.model_dump() for b in profiles.list_bindings(org_id)]
+@router.get("/teams/{team_id}/bindings")
+def list_bindings(team_id: str, profiles=Depends(get_profile_store)) -> Any:
+    return [b.model_dump() for b in profiles.list_bindings(team_id)]
 
 
-@router.put("/organizations/{org_id}/bindings")
-def set_binding(org_id: str, body: BindingBody, profiles=Depends(get_profile_store)) -> Any:
+@router.put("/teams/{team_id}/bindings")
+def set_binding(team_id: str, body: BindingBody, profiles=Depends(get_profile_store)) -> Any:
     if profiles.get_profile(body.profileId) is None:
         return _error(422, "PROFILE_DANGLING", f"No profile {body.profileId!r}")
-    b = profiles.set_binding(org_id, body.agentNodeId, body.profileId, body.orgPath)
+    b = profiles.set_binding(team_id, body.agentNodeId, body.profileId, body.teamPath)
     return b.model_dump()
 
 
-@router.delete("/organizations/{org_id}/bindings/{agent_node_id}", status_code=204)
+@router.delete("/teams/{team_id}/bindings/{agent_node_id}", status_code=204)
 def delete_binding(
-    org_id: str, agent_node_id: str, orgPath: str = "", profiles=Depends(get_profile_store)
+    team_id: str, agent_node_id: str, teamPath: str = "", profiles=Depends(get_profile_store)
 ):
-    path = [seg for seg in orgPath.split(",") if seg]
-    profiles.delete_binding(org_id, agent_node_id, path)
+    path = [seg for seg in teamPath.split(",") if seg]
+    profiles.delete_binding(team_id, agent_node_id, path)
     return JSONResponse(status_code=204, content=None)
 
 
 # --------------------------------------------------------------------------- #
 # Secrets (write-only)
 # --------------------------------------------------------------------------- #
-@router.get("/organizations/{org_id}/repo-source")
+@router.get("/teams/{team_id}/repo-source")
 def get_repo_source(
-    org_id: str, profiles=Depends(get_profile_store), store=Depends(get_store)
+    team_id: str, profiles=Depends(get_profile_store), store=Depends(get_store)
 ) -> Any:
-    """F8: the org's work-target repo binding — operator data beside profiles/secrets,
+    """F8: the team's work-target repo binding — operator data beside profiles/secrets,
     mutable at runtime (the boot-time [repo] source is only the fallback)."""
-    if (err := _require_org(store, org_id)) is not None:
+    if (err := _require_org(store, team_id)) is not None:
         return err
-    return {"organizationId": org_id, "source": profiles.get_repo_source(org_id)}
+    return {"teamId": team_id, "source": profiles.get_repo_source(team_id)}
 
 
-@router.put("/organizations/{org_id}/repo-source")
+@router.put("/teams/{team_id}/repo-source")
 def set_repo_source(
-    org_id: str, body: RepoSourceBody,
+    team_id: str, body: RepoSourceBody,
     profiles=Depends(get_profile_store), store=Depends(get_store),
 ) -> Any:
-    if (err := _require_org(store, org_id)) is not None:
+    if (err := _require_org(store, team_id)) is not None:
         return err
     source = (body.source or "").strip() or None
     if source is not None:
@@ -186,28 +186,28 @@ def set_repo_source(
             return _error(400, "BAD_REPO_SOURCE",
                           f"not a git repository (no .git): {source}")
         source = str(p)
-    profiles.set_repo_source(org_id, source)
-    return {"organizationId": org_id, "source": source}
+    profiles.set_repo_source(team_id, source)
+    return {"teamId": team_id, "source": source}
 
 
-@router.get("/organizations/{org_id}/secrets")
-def list_secrets(org_id: str, secrets=Depends(get_secret_store)) -> Any:
-    return [s.model_dump() for s in secrets.list(org_id)]
+@router.get("/teams/{team_id}/secrets")
+def list_secrets(team_id: str, secrets=Depends(get_secret_store)) -> Any:
+    return [s.model_dump() for s in secrets.list(team_id)]
 
 
-@router.post("/organizations/{org_id}/secrets", status_code=201)
+@router.post("/teams/{team_id}/secrets", status_code=201)
 def create_secret(
-    org_id: str, body: SecretBody, secrets=Depends(get_secret_store), store=Depends(get_store)
+    team_id: str, body: SecretBody, secrets=Depends(get_secret_store), store=Depends(get_store)
 ) -> Any:
-    if (err := _require_org(store, org_id)) is not None:
+    if (err := _require_org(store, team_id)) is not None:
         return err
-    meta = secrets.create(org_id, body.name, body.value)
+    meta = secrets.create(team_id, body.name, body.value)
     return JSONResponse(status_code=201, content=meta.model_dump())
 
 
-@router.put("/organizations/{org_id}/secrets/{secret_id}")
+@router.put("/teams/{team_id}/secrets/{secret_id}")
 def rotate_secret(
-    org_id: str, secret_id: str, body: SecretRotate, secrets=Depends(get_secret_store)
+    team_id: str, secret_id: str, body: SecretRotate, secrets=Depends(get_secret_store)
 ) -> Any:
     meta = secrets.rotate(secret_id, body.value)
     if meta is None:
@@ -215,7 +215,7 @@ def rotate_secret(
     return meta.model_dump()
 
 
-@router.delete("/organizations/{org_id}/secrets/{secret_id}", status_code=204)
-def delete_secret(org_id: str, secret_id: str, secrets=Depends(get_secret_store)):
+@router.delete("/teams/{team_id}/secrets/{secret_id}", status_code=204)
+def delete_secret(team_id: str, secret_id: str, secrets=Depends(get_secret_store)):
     secrets.delete(secret_id)
     return JSONResponse(status_code=204, content=None)

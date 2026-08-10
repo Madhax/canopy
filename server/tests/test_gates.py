@@ -1,7 +1,7 @@
 """E2a golden vectors — staged delegation, dependency thresholds, rework funding, manager-await.
 
 The vector list follows testing.md §4 (E2) and doubles as the build spec (rule 1: every
-work-model §2.1 transition ships with a vector). The fixture org is the amended catalog's
+work-model §2.1 transition ships with a vector). The fixture team is the amended catalog's
 product-engineering pod: lead + backend + frontend + qa, with the QA dependency edges declared
 ``resolveOn: delivered`` (verify) in the formation itself.
 """
@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 
 
-def _node(org: dict, role_key: str) -> dict:
-    return next(a for a in org["agents"] if a["role"]["key"] == role_key)
+def _node(team: dict, role_key: str) -> dict:
+    return next(a for a in team["agents"] if a["role"]["key"] == role_key)
 
 
 @pytest.fixture()
@@ -20,20 +20,20 @@ def pod(client, make_org, mint_session):
     """A product-engineering pod with its lead executing a root (checkpointed) assignment."""
     from canopy_server.deps import get_engine
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead = _node(org, "engineering-lead")
-    s = mint_session(org["id"], node_id=lead["id"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead = _node(team, "engineering-lead")
+    s = mint_session(team["id"], node_id=lead["id"])
     eng = get_engine()
     root = eng.submit_intent(
-        org["id"], s["actuationId"], "Add CSV export; all tests must pass",
+        team["id"], s["actuationId"], "Add CSV export; all tests must pass",
         target_node=lead["id"],
     ).assignment
     eng.mark_intake_complete(root.id)
     eng.declare_plan(root.id, [{"title": "decompose"}, {"title": "review"}])
     return {
-        "engine": eng, "org": org, "root": root, "lead": lead,
-        "backend": _node(org, "backend-engineer"), "frontend": _node(org, "frontend-engineer"),
-        "qa": _node(org, "qa-engineer"), "session": s,
+        "engine": eng, "team": team, "root": root, "lead": lead,
+        "backend": _node(team, "backend-engineer"), "frontend": _node(team, "frontend-engineer"),
+        "qa": _node(team, "qa-engineer"), "session": s,
     }
 
 
@@ -50,14 +50,14 @@ def test_delegate_requires_executing_caller(pod, make_org, mint_session):
     from canopy_server.deps import get_engine
     from canopy_server.engine.engine import WorkError
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"},
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"},
                    name="Second")
-    lead = _node(org, "engineering-lead")
-    s = mint_session(org["id"], node_id=lead["id"])
+    lead = _node(team, "engineering-lead")
+    s = mint_session(team["id"], node_id=lead["id"])
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s["actuationId"], "x", target_node=lead["id"]).assignment
+    root = eng.submit_intent(team["id"], s["actuationId"], "x", target_node=lead["id"]).assignment
     with pytest.raises(WorkError, match="delegate invalid"):  # still 'briefed'
-        eng.delegate(root.id, _node(org, "backend-engineer")["id"], "too early")
+        eng.delegate(root.id, _node(team, "backend-engineer")["id"], "too early")
 
 
 # ------------------------------------------------------------------------ staged delegation
@@ -71,7 +71,7 @@ def test_proposed_drafts_hold_no_meter_and_publish_nothing(pod):
     assert be.state == "proposed" and qa.state == "proposed"
     assert be.meterId is None and qa.meterId is None  # unfunded drafts (work-model §2)
     # Nothing is published: the node's runtime cannot see a proposed draft.
-    assert eng.store.current_assignment(root.orgId, pod["backend"]["id"]) is None
+    assert eng.store.current_assignment(root.teamId, pod["backend"]["id"]) is None
 
     gate = eng.finish_turn(root.id)
     assert gate is not None and gate.kind == "approval" and gate.owner == "operator"
@@ -152,7 +152,7 @@ def test_direct_delegation_dispatches_immediately(pod, monkeypatch):
     be = eng.delegate(root.id, pod["backend"]["id"], "implement")
     assert be.state == "briefed" and be.meterId is not None
     # Published: the node's runtime sees it.
-    assert eng.store.current_assignment(root.orgId, pod["backend"]["id"]).id == be.id
+    assert eng.store.current_assignment(root.teamId, pod["backend"]["id"]).id == be.id
 
 
 # ------------------------------------------------------------------- dependency thresholds
@@ -179,12 +179,12 @@ def test_verify_dependency_resolves_at_finish(pod):
     eng = pod["engine"]
     be, qa = _approved_fanout(pod)  # formation edge: verify (delivered)
 
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])
 
     qa2 = eng.store.get_assignment(qa.id)
     assert qa2.state == "briefed"  # unlocked at SUBMISSION — acceptance not required
     brief = eng.store.get_brief(qa.id)
-    assert "org://acme/be/pr@1" in brief.artifactRefs  # refs pinned at the submitted version
+    assert "team://acme/be/pr@1" in brief.artifactRefs  # refs pinned at the submitted version
     assert brief.revisedBy == "system"  # exempt from the rework-funding rule
 
 
@@ -192,26 +192,26 @@ def test_consume_dependency_waits_for_acceptance(pod):
     eng = pod["engine"]
     be, qa = _approved_fanout(pod, qa_resolve_on="accepted")  # explicit consume edge
 
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])
     assert eng.store.get_assignment(qa.id).state == "gated"  # delivery is not enough
 
     eng.accept(be.id)
     qa2 = eng.store.get_assignment(qa.id)
     assert qa2.state == "briefed"  # consume resolves only at sign-off
-    assert "org://acme/be/pr@1" in eng.store.get_brief(qa.id).artifactRefs
+    assert "team://acme/be/pr@1" in eng.store.get_brief(qa.id).artifactRefs
 
 
 def test_dependency_sweep_is_idempotent_under_redelivery(pod):
     eng = pod["engine"]
     be, qa = _approved_fanout(pod)
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])
 
     # Redelivered report: the same sweep runs again — nothing double-resolves or double-grants.
     resolved = eng.gates.sweep(eng.store.get_assignment(be.id), "delivered",
-                               ["org://acme/be/pr@1"])
+                               ["team://acme/be/pr@1"])
     assert resolved == []
     brief = eng.store.get_brief(qa.id)
-    assert brief.artifactRefs.count("org://acme/be/pr@1") == 1
+    assert brief.artifactRefs.count("team://acme/be/pr@1") == 1
     assert eng.store.get_assignment(qa.id).state == "briefed"
 
 
@@ -221,7 +221,7 @@ def test_rework_on_unchanged_brief_burns_the_same_meter(pod):
 
     eng = pod["engine"]
     be, _qa = _approved_fanout(pod)
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])
     meter_before = get_ledger().get_meter(eng.store.get_assignment(be.id).meterId)
 
     eng.reject(be.id, "acceptance suite fails")  # brief unchanged
@@ -238,7 +238,7 @@ def test_revised_brief_rework_transfers_from_parent_meter(pod):
 
     eng, root = pod["engine"], pod["root"]
     be, _qa = _approved_fanout(pod)
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])
 
     ledger = get_ledger()
     child_before = ledger.get_meter(eng.store.get_assignment(be.id).meterId)
@@ -255,7 +255,7 @@ def test_revised_brief_rework_transfers_from_parent_meter(pod):
     # The transfer nets to zero: the parent's spend rises by exactly the child's raise.
     assert parent_after.spent - parent_before.spent == grant
     # And it is visible in the ledger as a canopy/meter-transfer SpendEvent.
-    transfers = [r for r in ledger.rollup(root.orgId, "model") if r["key"] == "meter-transfer"]
+    transfers = [r for r in ledger.rollup(root.teamId, "model") if r["key"] == "meter-transfer"]
     assert transfers and transfers[0]["input_tokens"] + transfers[0]["output_tokens"] == grant
 
 
@@ -283,7 +283,7 @@ def test_manager_await_wakes_per_delivery_and_rearms(pod):
     assert eng.store.get_assignment(root.id).state == "gated"  # awaiting reports
 
     # Wake 1: the first child delivers while the second still works.
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"], summary="backend done")
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"], summary="backend done")
     assert eng.store.get_assignment(root.id).state == "executing"
     await_gates = [g for g in eng.store.list_gates(assignment_id=root.id, state="resolved")
                    if g.payload.get("await")]
@@ -298,7 +298,7 @@ def test_manager_await_wakes_per_delivery_and_rearms(pod):
     assert eng.store.get_assignment(root.id).state == "gated"
 
     # Wake 2: the second child delivers.
-    _drive_to_delivering(eng, fe.id, ["org://acme/fe/ui@1"], summary="frontend done")
+    _drive_to_delivering(eng, fe.id, ["team://acme/fe/ui@1"], summary="frontend done")
     assert eng.store.get_assignment(root.id).state == "executing"
     eng.accept(fe.id)
     assert eng.finish_turn(root.id) is None  # child set drained — no re-arm
@@ -313,9 +313,9 @@ def test_finish_turn_sweeps_deliveries_that_arrived_mid_review(pod):
     gate = eng.finish_turn(root.id)
     eng.resolve_gate(gate.id, action="approve")
 
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])  # wake 1
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])  # wake 1
     # While the manager reviews, the OTHER child also delivers — no gate is open right now.
-    _drive_to_delivering(eng, fe.id, ["org://acme/fe/ui@1"])
+    _drive_to_delivering(eng, fe.id, ["team://acme/fe/ui@1"])
     eng.accept(be.id)
 
     eng.finish_turn(root.id)  # re-arm must immediately resolve on fe's pending deliverable
@@ -334,7 +334,7 @@ def test_await_arm_races_child_delivery(pod, monkeypatch):
     eng.resolve_gate(gate.id, action="approve")
 
     # First wake, consumed normally: root back to executing, no open gate, child delivering.
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"])
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"])
     assert store.get_assignment(root.id).state == "executing"
 
     # Now the manager re-arms — and the child's sweep fires inside the race window.
@@ -346,7 +346,7 @@ def test_await_arm_races_child_delivery(pod, monkeypatch):
             fired.append(True)
             # T2 wins the window: the manager is still 'executing', so this resolves the
             # freshly inserted gate without restoring anyone.
-            svc.sweep(store.get_assignment(be.id), "delivered", ["org://acme/be/pr@1"])
+            svc.sweep(store.get_assignment(be.id), "delivered", ["team://acme/be/pr@1"])
             assert store.get_gate(g.id).state == "resolved"
         return g
 
@@ -369,24 +369,24 @@ def test_mvp_demo_ordering(pod):
     be, qa = _approved_fanout(pod)
 
     # Engineer submits PR@1 — QA's verify gate resolves at submission; the lead holds acceptance.
-    _drive_to_delivering(eng, be.id, ["org://acme/be/pr@1"], summary="PR v1")
+    _drive_to_delivering(eng, be.id, ["team://acme/be/pr@1"], summary="PR v1")
     assert eng.store.get_assignment(qa.id).state == "briefed"
     assert eng.store.get_assignment(be.id).state == "delivering"
 
     # QA runs the suite: red. The lead rejects the engineer's STILL-OPEN deliverable.
-    _drive_to_delivering(eng, qa.id, ["org://acme/qa/report@1"], summary="FAIL: edge case")
+    _drive_to_delivering(eng, qa.id, ["team://acme/qa/report@1"], summary="FAIL: edge case")
     be_meter_id = eng.store.get_assignment(be.id).meterId
     assert eng.store.get_assignment(be.id).state == "delivering"  # never closed early
-    eng.reject(be.id, "TestReport org://acme/qa/report@1 cites a failing edge case")
+    eng.reject(be.id, "TestReport team://acme/qa/report@1 cites a failing edge case")
     be2 = eng.store.get_assignment(be.id)
     assert be2.state == "planning" and be2.meterId == be_meter_id  # same assignment, same meter
     assert be2.briefVersion == 1  # brief unchanged — quality failure, engineer's tab
 
     # Rework: PR@2. Re-verification is a rework round on QA, citing the new version.
-    eng.finish(be.id, artifact_refs=["org://acme/be/pr@2"], summary="PR v2")
+    eng.finish(be.id, artifact_refs=["team://acme/be/pr@2"], summary="PR v2")
     eng.reject(qa.id, "re-verify against PR@2",
-               revised_brief="verify org://acme/be/pr@2; all tests must pass")
-    green = eng.finish(qa.id, artifact_refs=["org://acme/qa/report@2"], summary="PASS")
+               revised_brief="verify team://acme/be/pr@2; all tests must pass")
+    green = eng.finish(qa.id, artifact_refs=["team://acme/qa/report@2"], summary="PASS")
 
     # Acceptance is the final verdict, informed by verification — and provably after it.
     eng.accept(qa.id)
@@ -397,7 +397,7 @@ def test_mvp_demo_ordering(pod):
 
     # Money replay (testing.md §4): every token spent anywhere is attributable.
     ledger = get_ledger()
-    by_node = ledger.rollup(root.orgId, "node")
+    by_node = ledger.rollup(root.teamId, "node")
     total_events = sum(r["input_tokens"] + r["output_tokens"] for r in by_node)
     meters = [ledger.get_meter(m) for m in
               {root.meterId, be3.meterId, qa3.meterId} if m]
@@ -418,10 +418,10 @@ def test_spend_rollup_by_intent_with_split(pod, client):
     eng.record_step(root.id, input_tokens=40, output_tokens=10, duration_ms=5,
                     settle=True, kind="coordination", step_id="st_coord1")
 
-    r = client.get(f"/api/organizations/{root.orgId}/spend?groupBy=intent&split=true").json()
+    r = client.get(f"/api/teams/{root.teamId}/spend?groupBy=intent&split=true").json()
     row = next(x for x in r["rows"] if x["key"] == root.intentId)
     assert row["coordination_tokens"] == 50 and row["production_tokens"] == 120
     by_assignment = client.get(
-        f"/api/organizations/{root.orgId}/spend?groupBy=assignment"
+        f"/api/teams/{root.teamId}/spend?groupBy=assignment"
     ).json()["rows"]
     assert {x["key"] for x in by_assignment} >= {root.id, be.id}

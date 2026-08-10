@@ -30,12 +30,12 @@ from .ids import new_secret_id
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS secrets_secret (
     id              TEXT PRIMARY KEY,
-    organization_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
     name            TEXT NOT NULL,
     ciphertext      BLOB NOT NULL,
     created_at      TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_secrets_org ON secrets_secret (organization_id);
+CREATE INDEX IF NOT EXISTS ix_secrets_org ON secrets_secret (team_id);
 """
 register_schema(SCHEMA)
 
@@ -44,7 +44,7 @@ class SecretMeta(BaseModel):
     """Everything about a secret *except* its value — the only shape any API returns."""
 
     id: str
-    organizationId: str
+    teamId: str
     name: str
     createdAt: str
 
@@ -53,7 +53,7 @@ class SecretStore(ABC):
     key: str
 
     @abstractmethod
-    def create(self, org_id: str, name: str, plaintext: str) -> SecretMeta: ...
+    def create(self, team_id: str, name: str, plaintext: str) -> SecretMeta: ...
 
     @abstractmethod
     def rotate(self, secret_id: str, plaintext: str) -> SecretMeta | None: ...
@@ -62,7 +62,7 @@ class SecretStore(ABC):
     def delete(self, secret_id: str) -> bool: ...
 
     @abstractmethod
-    def list(self, org_id: str) -> list[SecretMeta]: ...
+    def list(self, team_id: str) -> list[SecretMeta]: ...
 
     @abstractmethod
     def get_meta(self, secret_id: str) -> SecretMeta | None: ...
@@ -105,22 +105,22 @@ class LocalEncryptedSecretStore(SecretStore):
     def _row_to_meta(self, row) -> SecretMeta:
         return SecretMeta(
             id=row["id"],
-            organizationId=row["organization_id"],
+            teamId=row["team_id"],
             name=row["name"],
             createdAt=row["created_at"],
         )
 
-    def create(self, org_id: str, name: str, plaintext: str) -> SecretMeta:
+    def create(self, team_id: str, name: str, plaintext: str) -> SecretMeta:
         sid = new_secret_id()
         ts = now_iso()
         ct = self._fernet.encrypt(plaintext.encode("utf-8"))
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO secrets_secret (id, organization_id, name, ciphertext, created_at) "
+                "INSERT INTO secrets_secret (id, team_id, name, ciphertext, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (sid, org_id, name, ct, ts),
+                (sid, team_id, name, ct, ts),
             )
-        return SecretMeta(id=sid, organizationId=org_id, name=name, createdAt=ts)
+        return SecretMeta(id=sid, teamId=team_id, name=name, createdAt=ts)
 
     def rotate(self, secret_id: str, plaintext: str) -> SecretMeta | None:
         ct = self._fernet.encrypt(plaintext.encode("utf-8"))
@@ -140,11 +140,11 @@ class LocalEncryptedSecretStore(SecretStore):
             cur = conn.execute("DELETE FROM secrets_secret WHERE id = ?", (secret_id,))
             return cur.rowcount > 0
 
-    def list(self, org_id: str) -> list[SecretMeta]:
+    def list(self, team_id: str) -> list[SecretMeta]:
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM secrets_secret WHERE organization_id = ? ORDER BY created_at",
-                (org_id,),
+                "SELECT * FROM secrets_secret WHERE team_id = ? ORDER BY created_at",
+                (team_id,),
             ).fetchall()
         return [self._row_to_meta(r) for r in rows]
 

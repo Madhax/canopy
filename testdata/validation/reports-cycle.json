@@ -3,8 +3,8 @@
   "description": "managerId chain loops a1->a2->a1.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "cyc",
     "name": "cyc",
     "organizationType": "product-engineering",
@@ -56,8 +56,8 @@
     ],
     "dependencies": [],
     "customRoles": [],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": [
     {

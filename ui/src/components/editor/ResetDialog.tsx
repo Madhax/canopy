@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Catalog } from "../../schema/catalog";
-import type { Agent, Dependency, OrganizationDoc } from "../../schema/organization";
-import { buildSeedContent, defaultRootRole, type ChildSeed } from "../../lib/newOrg";
+import type { Agent, Dependency, TeamDoc } from "../../schema/team";
+import { buildSeedContent, defaultRootRole, type ChildSeed } from "../../lib/newTeam";
 import { Button, Dialog } from "../common";
 import { roleGroupColor } from "../../lib/theme";
 
@@ -14,15 +14,15 @@ type Choice =
 interface Props {
   open: boolean;
   catalog: Catalog;
-  org: OrganizationDoc;
+  team: TeamDoc;
   onClose: () => void;
   onApply: (agents: Agent[], dependencies: Dependency[]) => void;
 }
 
 // Reset the current chart to its original seed, or to a template derived from the archetype.
-export function ResetDialog({ open, catalog, org, onClose, onApply }: Props) {
-  const orgType = catalog.organizationTypes.find((o) => o.key === org.organizationType);
-  const seed = (org.meta as Record<string, unknown> | undefined)?.seed as ChildSeed | undefined;
+export function ResetDialog({ open, catalog, team, onClose, onApply }: Props) {
+  const orgType = catalog.organizationTypes.find((o) => o.key === team.organizationType);
+  const seed = (team.meta as Record<string, unknown> | undefined)?.seed as ChildSeed | undefined;
   const [choice, setChoice] = useState<Choice | null>(seed ? { kind: "original" } : null);
 
   const formations = (orgType?.formations ?? [])
@@ -70,7 +70,7 @@ export function ResetDialog({ open, catalog, org, onClose, onApply }: Props) {
       }
     >
       <p className="mb-4 text-ink-muted">
-        This replaces the current chart — agents, dependencies, and any nested organizations. It can
+        This replaces the current chart — agents, dependencies, and any nested teams. It can
         be undone with <kbd className="rounded bg-surface-2 px-1">⌘Z</kbd>.
       </p>
 

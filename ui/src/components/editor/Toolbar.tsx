@@ -105,7 +105,7 @@ export function Toolbar({
       <SaveStatus status={status} />
 
       <Button size="sm" variant="ghost" onClick={onBack}>
-        ← All orgs
+        ← All teams
       </Button>
     </div>
   );

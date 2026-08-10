@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
 
+from ..artifacts import normalize_ref
 from ..deps import (
     get_actuator,
     get_engine,
@@ -42,14 +43,14 @@ PROTOCOL_VERSION = "2024-11-05"
 # Handlers receive (rec, engine, work_store, args) and return a JSON-able dict.
 # --------------------------------------------------------------------------- #
 def _current(work_store, rec):
-    a = work_store.current_assignment(rec.orgId, rec.nodeId)
+    a = work_store.current_assignment(rec.teamId, rec.nodeId)
     if a is None:
         raise WorkError("no active assignment for this node")
     return a
 
 
 def _t_get_assignment(rec, engine, work_store, args) -> dict:
-    a = work_store.current_assignment(rec.orgId, rec.nodeId)
+    a = work_store.current_assignment(rec.teamId, rec.nodeId)
     if a is None:
         return {"assignment": None}
     brief = work_store.get_brief(a.id)
@@ -58,7 +59,7 @@ def _t_get_assignment(rec, engine, work_store, args) -> dict:
         "assignment": a.model_dump(),
         "brief": brief.model_dump() if brief else None,
         "contract": {"kind": a.contractKind, "type": a.contractType},
-        "memory": [m.entry for m in work_store.get_memory(rec.orgId, rec.nodeId)],
+        "memory": [m.entry for m in work_store.get_memory(rec.teamId, rec.nodeId)],
         "meter": meter.model_dump() if meter else None,
         "notes": [n.model_dump() for n in work_store.take_undelivered_notes(a.id)],
     }
@@ -88,12 +89,12 @@ def _t_produce_artifact(rec, engine, work_store, args) -> dict:
 
 
 def _t_fetch_artifact(rec, engine, work_store, args) -> dict:
-    ref = args["ref"]
+    ref = normalize_ref(args["ref"])
     meta = engine.artifacts.resolve(ref)
-    if meta is None or meta.orgId != rec.orgId:
+    if meta is None or meta.teamId != rec.teamId:
         raise WorkError(f"no artifact {ref}")
     if meta.nodeId != rec.nodeId and ref not in work_store.refs_granted_to(
-        rec.orgId, rec.nodeId
+        rec.teamId, rec.nodeId
     ):
         raise _GrantDenied(f"ref {ref} is not in the caller's granted set")
     content = engine.artifacts.read(ref)
@@ -144,7 +145,7 @@ def _t_finish_turn(rec, engine, work_store, args) -> dict:
 
 def _t_reports_status(rec, engine, work_store, args) -> dict:
     """R1: subtree telemetry — the manager's own children with states, cursors, meters, and
-    open gates (sub-org-opaque; one level is the MVP scope)."""
+    open gates (sub-team-opaque; one level is the MVP scope)."""
     a = _current(work_store, rec)
     out = []
     for c in work_store.list_children(a.id):
@@ -177,15 +178,15 @@ def _t_repo_checkout(rec, engine, work_store, args) -> dict:
 
     a = _current(work_store, rec)
     if args.get("ref"):
-        return get_repos().readonly_checkout(a.orgId, args["ref"], tag=a.id)
-    return get_repos().materialize_worktree(a.orgId, a.id)
+        return get_repos().readonly_checkout(a.teamId, args["ref"], tag=a.id)
+    return get_repos().materialize_worktree(a.teamId, a.id)
 
 
 def _t_repo_pr(rec, engine, work_store, args) -> dict:
     from ..deps import get_repos
 
     a = _current(work_store, rec)
-    pr = get_repos().assemble_pr(a.orgId, a.id, test_output=args.get("testOutput", ""))
+    pr = get_repos().assemble_pr(a.teamId, a.id, test_output=args.get("testOutput", ""))
     meta = engine.put_artifact(
         a.id, "pull-request", "PullRequest",
         json.dumps(pr, indent=2).encode("utf-8"), filename="pull-request.json",
@@ -196,7 +197,7 @@ def _t_repo_pr(rec, engine, work_store, args) -> dict:
 def _t_repo_merge_request(rec, engine, work_store, args) -> dict:
     a = _current(work_store, rec)
     gate = engine.open_governed_action(
-        a.id, "repo-merge", {"orgId": a.orgId, "branch": args["branch"]},
+        a.id, "repo-merge", {"teamId": a.teamId, "branch": args["branch"]},
     )
     return {"gateId": gate.id, "state": "gated",
             "note": "the merge awaits operator approval (governed action)"}
@@ -205,11 +206,11 @@ def _t_repo_merge_request(rec, engine, work_store, args) -> dict:
 def _github_binding(rec, grant_key: str):
     """Resolve the calling NODE's instance for a github grant (builder-connectors.md §4) —
     the per-call scope check on top of the role-level grant filter. Raises WorkError (→ a
-    recorded denial) when the org has no instance in this node's reach."""
+    recorded denial) when the team has no instance in this node's reach."""
     from ..catalog import get_catalog
     from ..deps import get_connector_store
 
-    binding = get_connector_store().resolve(get_catalog(), rec.orgId, rec.nodeId, grant_key)
+    binding = get_connector_store().resolve(get_catalog(), rec.teamId, rec.nodeId, grant_key)
     if binding is None or binding.instance.packKey != "github":
         raise WorkError(f"no GitHub connector instance serves {grant_key} for this node")
     return binding
@@ -259,7 +260,7 @@ def _t_github_create_pr(rec, engine, work_store, args) -> dict:
     _github_binding(rec, "connector.github.pr.create")  # scope check before the gate opens
     gate = engine.open_governed_action(
         a.id, "pr-create",
-        {"orgId": a.orgId, "branch": args["branch"],
+        {"teamId": a.teamId, "branch": args["branch"],
          "title": args.get("title", args["branch"]), "body": args.get("body", "")},
     )
     return {"gateId": gate.id, "state": "gated",
@@ -423,10 +424,10 @@ def _is_manager(actuator, engine, rec) -> bool:
     if charter is not None:
         return bool(charter.get("reportNodeIds"))
     try:
-        org = engine.orgs.read(rec.orgId)
-    except Exception:  # noqa: BLE001 - no org doc => no reports
+        team = engine.teams.read(rec.teamId)
+    except Exception:  # noqa: BLE001 - no team doc => no reports
         return False
-    return any(a.managerId == rec.nodeId for a in org.agents)
+    return any(a.managerId == rec.nodeId for a in team.agents)
 
 
 def _grants_of(actuator, engine, rec) -> set[str]:
@@ -438,8 +439,8 @@ def _grants_of(actuator, engine, rec) -> set[str]:
     try:
         from ..catalog import get_catalog
 
-        org = engine.orgs.read(rec.orgId)
-        agent = next((a for a in org.agents if a.id == rec.nodeId), None)
+        team = engine.teams.read(rec.teamId)
+        agent = next((a for a in team.agents if a.id == rec.nodeId), None)
         role = next((r for r in get_catalog().roles if agent and r.key == agent.role.key), None)
         return set(getattr(role, "toolGrants", []) or [])
     except Exception:  # noqa: BLE001 - no chart => no grants
@@ -517,7 +518,7 @@ def mcp_endpoint(
     if method == "tools/call":
         name = params.get("name", "")
         args = params.get("arguments") or {}
-        cur = work_store.current_assignment(rec.orgId, rec.nodeId)
+        cur = work_store.current_assignment(rec.teamId, rec.nodeId)
         aid = cur.id if cur else None
         tool = TOOLS.get(name)
         # Layer 2, the guarantee: re-check per call. Unknown tools, manager tools from
@@ -527,7 +528,7 @@ def mcp_endpoint(
             grants=_grants_of(actuator, engine, rec),
         ):
             work_store.record_tool_event(
-                org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+                team_id=rec.teamId, actuation_id=rec.actuationId, node_id=rec.nodeId,
                 assignment_id=aid, tool=name, params_hash=_params_hash(args),
                 outcome="denied", detail="tool not in the caller's surface",
             )
@@ -542,7 +543,7 @@ def mcp_endpoint(
             outcome, detail = "error", str(exc)
             result = None
         work_store.record_tool_event(
-            org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+            team_id=rec.teamId, actuation_id=rec.actuationId, node_id=rec.nodeId,
             assignment_id=aid, tool=name, params_hash=_params_hash(args),
             outcome=outcome, detail=detail,
         )

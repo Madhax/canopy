@@ -29,7 +29,7 @@ describe("contract fixtures parse identically on the Zod side (AR-2)", () => {
   it("agent_binding.json", () => {
     const b = agentBindingSchema.parse(load("agent_binding.json"));
     expect(b.agentNodeId).toBe("a_k7mp2x9q");
-    expect(b.orgPath).toEqual([]);
+    expect(b.teamPath).toEqual([]);
   });
 
   it("secret_meta.json", () => {

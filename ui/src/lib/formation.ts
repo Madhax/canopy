@@ -1,7 +1,7 @@
 // Materialize a formation subtree client-side (mirrors server/src/canopy_server/seeds.py).
 // Used by palette formation stamps: manager + members with fresh ids and slot-resolved deps.
 import type { Catalog } from "../schema/catalog";
-import type { Agent, Dependency, Salary } from "../schema/organization";
+import type { Agent, Dependency, Salary } from "../schema/team";
 import { newAgentId, newDependencyId } from "./ids";
 import { useSettingsStore } from "../store/settingsStore";
 

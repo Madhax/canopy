@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import { ApiError } from "../api/client";
-import { saveOrganization } from "../api/organizations";
+import { saveTeam } from "../api/teams";
 import { useDocumentStore, useTemporalStore } from "../store/documentStore";
 
 export type SaveStatus = "saved" | "saving" | "unsaved" | "failed" | "conflict";
 
-const sig = (doc: OrganizationDoc) => JSON.stringify({ ...doc, updatedAt: null });
+const sig = (doc: TeamDoc) => JSON.stringify({ ...doc, updatedAt: null });
 const rescueKey = (id: string) => `canopy:rescue:${id}`;
 
 /** Debounced autosave of the whole top-level document, with conflict + crash-rescue (docs §7.6). */
-export function useAutosave(doc: OrganizationDoc | null) {
+export function useAutosave(doc: TeamDoc | null) {
   const [status, setStatus] = useState<SaveStatus>("saved");
   const savedSig = useRef<string | null>(null);
   const retry = useRef(0);
@@ -26,7 +26,7 @@ export function useAutosave(doc: OrganizationDoc | null) {
     if (!current) return;
     setStatus("saving");
     try {
-      const result = await saveOrganization(current);
+      const result = await saveTeam(current);
       // Bump updatedAt to the server value WITHOUT creating an undo entry.
       useTemporalStore.getState().pause();
       setUpdatedAt(result.document.updatedAt ?? current.updatedAt ?? null);
@@ -84,7 +84,7 @@ export function useAutosave(doc: OrganizationDoc | null) {
     [doSave, setUpdatedAt],
   );
 
-  const markSavedSignature = useCallback((d: OrganizationDoc) => {
+  const markSavedSignature = useCallback((d: TeamDoc) => {
     savedSig.current = sig(d);
     setStatus("saved");
   }, []);

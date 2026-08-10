@@ -1,7 +1,7 @@
 // Constant-ish incremental predicates for React Flow's isValidConnection (docs §4.3).
 // Each evaluates only the rules a single new connection can break, so the canvas can reject a
 // bad drag before it lands and toast the exact rule message.
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import { CODE_MESSAGES } from "./codes";
 
 export interface ConnectionCheck {
@@ -18,7 +18,7 @@ function reject(code: string): ConnectionCheck {
 
 /** May `agentId` be re-parented under `newManagerId` without forming a reporting cycle? */
 export function checkReparent(
-  doc: OrganizationDoc,
+  doc: TeamDoc,
   agentId: string,
   newManagerId: string,
 ): ConnectionCheck {
@@ -41,16 +41,16 @@ export function checkReparent(
 
 /** May a dependency `from -> to` be drawn on the current canvas? */
 export function checkDependency(
-  doc: OrganizationDoc,
+  doc: TeamDoc,
   from: string,
   to: string,
 ): ConnectionCheck {
   if (from === to) return reject("DEP_SELF");
 
-  // endpoints and their sibling group (agent.managerId, or child org.mountAgentId)
+  // endpoints and their sibling group (agent.managerId, or child team.mountAgentId)
   const parentOf = new Map<string, string | null>();
   for (const a of doc.agents) parentOf.set(a.id, a.managerId ?? null);
-  for (const c of doc.childOrganizations) parentOf.set(c.organization.id, c.mountAgentId);
+  for (const c of doc.childTeams) parentOf.set(c.team.id, c.mountAgentId);
 
   if (!parentOf.has(from) || !parentOf.has(to)) return reject("DEP_DANGLING");
   if (parentOf.get(from) !== parentOf.get(to)) return reject("DEP_NOT_SIBLINGS");

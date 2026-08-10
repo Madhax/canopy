@@ -1,9 +1,9 @@
 """RepoManager — the git-mediated executor behind the repo grants (mvp.md §2, envelope §3.4).
 
-The work target lives under platform control at ``data/repos/<orgId>/<name>`` (``main``
+The work target lives under platform control at ``data/repos/<teamId>/<name>`` (``main``
 protected by convention — nothing in the tool surface can commit to it directly):
 
-- ``ensure_repo``: initialize the org's work target. By default the ``examples/target-app``
+- ``ensure_repo``: initialize the team's work target. By default the ``examples/target-app``
   fixture is copied in and ``git init``-ed with one initial commit on ``main`` (the CI spine).
   With a ``source`` (canopy.toml ``[repo] source`` — E8's "point the executor at a local clone
   of the Canopy repo"), the work target is ``git clone``-d from that local repository instead,
@@ -52,58 +52,68 @@ def _is_url(source) -> bool:
 
 class RepoManager:
     def __init__(self, repos_root: Path, *, fixture: Path = _FIXTURE,
-                 source: Path | None = None, source_resolver=None, auth_resolver=None):
+                 source: Path | None = None, source_resolver=None, auth_resolver=None,
+                 home_resolver=None):
         self.root = repos_root
+        # C1 filesystem regrouping (design/organizations/07 §2.5): when set, a team's repos
+        # live at <team-home>/repos instead of <root>/<team_id>. deps wires the resolver;
+        # direct construction (tests) keeps the flat legacy layout.
+        self.home_resolver = home_resolver
         self.fixture = fixture
         self.source = source
-        # F8 + connectors: org_id -> path | https URL | None. The org's connector instance
+        # F8 + connectors: team_id -> path | https URL | None. The team's connector instance
         # (builder-connectors.md §4) outranks the F8 binding outranks the boot-time [repo]
         # source; all absent means the fixture.
         self.source_resolver = source_resolver
-        # org_id -> token | None, resolved at CALL time inside the control-plane process for
+        # team_id -> token | None, resolved at CALL time inside the control-plane process for
         # URL sources — never stored, never written into the clone's config.
         self.auth_resolver = auth_resolver
 
-    def _source_for(self, org_id: str) -> Path | str | None:
+    def _source_for(self, team_id: str) -> Path | str | None:
         if self.source_resolver is not None:
-            per_org = self.source_resolver(org_id)
+            per_org = self.source_resolver(team_id)
             if per_org:
                 return per_org if _is_url(per_org) else Path(per_org)
         return self.source
 
-    def _authed_url(self, org_id: str, url: str) -> str:
-        token = self.auth_resolver(org_id) if self.auth_resolver is not None else None
+    def _authed_url(self, team_id: str, url: str) -> str:
+        token = self.auth_resolver(team_id) if self.auth_resolver is not None else None
         if not token:
             return url
         scheme, _, rest = url.partition("://")
         return f"{scheme}://x-access-token:{token}@{rest}"
 
-    def repo_path(self, org_id: str) -> Path:
-        source = self._source_for(org_id)
+    def repo_path(self, team_id: str) -> Path:
+        source = self._source_for(team_id)
         if source is None:
             name = "target-app"
         elif _is_url(source):
             name = source.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
         else:
             name = source.name
-        return self.root / org_id / name
+        return self._team_repos(team_id) / name
 
-    def _worktrees_path(self, org_id: str) -> Path:
-        return self.root / org_id / "worktrees"
+    def _team_repos(self, team_id: str) -> Path:
+        if self.home_resolver is not None:
+            return self.home_resolver(team_id) / "repos"
+        return self.root / team_id
+
+    def _worktrees_path(self, team_id: str) -> Path:
+        return self._team_repos(team_id) / "worktrees"
 
     # ------------------------------------------------------------------ setup
-    def ensure_repo(self, org_id: str) -> Path:
-        """Initialize the org's work target (idempotent): clone the org's bound source (F8),
+    def ensure_repo(self, team_id: str) -> Path:
+        """Initialize the team's work target (idempotent): clone the team's bound source (F8),
         else the global configured source, else copy the fixture in and git-init it."""
-        source = self._source_for(org_id)
-        repo = self.repo_path(org_id)
+        source = self._source_for(team_id)
+        repo = self.repo_path(team_id)
         if (repo / ".git").exists():
             return repo
         repo.parent.mkdir(parents=True, exist_ok=True)
         if _is_url(source):
             # Token rides the clone URL only for the duration of the command, then the
             # remote is re-pointed at the tokenless form — nothing secret lands on disk.
-            _git(repo.parent, "clone", self._authed_url(org_id, source), str(repo))
+            _git(repo.parent, "clone", self._authed_url(team_id, source), str(repo))
             _git(repo, "remote", "set-url", "origin", source)
             try:
                 _git(repo, "checkout", "main")
@@ -141,12 +151,12 @@ class RepoManager:
         return repo
 
     # -------------------------------------------------------------- worktrees
-    def materialize_worktree(self, org_id: str, assignment_id: str) -> dict:
+    def materialize_worktree(self, team_id: str, assignment_id: str) -> dict:
         """The engineer's intake: a fresh ``canopy/<assignmentId>`` branch in its own worktree.
         Idempotent — re-intake (rework) returns the existing worktree."""
-        repo = self.ensure_repo(org_id)
+        repo = self.ensure_repo(team_id)
         branch = f"canopy/{assignment_id}"
-        path = self._worktrees_path(org_id) / assignment_id
+        path = self._worktrees_path(team_id) / assignment_id
         if path.exists():
             return {"path": str(path), "branch": branch,
                     "baseSha": _git(path, "merge-base", "main", "HEAD")}
@@ -155,13 +165,13 @@ class RepoManager:
         _git(repo, "worktree", "add", "-b", branch, str(path), "main")
         return {"path": str(path), "branch": branch, "baseSha": base_sha}
 
-    def readonly_checkout(self, org_id: str, ref: str, tag: str) -> dict:
+    def readonly_checkout(self, team_id: str, ref: str, tag: str) -> dict:
         """QA's intake: a detached worktree at the submitted head. Read-only by convention and
         by grant (QA holds no ``code.repo.write``); the fs stays writable on the trusted-local
         tier — the honest wall arrives with the docker provider."""
-        repo = self.ensure_repo(org_id)
+        repo = self.ensure_repo(team_id)
         sha = _git(repo, "rev-parse", ref)
-        path = self._worktrees_path(org_id) / f"ro-{tag}"
+        path = self._worktrees_path(team_id) / f"ro-{tag}"
         if path.exists():
             _git(path, "checkout", "--detach", sha)
         else:
@@ -170,10 +180,10 @@ class RepoManager:
         return {"path": str(path), "sha": sha}
 
     # ------------------------------------------------------------ pr assembly
-    def assemble_pr(self, org_id: str, assignment_id: str, *, test_output: str = "") -> dict:
+    def assemble_pr(self, team_id: str, assignment_id: str, *, test_output: str = "") -> dict:
         """The PullRequest artifact body from the worktree state at finish. Uncommitted work is
         committed first, so the artifact pins exactly what exists on disk."""
-        path = self._worktrees_path(org_id) / assignment_id
+        path = self._worktrees_path(team_id) / assignment_id
         if not path.exists():
             raise RepoError(f"no worktree for assignment {assignment_id}")
         branch = f"canopy/{assignment_id}"
@@ -187,26 +197,26 @@ class RepoManager:
                 "testOutput": test_output}
 
     # ------------------------------------------------------------------ push
-    def push_branch(self, org_id: str, branch: str) -> dict:
-        """Push a canopy/* work branch to the org's remote source (the governed pr-create
+    def push_branch(self, team_id: str, branch: str) -> dict:
+        """Push a canopy/* work branch to the team's remote source (the governed pr-create
         executor's first half — builder-connectors.md §5). Local-path sources are also valid
         push targets (the round-trip the operator does by hand today)."""
         if not branch.startswith("canopy/"):
             raise RepoError(f"refusing to push non-canopy branch {branch!r}")
-        source = self._source_for(org_id)
+        source = self._source_for(team_id)
         if source is None:
-            raise RepoError("org has no repo source to push to")
-        repo = self.ensure_repo(org_id)
-        target = self._authed_url(org_id, source) if _is_url(source) else str(source)
+            raise RepoError("team has no repo source to push to")
+        repo = self.ensure_repo(team_id)
+        target = self._authed_url(team_id, source) if _is_url(source) else str(source)
         _git(repo, "push", target, f"{branch}:{branch}")
         return {"branch": branch, "headSha": _git(repo, "rev-parse", branch)}
 
     # ----------------------------------------------------------------- merge
-    def merge(self, org_id: str, branch: str) -> dict:
+    def merge(self, team_id: str, branch: str) -> dict:
         """The governed merge executor. The CALLER must have verified a resolved ApprovalGate
         for this action — this method only performs it (and refuses garbage branches)."""
         if not branch.startswith("canopy/"):
             raise RepoError(f"refusing to merge non-canopy branch {branch!r}")
-        repo = self.ensure_repo(org_id)
+        repo = self.ensure_repo(team_id)
         _git(repo, "merge", "--no-ff", branch, "-m", f"merge {branch} (governed)")
         return {"mergedSha": _git(repo, "rev-parse", "main"), "branch": branch}

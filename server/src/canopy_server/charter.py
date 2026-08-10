@@ -1,8 +1,8 @@
 """Charter compilation — what an agent is told at boot (agent-runtime.md §1, control-plane.md §2).
 
-The charter is the *only* thing an agent knows about the org: its own identity, its compiled role
+The charter is the *only* thing an agent knows about the team: its own identity, its compiled role
 instructions (RoleTemplate base + node extensions + profile preamble), its manager and reports,
-its salary numbers, and its workspace layout. The runtime never reads the Organization document —
+its salary numbers, and its workspace layout. The runtime never reads the Team document —
 so the control plane is the single source of truth and the agent is dumb and replaceable
 (topology.md §1).
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from .models import Agent, Catalog, Organization, Salary
+from .models import Agent, Catalog, Salary, Team
 
 
 class WorkspaceLayout(BaseModel):
@@ -23,9 +23,9 @@ class WorkspaceLayout(BaseModel):
 
 class Charter(BaseModel):
     nodeId: str
-    orgId: str
+    teamId: str
     actuationId: str
-    orgPath: list[str]
+    teamPath: list[str]
     displayName: str
     roleKey: str
     isManager: bool
@@ -38,25 +38,25 @@ class Charter(BaseModel):
     defaultRuntime: str = "loop"  # the role's runtime kind (envelope §4)
 
 
-def org_at_path(top: Organization, org_path: list[str]) -> Organization | None:
-    org = top
-    for child_id in org_path:
+def team_at_path(top: Team, team_path: list[str]) -> Team | None:
+    team = top
+    for child_id in team_path:
         nxt = next(
-            (c.organization for c in org.childOrganizations if c.organization.id == child_id),
+            (c.team for c in team.childTeams if c.team.id == child_id),
             None,
         )
         if nxt is None:
             return None
-        org = nxt
-    return org
+        team = nxt
+    return team
 
 
-def _role_and_manager_flag(org: Organization, agent: Agent, catalog: Catalog | None) -> tuple:
+def _role_and_manager_flag(team: Team, agent: Agent, catalog: Catalog | None) -> tuple:
     role = None
     if catalog:
         role = next((r for r in catalog.roles if r.key == agent.role.key), None)
     if role is None:
-        role = next((r for r in org.customRoles if r.key == agent.role.key), None)
+        role = next((r for r in team.customRoles if r.key == agent.role.key), None)
     is_manager = bool(getattr(role, "isManager", False))
     return role, is_manager
 
@@ -90,33 +90,33 @@ def _compile_instructions(role, agent: Agent, profile_preamble: str) -> str:
 
 
 def compile_charter(
-    top: Organization,
-    org_path: list[str],
+    top: Team,
+    team_path: list[str],
     node_id: str,
     *,
     catalog: Catalog | None,
     actuation_id: str,
     profile_preamble: str = "",
 ) -> Charter | None:
-    org = org_at_path(top, org_path)
-    if org is None:
+    team = team_at_path(top, team_path)
+    if team is None:
         return None
-    agent = next((a for a in org.agents if a.id == node_id), None)
+    agent = next((a for a in team.agents if a.id == node_id), None)
     if agent is None:
         return None
 
-    role, is_manager = _role_and_manager_flag(org, agent, catalog)
-    report_ids = [a.id for a in org.agents if a.managerId == node_id]
-    # A mounted child org's root "looks like any other report" (domain: sub-org opacity).
+    role, is_manager = _role_and_manager_flag(team, agent, catalog)
+    report_ids = [a.id for a in team.agents if a.managerId == node_id]
+    # A mounted child team's root "looks like any other report" (domain: sub-team opacity).
     report_ids += [
-        c.organization.id for c in org.childOrganizations if c.mountAgentId == node_id
+        c.team.id for c in team.childTeams if c.mountAgentId == node_id
     ]
 
     return Charter(
         nodeId=node_id,
-        orgId=org.id,
+        teamId=team.id,
         actuationId=actuation_id,
-        orgPath=org_path,
+        teamPath=team_path,
         displayName=agent.name,
         roleKey=agent.role.key,
         isManager=is_manager or len(report_ids) > 0,

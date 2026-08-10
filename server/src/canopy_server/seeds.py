@@ -1,6 +1,6 @@
-"""Seed construction for new organizations, plus the formation-stamp primitive.
+"""Seed construction for new teams, plus the formation-stamp primitive.
 
-A new org can be seeded three ways (docs §6, §7.3):
+A new team can be seeded three ways (docs §6, §7.3):
 
 - ``blank``      — no agents (the first placed agent becomes the root).
 - ``root``       — a single root agent of a chosen role.
@@ -66,7 +66,7 @@ def stamp_formation(
     """Materialize a formation subtree. Returns (agents, dependencies) with fresh ids.
 
     ``manager_manager_id`` is the id the formation's manager reports to (``None`` => the manager
-    becomes an org root). ``origin`` positions the manager node; members fan out below it.
+    becomes an team root). ``origin`` positions the manager node; members fan out below it.
     """
     formation = next((f for f in catalog.formations if f.key == formation_key), None)
     if formation is None:
@@ -127,12 +127,12 @@ def build_seed(
 
 def _default_root_role(catalog: Catalog, organization_type: str) -> str:
     """The archetype's leadership role (first manager in its palette), else chief-executive."""
-    org = next((o for o in catalog.organizationTypes if o.key == organization_type), None)
-    if org:
+    team = next((o for o in catalog.organizationTypes if o.key == organization_type), None)
+    if team:
         managers = {r.key for r in catalog.roles if r.isManager}
-        for rk in org.rolePalette:
+        for rk in team.rolePalette:
             if rk in managers:
                 return rk
-        if org.rolePalette:
-            return org.rolePalette[0]
+        if team.rolePalette:
+            return team.rolePalette[0]
     return "chief-executive"

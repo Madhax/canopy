@@ -115,7 +115,7 @@ export function CadencePanel({
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-ink-muted">
-              Target: {nodeId ? nodeName(nodeId) : "org root"}
+              Target: {nodeId ? nodeName(nodeId) : "team root"}
             </span>
             <Button type="submit" size="sm" variant="primary"
                     disabled={busy || !name.trim() || !intentText.trim()}>
@@ -127,7 +127,7 @@ export function CadencePanel({
 
       {cadences.length === 0 && !open ? (
         <p className="mt-2 text-xs text-ink-muted">
-          No cadences — put this org on a schedule, or make a completed intent recurring.
+          No cadences — put this team on a schedule, or make a completed intent recurring.
         </p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
@@ -143,7 +143,7 @@ export function CadencePanel({
                   <span className="font-medium text-ink">{c.name}</span>
                   <code className="font-mono text-[10px] text-ink-muted">{c.cron}</code>
                   <span className="text-[10px] text-ink-muted">
-                    → {c.nodeId ? nodeName(c.nodeId) : "org root"}
+                    → {c.nodeId ? nodeName(c.nodeId) : "team root"}
                   </span>
                 </div>
                 <div className="mt-0.5 truncate text-[11px] text-ink-muted" title={c.intentText}>
@@ -181,20 +181,20 @@ export function CadencePanel({
 
 // ---------------------------------------------------------------------- wired
 export function CadenceSection({
-  orgId,
+  teamId,
   nodeName,
   seed,
   onSeedConsumed,
 }: {
-  orgId: string | null;
+  teamId: string | null;
   nodeName: (id: string) => string;
   seed?: CadenceSeed | null;
   onSeedConsumed?: () => void;
 }) {
-  const cadences = useCadences(orgId);
-  const create = useCreateCadence(orgId);
-  const update = useUpdateCadence(orgId);
-  const remove = useDeleteCadence(orgId);
+  const cadences = useCadences(teamId);
+  const create = useCreateCadence(teamId);
+  const update = useUpdateCadence(teamId);
+  const remove = useDeleteCadence(teamId);
 
   return (
     <CadencePanel

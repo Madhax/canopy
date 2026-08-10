@@ -1,7 +1,7 @@
 """ExecutionEngine — intent intake, the E1 happy path, and the D1 metering close.
 
 Uses the real app harness (``client`` points ``CANOPY_DATA_DIR`` at a temp dir, so the engine,
-ledger, org store, and gateway all share one database) with the ``mint_session`` fixture for the
+ledger, team store, and gateway all share one database) with the ``mint_session`` fixture for the
 run-token/profile path.
 """
 
@@ -12,19 +12,19 @@ def _headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _root_of(org: dict) -> dict:
-    return next(a for a in org["agents"] if a["managerId"] is None)
+def _root_of(team: dict) -> dict:
+    return next(a for a in team["agents"] if a["managerId"] is None)
 
 
 def test_intent_creates_funded_root_assignment(client, make_org, mint_session):
     from canopy_server.deps import get_engine, get_ledger
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
 
     res = get_engine().submit_intent(
-        org["id"], s["actuationId"], "Add CSV export to the report endpoints",
+        team["id"], s["actuationId"], "Add CSV export to the report endpoints",
         target_node=root["id"],
     )
     intent, a = res.intent, res.assignment
@@ -45,11 +45,11 @@ def test_happy_path_intent_to_closed(client, make_org, mint_session):
     from canopy_server.deps import get_engine
 
     eng = get_engine()
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
 
-    a = eng.submit_intent(org["id"], s["actuationId"], "ship CSV export",
+    a = eng.submit_intent(team["id"], s["actuationId"], "ship CSV export",
                           target_node=root["id"]).assignment
 
     eng.mark_intake_complete(a.id)
@@ -73,7 +73,7 @@ def test_happy_path_intent_to_closed(client, make_org, mint_session):
     assert eng.store.get_deliverable(deliverable.id).accepted is True
 
     # Closing writes one durable memory entry for the node (survives re-actuation).
-    mem = eng.store.get_memory(org["id"], root["id"])
+    mem = eng.store.get_memory(team["id"], root["id"])
     assert len(mem) == 1 and mem[0].entry["outcome"] == "accepted"
     assert mem[0].entry["intentText"] == "ship CSV export"
 
@@ -84,11 +84,11 @@ def test_d1_completion_meters_the_assignment_meter(client, make_org, mint_sessio
     """The gateway resolver charges the assignment-bound meter, not the node's default meter."""
     from canopy_server.deps import get_engine, get_ledger
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])  # opens the node's DEFAULT meter
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])  # opens the node's DEFAULT meter
     a = get_engine().submit_intent(
-        org["id"], s["actuationId"], "do the work", target_node=root["id"],
+        team["id"], s["actuationId"], "do the work", target_node=root["id"],
         allowance_override=50_000,
     ).assignment
 
@@ -107,11 +107,11 @@ def test_reject_requeues_to_planning(client, make_org, mint_session):
     from canopy_server.deps import get_engine
 
     eng = get_engine()
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
     a = eng.submit_intent(
-        org["id"], s["actuationId"], "build it", target_node=root["id"]
+        team["id"], s["actuationId"], "build it", target_node=root["id"]
     ).assignment
     eng.mark_intake_complete(a.id)
     eng.declare_plan(a.id, [{"title": "do"}])
@@ -130,11 +130,11 @@ def test_settle_step_records_cache_tokens_and_cache_aware_cost(client, make_org,
     from canopy_server.deps import get_db, get_engine, get_ledger
 
     eng = get_engine()
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
     a = eng.submit_intent(
-        org["id"], s["actuationId"], "read the corpus", target_node=root["id"]
+        team["id"], s["actuationId"], "read the corpus", target_node=root["id"]
     ).assignment
 
     step = eng.record_step(
@@ -168,6 +168,6 @@ def test_settle_step_records_cache_tokens_and_cache_aware_cost(client, make_org,
     assert ev2["est_cost_micros"] == 0 and ev2["cache_read_tokens"] == 7
 
     # The spend rollup surfaces the cache components (cost explorer's feed).
-    r = client.get(f"/api/organizations/{org['id']}/spend?groupBy=assignment")
+    r = client.get(f"/api/teams/{team['id']}/spend?groupBy=assignment")
     row = next(x for x in r.json()["rows"] if x["key"] == a.id)
     assert row["cache_read_tokens"] == 10_007 and row["cache_creation_tokens"] == 1_000

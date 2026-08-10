@@ -3,8 +3,8 @@
   "description": "A nested child org contains an error, bubbled with orgPath.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "host",
     "name": "host",
     "organizationType": "product-engineering",
@@ -111,12 +111,13 @@
       }
     ],
     "customRoles": [],
-    "childOrganizations": [
+    "meta": {},
+    "childTeams": [
       {
         "mountAgentId": "a_lead",
-        "organization": {
-          "kind": "canopy.organization",
-          "schemaVersion": 1,
+        "team": {
+          "kind": "canopy.team",
+          "schemaVersion": 2,
           "id": "badkid",
           "name": "badkid",
           "organizationType": "product-engineering",
@@ -218,12 +219,11 @@
             }
           ],
           "customRoles": [],
-          "childOrganizations": [],
-          "meta": {}
+          "meta": {},
+          "childTeams": []
         }
       }
-    ],
-    "meta": {}
+    ]
   },
   "expectedIssues": [
     {
@@ -232,7 +232,7 @@
       "agentIds": [
         "a_fe"
       ],
-      "orgPath": [
+      "teamPath": [
         "badkid"
       ]
     },
@@ -242,7 +242,7 @@
       "agentIds": [
         "a_qa"
       ],
-      "orgPath": [
+      "teamPath": [
         "badkid"
       ]
     },
@@ -252,7 +252,7 @@
       "agentIds": [
         "a_lead"
       ],
-      "orgPath": [
+      "teamPath": [
         "badkid"
       ]
     },
@@ -262,7 +262,7 @@
       "dependencyIds": [
         "dz"
       ],
-      "orgPath": [
+      "teamPath": [
         "badkid"
       ]
     }

@@ -42,13 +42,13 @@ export interface ConnectorPack {
 
 export interface ConnectorInstance {
   id: string;
-  organizationId: string;
+  teamId: string;
   packKey: string;
   name: string;
   config: Record<string, string>;
   secretBindings: Record<string, string>; // kind -> secretId (never a value)
   enabledGrants: string[];
-  nodeLinks: string[] | null; // null = org-wide; [] = unlinked/inert
+  nodeLinks: string[] | null; // null = team-wide; [] = unlinked/inert
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -59,23 +59,23 @@ export interface VerifyResult {
   checks: { name: string; ok: boolean; detail: string }[];
 }
 
-export function useConnectorPacks(orgId: string | undefined) {
+export function useConnectorPacks(teamId: string | undefined) {
   return useQuery({
-    queryKey: ["connector-packs", orgId],
+    queryKey: ["connector-packs", teamId],
     queryFn: () =>
-      apiGet<{ packs: ConnectorPack[] }>(`/organizations/${orgId}/connector-packs`),
-    enabled: !!orgId,
+      apiGet<{ packs: ConnectorPack[] }>(`/teams/${teamId}/connector-packs`),
+    enabled: !!teamId,
     staleTime: Infinity, // catalog data — changes only with a server restart
     select: (d) => d.packs,
   });
 }
 
-export function useConnectorInstances(orgId: string | undefined) {
+export function useConnectorInstances(teamId: string | undefined) {
   return useQuery({
-    queryKey: ["connectors", orgId],
+    queryKey: ["connectors", teamId],
     queryFn: () =>
-      apiGet<{ instances: ConnectorInstance[] }>(`/organizations/${orgId}/connectors`),
-    enabled: !!orgId,
+      apiGet<{ instances: ConnectorInstance[] }>(`/teams/${teamId}/connectors`),
+    enabled: !!teamId,
     select: (d) => d.instances,
   });
 }
@@ -95,47 +95,47 @@ export interface InstancePatch {
   secrets?: Record<string, string>;
   enabledGrants?: string[];
   nodeLinks?: string[];
-  linkScope?: "org" | "nodes";
+  linkScope?: "team" | "nodes";
   enabled?: boolean;
 }
 
-function useInvalidate(orgId: string | undefined) {
+function useInvalidate(teamId: string | undefined) {
   const qc = useQueryClient();
   return () => {
-    void qc.invalidateQueries({ queryKey: ["connectors", orgId] });
+    void qc.invalidateQueries({ queryKey: ["connectors", teamId] });
   };
 }
 
-export function useCreateInstance(orgId: string | undefined) {
-  const invalidate = useInvalidate(orgId);
+export function useCreateInstance(teamId: string | undefined) {
+  const invalidate = useInvalidate(teamId);
   return useMutation({
     mutationFn: (body: InstanceBody) =>
-      apiSend<ConnectorInstance>("POST", `/organizations/${orgId}/connectors`, body),
+      apiSend<ConnectorInstance>("POST", `/teams/${teamId}/connectors`, body),
     onSuccess: invalidate,
   });
 }
 
-export function useUpdateInstance(orgId: string | undefined) {
-  const invalidate = useInvalidate(orgId);
+export function useUpdateInstance(teamId: string | undefined) {
+  const invalidate = useInvalidate(teamId);
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: InstancePatch }) =>
-      apiSend<ConnectorInstance>("PUT", `/organizations/${orgId}/connectors/${id}`, patch),
+      apiSend<ConnectorInstance>("PUT", `/teams/${teamId}/connectors/${id}`, patch),
     onSuccess: invalidate,
   });
 }
 
-export function useDeleteInstance(orgId: string | undefined) {
-  const invalidate = useInvalidate(orgId);
+export function useDeleteInstance(teamId: string | undefined) {
+  const invalidate = useInvalidate(teamId);
   return useMutation({
     mutationFn: (id: string) =>
-      apiSend<void>("DELETE", `/organizations/${orgId}/connectors/${id}`),
+      apiSend<void>("DELETE", `/teams/${teamId}/connectors/${id}`),
     onSuccess: invalidate,
   });
 }
 
-export function useVerifyInstance(orgId: string | undefined) {
+export function useVerifyInstance(teamId: string | undefined) {
   return useMutation({
     mutationFn: (id: string) =>
-      apiSend<VerifyResult>("POST", `/organizations/${orgId}/connectors/${id}/verify`),
+      apiSend<VerifyResult>("POST", `/teams/${teamId}/connectors/${id}/verify`),
   });
 }

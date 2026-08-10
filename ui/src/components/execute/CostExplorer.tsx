@@ -317,17 +317,17 @@ export function CostExplorer(props: CostExplorerProps) {
 
 /** Container: wires the spend feed + assignment list; one steps drill open at a time. */
 export function CostSection({
-  orgId,
+  teamId,
   nodeName,
 }: {
-  orgId: string | null;
+  teamId: string | null;
   nodeName: (id: string) => string;
 }) {
-  const byIntent = useSpend(orgId, "intent");
-  const byNode = useSpend(orgId, "node");
-  const byAssignment = useSpend(orgId, "assignment");
-  const intents = useIntents(orgId);
-  const assignments = useAssignments(orgId);
+  const byIntent = useSpend(teamId, "intent");
+  const byNode = useSpend(teamId, "node");
+  const byAssignment = useSpend(teamId, "assignment");
+  const intents = useIntents(teamId);
+  const assignments = useAssignments(teamId);
   const [openAssignmentId, setOpenAssignmentId] = useState<string | null>(null);
   const detail = useAssignmentDetail(openAssignmentId);
 

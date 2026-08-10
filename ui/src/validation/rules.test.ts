@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { validateOrganization } from "./rules";
+import { validateTeam } from "./rules";
 import { CODE_MESSAGES, type ValidationIssue } from "./codes";
 import type { Catalog } from "../schema/catalog";
 
@@ -27,7 +27,7 @@ function normalize(issue: Partial<ValidationIssue>) {
   if (issue.agentIds && issue.agentIds.length) out.agentIds = [...issue.agentIds].sort();
   if (issue.dependencyIds && issue.dependencyIds.length)
     out.dependencyIds = [...issue.dependencyIds].sort();
-  if (issue.orgPath && issue.orgPath.length) out.orgPath = issue.orgPath;
+  if (issue.teamPath && issue.teamPath.length) out.teamPath = issue.teamPath;
   return out;
 }
 
@@ -47,7 +47,7 @@ describe("golden validation vectors", () => {
 
   for (const v of vectors) {
     it(v.name, () => {
-      const issues = validateOrganization(v.document, v.mode, catalog);
+      const issues = validateTeam(v.document, v.mode, catalog);
       const actual = issues.map(normalize).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
       const expected = v.expectedIssues
         .map(normalize)

@@ -5,7 +5,7 @@ export function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug || "organization";
+  return slug || "team";
 }
 
 /** Compact salary: 150000 -> "150k". */

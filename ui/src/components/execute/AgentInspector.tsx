@@ -321,7 +321,7 @@ export function AgentInspector({
             )}
             <div className="grid grid-cols-2 gap-2">
               <Stat label="node tokens" value={state.spend.nodeTokens.toLocaleString()} />
-              <Stat label="share of org" value={`${state.spend.sharePct.toFixed(1)}%`} />
+              <Stat label="share of team" value={`${state.spend.sharePct.toFixed(1)}%`} />
             </div>
             {state.history.length > 0 && (
               <div>
@@ -521,18 +521,18 @@ export function AgentInspector({
 
 /** Wired drawer: fetches the aggregate and renders the panel on the right edge. */
 export function InspectorPanel({
-  orgId, nodeId, nodeName, onClose,
+  teamId, nodeId, nodeName, onClose,
 }: {
-  orgId: string;
+  teamId: string;
   nodeId: string;
   nodeName: (id: string) => string;
   onClose: () => void;
 }) {
-  const state = useAgentState(orgId, nodeId);
-  const reset = useResetMemory(orgId);
-  const act = useAssignmentAction(orgId);
+  const state = useAgentState(teamId, nodeId);
+  const reset = useResetMemory(teamId);
+  const act = useAssignmentAction(teamId);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
-  const preview = useWorkspaceFile(orgId, nodeId, previewPath);
+  const preview = useWorkspaceFile(teamId, nodeId, previewPath);
 
   return (
     <div className="fixed inset-y-0 right-0 z-40 w-[460px] max-w-full border-l border-border bg-surface shadow-xl">

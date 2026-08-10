@@ -85,35 +85,35 @@ export interface FilePreview {
   reason: "too-large" | "binary" | null;
 }
 
-export function useAgentState(orgId: string | null, nodeId: string | null) {
+export function useAgentState(teamId: string | null, nodeId: string | null) {
   return useQuery({
-    queryKey: ["agent-state", orgId, nodeId],
-    queryFn: () => apiGet<AgentState>(`/organizations/${orgId}/agents/${nodeId}/state`),
-    enabled: !!orgId && !!nodeId,
+    queryKey: ["agent-state", teamId, nodeId],
+    queryFn: () => apiGet<AgentState>(`/teams/${teamId}/agents/${nodeId}/state`),
+    enabled: !!teamId && !!nodeId,
     refetchInterval: usePollInterval(),
   });
 }
 
-export function useResetMemory(orgId: string | null) {
+export function useResetMemory(teamId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (nodeId: string) =>
-      apiSend("DELETE", `/organizations/${orgId}/agents/${nodeId}/memory`),
+      apiSend("DELETE", `/teams/${teamId}/agents/${nodeId}/memory`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-state"] }),
   });
 }
 
 export function useWorkspaceFile(
-  orgId: string | null,
+  teamId: string | null,
   nodeId: string | null,
   path: string | null,
 ) {
   return useQuery({
-    queryKey: ["workspace-file", orgId, nodeId, path],
+    queryKey: ["workspace-file", teamId, nodeId, path],
     queryFn: () =>
       apiGet<FilePreview>(
-        `/organizations/${orgId}/agents/${nodeId}/workspace/file?path=${encodeURIComponent(path!)}`,
+        `/teams/${teamId}/agents/${nodeId}/workspace/file?path=${encodeURIComponent(path!)}`,
       ),
-    enabled: !!orgId && !!nodeId && !!path,
+    enabled: !!teamId && !!nodeId && !!path,
   });
 }

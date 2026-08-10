@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Catalog } from "../schema/catalog";
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import { useDocumentStore, useTemporalStore } from "./documentStore";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -11,9 +11,9 @@ const catalog = JSON.parse(
   readFileSync(join(here, "..", "..", "..", "catalog", "catalog.json"), "utf-8"),
 ) as Catalog;
 
-function freshDoc(): OrganizationDoc {
+function freshDoc(): TeamDoc {
   return {
-    kind: "canopy.organization",
+    kind: "canopy.team",
     schemaVersion: 1,
     id: "o1",
     name: "Test",
@@ -21,7 +21,7 @@ function freshDoc(): OrganizationDoc {
     agents: [],
     dependencies: [],
     customRoles: [],
-    childOrganizations: [],
+    childTeams: [],
     meta: {},
   };
 }
@@ -75,10 +75,10 @@ describe("documentStore", () => {
     expect(doc().agents.length).toBe(4);
   });
 
-  it("mounts a child organization under an agent", () => {
+  it("mounts a child team under an agent", () => {
     const lead = store().placeAgent([], "engineering-lead", { x: 0, y: 0 }, catalog);
-    store().mountChildOrg([], lead, {
-      kind: "canopy.organization",
+    store().mountChildTeam([], lead, {
+      kind: "canopy.team",
       schemaVersion: 1,
       id: "child1",
       name: "Support",
@@ -86,12 +86,12 @@ describe("documentStore", () => {
       agents: [],
       dependencies: [],
       customRoles: [],
-      childOrganizations: [],
+      childTeams: [],
       meta: {},
     });
-    expect(doc().childOrganizations.length).toBe(1);
-    expect(doc().childOrganizations[0].mountAgentId).toBe(lead);
-    expect(doc().childOrganizations[0].organization.name).toBe("Support");
+    expect(doc().childTeams.length).toBe(1);
+    expect(doc().childTeams[0].mountAgentId).toBe(lead);
+    expect(doc().childTeams[0].team.name).toBe("Support");
   });
 
   it("adds a document-local custom role (upserting by key)", () => {
@@ -111,11 +111,11 @@ describe("documentStore", () => {
     expect(doc().customRoles[0].title).toBe("Release Captain v2");
   });
 
-  it("replaceChart swaps agents/deps and drops child orgs as one undo unit", () => {
+  it("replaceChart swaps agents/deps and drops child teams as one undo unit", () => {
     store().stampFormation([], "product-engineering-pod", null, { x: 0, y: 0 }, catalog);
     const lead = doc().agents.find((a) => a.managerId === null)!.id;
-    store().mountChildOrg([], lead, {
-      kind: "canopy.organization",
+    store().mountChildTeam([], lead, {
+      kind: "canopy.team",
       schemaVersion: 1,
       id: "c1",
       name: "C",
@@ -123,20 +123,20 @@ describe("documentStore", () => {
       agents: [],
       dependencies: [],
       customRoles: [],
-      childOrganizations: [],
+      childTeams: [],
       meta: {},
     });
-    expect(doc().childOrganizations.length).toBe(1);
+    expect(doc().childTeams.length).toBe(1);
 
     store().replaceChart([], [], []);
     expect(doc().agents.length).toBe(0);
     expect(doc().dependencies.length).toBe(0);
-    expect(doc().childOrganizations.length).toBe(0);
+    expect(doc().childTeams.length).toBe(0);
 
     // undoable
     useTemporalStore.getState().undo();
     expect(doc().agents.length).toBe(4);
-    expect(doc().childOrganizations.length).toBe(1);
+    expect(doc().childTeams.length).toBe(1);
   });
 
   it("undo/redo steps through named actions", () => {

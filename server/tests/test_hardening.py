@@ -13,18 +13,18 @@ def _h(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _root_of(org: dict) -> dict:
-    return next(a for a in org["agents"] if a["managerId"] is None)
+def _root_of(team: dict) -> dict:
+    return next(a for a in team["agents"] if a["managerId"] is None)
 
 
-def _seed_live_actuation(actuation_id: str, org_id: str) -> None:
+def _seed_live_actuation(actuation_id: str, team_id: str) -> None:
     from canopy_server.deps import get_db, now_iso
 
     ts = now_iso()
     with get_db().transaction() as conn:
         conn.execute(
-            "INSERT INTO actuation (id, org_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (actuation_id, org_id, "live", ts, ts),
+            "INSERT INTO actuation (id, team_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (actuation_id, team_id, "live", ts, ts),
         )
 
 
@@ -56,12 +56,12 @@ def _settled_step(client, token: str, assignment_id: str, step_id: str) -> int:
 def test_step_redelivery_never_double_charges(client, make_org, mint_session):
     """AR-3 end to end over HTTP: a redelivered step report (same step id) is one Step, one
     SpendEvent, one charge."""
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
     a = client.post(
-        f"/api/organizations/{org['id']}/intents",
+        f"/api/teams/{team['id']}/intents",
         json={"text": "Add CSV export", "targetNodeId": root["id"]},
     ).json()["assignment"]
     _to_executing(client, s, a["id"])
@@ -90,12 +90,12 @@ def test_control_plane_restart_mid_intent(tmp_path, monkeypatch):
     from canopy_server.main import app
 
     with TestClient(app) as c1:
-        org = c1.post(
-            "/api/organizations",
+        team = c1.post(
+            "/api/teams",
             json={"name": "Acme", "organizationType": "product-engineering",
                   "seed": {"kind": "root", "roleKey": "engineering-lead"}},
         ).json()
-        root = _root_of(org)
+        root = _root_of(team)
 
         from canopy_server.deps import get_ledger, get_profile_store, get_runtokens
         from canopy_server.ids import new_actuation_id
@@ -103,19 +103,19 @@ def test_control_plane_restart_mid_intent(tmp_path, monkeypatch):
 
         profiles = get_profile_store()
         profile = profiles.create_profile(
-            org["id"], name="p", provider="mock", model="mock-1",
+            team["id"], name="p", provider="mock", model="mock-1",
             api_key_secret_id=None, params=ProfileParams(maxOutputTokens=4096),
         )
-        profiles.set_binding(org["id"], root["id"], profile.id)
+        profiles.set_binding(team["id"], root["id"], profile.id)
         actuation_id = new_actuation_id()
         meter = get_ledger().open_meter(actuation_id, root["id"], 5000)
         token, _ = get_runtokens().issue(
-            actuation_id, root["id"], org["id"], default_meter_id=meter.id
+            actuation_id, root["id"], team["id"], default_meter_id=meter.id
         )
-        _seed_live_actuation(actuation_id, org["id"])
+        _seed_live_actuation(actuation_id, team["id"])
 
         a = c1.post(
-            f"/api/organizations/{org['id']}/intents",
+            f"/api/teams/{team['id']}/intents",
             json={"text": "Add CSV export", "targetNodeId": root["id"]},
         ).json()["assignment"]
         _to_executing(c1, {"token": token}, a["id"])
@@ -154,7 +154,7 @@ def test_control_plane_restart_mid_intent(tmp_path, monkeypatch):
 
 
 def test_reconciler_heals_orphaned_actuation(client, make_org):
-    """An actuation whose org was deleted underneath it must fail itself on the next
+    """An actuation whose team was deleted underneath it must fail itself on the next
     reconcile pass — not raise forever and (pre-E6) starve every OTHER actuation's
     reconciliation, which kept whole fleets dead after a control-plane restart."""
     import asyncio
@@ -164,7 +164,7 @@ def test_reconciler_heals_orphaned_actuation(client, make_org):
 
     make_org(seed={"kind": "root", "roleKey": "engineering-lead"})  # ensures schema exists
     orphan = new_actuation_id()
-    _seed_live_actuation(orphan, "org-deleted-long-ago")
+    _seed_live_actuation(orphan, "team-deleted-long-ago")
 
     actuator = get_actuator()
     assert orphan in actuator.list_active_actuation_ids()
@@ -181,13 +181,13 @@ def test_reactuation_continues_open_work(client, make_org, mint_session):
     """Deactuate with an assignment mid-flight, re-actuate, and the node picks up exactly
     where it left off: same assignment, same meter, same money — and durable memory written
     at close survives the actuation boundary (D5's doctrine: work belongs to the position)."""
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s1 = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s1["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s1 = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s1["actuationId"], team["id"])
 
     a = client.post(
-        f"/api/organizations/{org['id']}/intents",
+        f"/api/teams/{team['id']}/intents",
         json={"text": "Add CSV export", "targetNodeId": root["id"]},
     ).json()["assignment"]
     _to_executing(client, s1, a["id"])
@@ -195,9 +195,9 @@ def test_reactuation_continues_open_work(client, make_org, mint_session):
 
     # Deactuate, then re-actuate: a NEW actuation, a NEW run token for the same position.
     _stop_actuation(s1["actuationId"])
-    s2 = mint_session(org["id"], node_id=root["id"])
+    s2 = mint_session(team["id"], node_id=root["id"])
     assert s2["actuationId"] != s1["actuationId"]
-    _seed_live_actuation(s2["actuationId"], org["id"])
+    _seed_live_actuation(s2["actuationId"], team["id"])
 
     # The new session sees the same open assignment, on its original meter.
     cur = client.get("/api/dp/assignment/current", headers=_h(s2["token"])).json()
@@ -225,5 +225,5 @@ def test_reactuation_continues_open_work(client, make_org, mint_session):
 
     from canopy_server.deps import get_work_store
 
-    entries = get_work_store().get_memory(org["id"], root["id"])
+    entries = get_work_store().get_memory(team["id"], root["id"])
     assert entries and entries[-1].entry["outcome"] == "accepted"

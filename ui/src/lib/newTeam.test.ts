@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Catalog } from "../schema/catalog";
-import { buildSeedContent } from "./newOrg";
+import { buildSeedContent } from "./newTeam";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const catalog = JSON.parse(

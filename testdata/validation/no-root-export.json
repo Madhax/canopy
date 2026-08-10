@@ -3,8 +3,8 @@
   "description": "No agent with managerId null; export treats as error.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "noroot",
     "name": "noroot",
     "organizationType": "product-engineering",
@@ -34,8 +34,8 @@
     ],
     "dependencies": [],
     "customRoles": [],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": [
     {

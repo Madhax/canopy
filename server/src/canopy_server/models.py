@@ -3,13 +3,15 @@
 Two shapes live here:
 
 - The **catalog** (`Catalog`, `OrgType`, `CatalogRole`, `Formation`, …) — the machine-readable
-  form of the domain docs, loaded from ``catalog/catalog.json``.
-- The **organization document** (`Organization`, `Agent`, `Dependency`, …) — the serialized
-  org chart, one JSON document per top-level organization.
+  form of the domain docs, loaded from ``catalog/catalog.json``. Deliberately untouched by the
+  C1 rename (roles/formations are org-model-agnostic; the layer boundary holds).
+- The **team document** (`Team`, `Agent`, `Dependency`, …) — the serialized org chart, one JSON
+  document per top-level team. Kind ``canopy.team`` at ``schemaVersion: 2``; v1
+  ``canopy.organization`` documents import forever via ``migrate.py``.
 
-Both mirror ``docs/org-chart-editor.md`` §3. Unknown keys are rejected everywhere except ``meta``
-(the single forward-compat escape hatch). The Zod schema in ``ui/src/schema`` mirrors this file;
-the golden validation vectors keep the two honest.
+Both mirror ``docs/org-chart-editor.md`` §3 (with its 2026-08 amendment). Unknown keys are
+rejected everywhere except ``meta`` (the single forward-compat escape hatch). The Zod schema in
+``ui/src/schema`` mirrors this file; the golden validation vectors keep the two honest.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 CATALOG_VERSION = 1
 
 DeliverableKind = Literal["artifact", "attestation"]
@@ -199,7 +201,7 @@ class Catalog(Strict):
 
 
 # --------------------------------------------------------------------------- #
-# Organization document
+# Team document (the actuatable chart; "Organization document" pre-C1)
 # --------------------------------------------------------------------------- #
 class RoleRef(Strict):
     key: str
@@ -215,7 +217,7 @@ class Agent(Strict):
     id: str
     name: str
     role: RoleRef
-    managerId: str | None = None  # null => org root (THE tree encoding)
+    managerId: str | None = None  # null => team root (THE tree encoding)
     extensions: Extensions = Field(default_factory=Extensions)
     salary: Salary
     position: Point = Field(default_factory=lambda: Point(x=0, y=0))
@@ -242,24 +244,26 @@ class CustomRole(Strict):
     defaultSalary: Salary
 
 
-class Organization(Strict):
-    kind: Literal["canopy.organization"] = "canopy.organization"
+class Team(Strict):
+    kind: Literal["canopy.team"] = "canopy.team"
     schemaVersion: int = SCHEMA_VERSION
     id: str
     name: str
+    # The archetype key (catalog `organizationTypes[]` — field name kept for catalog
+    # compatibility; the docs call the concept TeamType post-rename).
     organizationType: str
     createdAt: str | None = None
     updatedAt: str | None = None
     agents: list[Agent] = Field(default_factory=list)
     dependencies: list[Dependency] = Field(default_factory=list)
     customRoles: list[CustomRole] = Field(default_factory=list)
-    childOrganizations: list[ChildOrganization] = Field(default_factory=list)
+    childTeams: list[ChildTeam] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
-class ChildOrganization(Strict):
-    mountAgentId: str  # the PARENT agent the child org's root reports to
-    organization: Organization
+class ChildTeam(Strict):
+    mountAgentId: str  # the PARENT agent the child team's root reports to
+    team: Team
 
 
-Organization.model_rebuild()
+Team.model_rebuild()

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { OrganizationDoc } from "../../schema/organization";
+import type { TeamDoc } from "../../schema/team";
 import { Button } from "../common";
 
 // Live view of the serialized document as you edit — the plan's serialization-focused additive.
@@ -8,7 +8,7 @@ export function JsonDrawer({
   open,
   onClose,
 }: {
-  doc: OrganizationDoc;
+  doc: TeamDoc;
   open: boolean;
   onClose: () => void;
 }) {

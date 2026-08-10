@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Catalog } from "../../../schema/catalog";
-import type { Agent, OrganizationDoc } from "../../../schema/organization";
-import { newChildOrgDoc, defaultRootRole, type ChildSeed } from "../../../lib/newOrg";
+import type { Agent, TeamDoc } from "../../../schema/team";
+import { newChildOrgDoc, defaultRootRole, type ChildSeed } from "../../../lib/newTeam";
 import { Button, Dialog } from "../../common";
 
 interface Props {
@@ -10,11 +10,11 @@ interface Props {
   agents: Agent[];
   defaultMountId?: string;
   onClose: () => void;
-  onCreate: (mountAgentId: string, child: OrganizationDoc) => void;
+  onCreate: (mountAgentId: string, child: TeamDoc) => void;
 }
 
-// The "＋ Child organization" mini-wizard: a full nested Organization mounted under a parent agent.
-export function ChildOrgDialog({ open, catalog, agents, defaultMountId, onClose, onCreate }: Props) {
+// The "＋ Child team" mini-wizard: a full nested Team mounted under a parent agent.
+export function ChildTeamDialog({ open, catalog, agents, defaultMountId, onClose, onCreate }: Props) {
   const [typeKey, setTypeKey] = useState("customer-support-center");
   const [name, setName] = useState("");
   const [mountId, setMountId] = useState(defaultMountId ?? agents[0]?.id ?? "");
@@ -37,7 +37,7 @@ export function ChildOrgDialog({ open, catalog, agents, defaultMountId, onClose,
         : seedKind === "root"
           ? { kind: "root", roleKey: defaultRootRole(catalog, orgType) }
           : { kind: "formation", formationKey: effFormation };
-    const child = newChildOrgDoc(catalog, name.trim() || (orgType?.title ?? "Child org"), typeKey, seed);
+    const child = newChildOrgDoc(catalog, name.trim() || (orgType?.title ?? "Child team"), typeKey, seed);
     onCreate(mountId, child);
   }
 
@@ -45,14 +45,14 @@ export function ChildOrgDialog({ open, catalog, agents, defaultMountId, onClose,
     <Dialog
       open={open}
       onClose={onClose}
-      title="Add child organization"
+      title="Add child team"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" disabled={!canCreate} onClick={create}>
-            Mount organization
+            Mount team
           </Button>
         </>
       }

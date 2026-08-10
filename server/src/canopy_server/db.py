@@ -88,10 +88,80 @@ class Db:
             conn.close()
 
     def ensure_schema(self) -> None:
-        """Apply every registered module schema. Idempotent; safe to call repeatedly."""
+        """Apply every registered module schema. Idempotent; safe to call repeatedly.
+
+        The C1 column renames run FIRST: a pre-rename DB still carries ``org_id``-family
+        columns, and the registered scripts include ``CREATE INDEX IF NOT EXISTS`` statements
+        that reference the new names — creating those against un-renamed tables would fail.
+        On a fresh DB the rename pass sees no tables and is a no-op.
+        """
         conn = self._open()
         try:
+            self._migrate_c1_columns(conn)
             for sql in _SCHEMAS:
                 conn.executescript(sql)
+            self._migrate_c1_refs(conn)
         finally:
             conn.close()
+
+    @staticmethod
+    def _migrate_c1_columns(conn: sqlite3.Connection) -> None:
+        """C1 rename, column layer (design/organizations/07 §2): pre-rename DBs carry
+        ``org_id`` / ``organization_id`` / ``org_path`` columns in the chart sense — rename
+        them to ``team_id`` / ``team_path`` once, in place, non-destructively.
+
+        Exceptions where the *new* sense lives: the ``organization`` table itself, and
+        ``teams.organization_id`` (Organization membership). ``ALTER … RENAME COLUMN``
+        rewrites dependent indexes automatically. Idempotent: a renamed table no longer
+        matches the predicate.
+        """
+        tables = [
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+                " AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        ]
+        for table in tables:
+            if table == "organization":
+                continue
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            renames: list[tuple[str, str]] = []
+            if "org_id" in cols and "team_id" not in cols:
+                renames.append(("org_id", "team_id"))
+            if (
+                table != "teams"
+                and "organization_id" in cols
+                and "team_id" not in cols
+                and ("org_id", "team_id") not in renames
+            ):
+                renames.append(("organization_id", "team_id"))
+            if "org_path" in cols and "team_path" not in cols:
+                renames.append(("org_path", "team_path"))
+            for old, new in renames:
+                conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
+
+    @staticmethod
+    def _migrate_c1_refs(conn: sqlite3.Connection) -> None:
+        """One-shot ``org://`` → ``team://`` rewrite over stored work and artifact rows
+        (07 §2.4). Readers accept both schemes forever; this just makes stored state emit-
+        consistent. Idempotent: the WHERE clause matches nothing after the first pass.
+        """
+        tables = [
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND"
+                " (name LIKE 'work_%' OR name LIKE 'artifacts_%')"
+            ).fetchall()
+        ]
+        for table in tables:
+            text_cols = [
+                r[1]
+                for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                if (r[2] or "").upper() in ("TEXT", "")
+            ]
+            for col in text_cols:
+                conn.execute(
+                    f"UPDATE {table} SET {col} = REPLACE({col}, 'org://', 'team://')"
+                    f" WHERE {col} LIKE '%org://%'"
+                )

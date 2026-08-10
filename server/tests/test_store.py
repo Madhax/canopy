@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from canopy_server.models import Agent, Organization, RoleRef, Salary
+from canopy_server.models import Agent, RoleRef, Salary, Team
 from canopy_server.store import JsonFileStore, NotFound
 
 
 def _org(oid="o1"):
-    return Organization(
+    return Team(
         id=oid,
         name="T",
         organizationType="product-engineering",
@@ -23,8 +23,8 @@ def _org(oid="o1"):
 
 def test_write_read_roundtrip(tmp_path: Path):
     store = JsonFileStore(tmp_path)
-    org = _org()
-    store.write(org)
+    team = _org()
+    store.write(team)
     assert store.exists("o1")
     back = store.read("o1")
     assert back.id == "o1"
@@ -44,7 +44,7 @@ def test_read_missing_raises(tmp_path: Path):
 def test_atomic_write_leaves_no_temp_files(tmp_path: Path):
     store = JsonFileStore(tmp_path)
     store.write(_org())
-    leftovers = list((tmp_path / "organizations").glob("*.tmp"))
+    leftovers = list((tmp_path / "teams").glob("*.tmp"))
     assert leftovers == []
 
 
@@ -60,5 +60,5 @@ def test_read_all_skips_corrupt(tmp_path: Path):
     store = JsonFileStore(tmp_path)
     store.write(_org("good"))
     (store.root / "broken.json").write_text("{ not json", encoding="utf-8")
-    orgs = store.read_all()
-    assert [o.id for o in orgs] == ["good"]
+    teams = store.read_all()
+    assert [o.id for o in teams] == ["good"]

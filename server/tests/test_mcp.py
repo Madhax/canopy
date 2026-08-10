@@ -26,13 +26,13 @@ def _call(client, token, name, arguments=None):
     return r.json()
 
 
-def _node(org: dict, role_key: str) -> dict:
-    return next(a for a in org["agents"] if a["role"]["key"] == role_key)
+def _node(team: dict, role_key: str) -> dict:
+    return next(a for a in team["agents"] if a["role"]["key"] == role_key)
 
 
 def test_initialize_and_handshake(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    s = mint_session(org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    s = mint_session(team["id"])
     r = _rpc(client, s["token"], "initialize")
     body = r.json()["result"]
     assert body["serverInfo"]["name"] == "canopy" and "tools" in body["capabilities"]
@@ -45,10 +45,10 @@ def test_initialize_and_handshake(client, make_org, mint_session):
 
 def test_tools_list_is_surface_filtered(client, make_org, mint_session):
     """Layer 1: the IC's world simply does not contain the manager tools."""
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead, be = _node(org, "engineering-lead"), _node(org, "backend-engineer")
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_be = mint_session(org["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead, be = _node(team, "engineering-lead"), _node(team, "backend-engineer")
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_be = mint_session(team["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
 
     lead_tools = {t["name"] for t in
                   _rpc(client, s_lead["token"], "tools/list").json()["result"]["tools"]}
@@ -65,9 +65,9 @@ def test_manager_tool_from_ic_is_denied_and_audited(client, make_org, mint_sessi
     'denied' ToolEvent — visible, never silent."""
     from canopy_server.deps import get_work_store
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    be = _node(org, "backend-engineer")
-    s = mint_session(org["id"], node_id=be["id"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    be = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=be["id"])
 
     r = _rpc(client, s["token"], "tools/call",
              {"name": "delegate", "arguments": {"reportNodeId": "x", "brief": "y"}})
@@ -83,17 +83,17 @@ def test_manager_tool_from_ic_is_denied_and_audited(client, make_org, mint_sessi
 
 
 def test_full_assignment_via_mcp_tools(client, make_org, mint_session):
-    """The mvp E3 demo shape: a 2-node org runs delegate → work → finish → accept entirely
+    """The mvp E3 demo shape: a 2-node team runs delegate → work → finish → accept entirely
     through MCP tool calls (the same engine paths the loop runtime uses)."""
     from canopy_server.deps import get_engine, get_work_store
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead, be = _node(org, "engineering-lead"), _node(org, "backend-engineer")
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_be = mint_session(org["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead, be = _node(team, "engineering-lead"), _node(team, "backend-engineer")
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_be = mint_session(team["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
 
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s_lead["actuationId"], "ship the CSV export",
+    root = eng.submit_intent(team["id"], s_lead["actuationId"], "ship the CSV export",
                              target_node=lead["id"]).assignment
     eng.mark_intake_complete(root.id)
     eng.declare_plan(root.id, [{"title": "decompose"}])
@@ -140,13 +140,13 @@ def test_full_assignment_via_mcp_tools(client, make_org, mint_session):
 def test_mcp_fetch_respects_the_grant_wall(client, make_org, mint_session):
     from canopy_server.deps import get_engine, get_work_store
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead, be = _node(org, "engineering-lead"), _node(org, "backend-engineer")
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_be = mint_session(org["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead, be = _node(team, "engineering-lead"), _node(team, "backend-engineer")
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_be = mint_session(team["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
 
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s_lead["actuationId"], "private work",
+    root = eng.submit_intent(team["id"], s_lead["actuationId"], "private work",
                              target_node=lead["id"]).assignment
     eng.mark_intake_complete(root.id)
     art = eng.put_artifact(root.id, "secret", "document", b"classified")

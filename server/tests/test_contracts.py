@@ -27,7 +27,7 @@ def test_agent_profile_contract():
 
 def test_agent_binding_contract():
     b = AgentBinding.model_validate(_load("agent_binding.json"))
-    assert b.agentNodeId == "a_k7mp2x9q" and b.orgPath == []
+    assert b.agentNodeId == "a_k7mp2x9q" and b.teamPath == []
 
 
 def test_secret_meta_contract():

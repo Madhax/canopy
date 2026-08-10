@@ -15,7 +15,7 @@ def _store(tmp_path, **kw) -> LocalArtifactStore:
 def test_put_resolve_read_roundtrip(tmp_path):
     store = _store(tmp_path)
     meta = store.put("o1", "acme", "a_be", "q3-report", "document", b"hello world")
-    assert meta.ref == "org://acme/a_be/q3-report@1"
+    assert meta.ref == "team://acme/a_be/q3-report@1"
     assert meta.version == 1 and meta.prevVersionRef is None
     assert store.resolve(meta.ref).sha256 == meta.sha256
     assert store.read(meta.ref) == b"hello world"
@@ -26,7 +26,7 @@ def test_new_version_links_back(tmp_path):
     v1 = store.put("o1", "acme", "a_be", "pr", "code-patch", b"v1 content")
     v2 = store.put("o1", "acme", "a_be", "pr", "code-patch", b"v2 content")
     assert v2.version == 2
-    assert v2.ref == "org://acme/a_be/pr@2"
+    assert v2.ref == "team://acme/a_be/pr@2"
     assert v2.prevVersionRef == v1.ref
     assert store.read(v1.ref) == b"v1 content"  # old version immutable, still readable
 
@@ -59,3 +59,14 @@ def test_list_scoping(tmp_path):
     store.put("o1", "acme", "a_qa", "y", "document", b"2")
     assert len(store.list("o1")) == 2
     assert [m.name for m in store.list("o1", "a_qa")] == ["y"]
+
+
+def test_legacy_org_scheme_reads_forever(tmp_path):
+    """Readers accept org:// indefinitely (design/organizations/07 §2.4)."""
+    store = _store(tmp_path)
+    meta = store.put("t1", "acme", "a_be", "legacy-doc", "document", b"content")
+    assert meta.ref.startswith("team://")
+    legacy = meta.ref.replace("team://", "org://", 1)
+    assert store.resolve(legacy) is not None
+    assert store.resolve(legacy).ref == meta.ref
+    assert store.read(legacy) == b"content"

@@ -10,40 +10,40 @@ def _h(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _root_of(org: dict) -> dict:
-    return next(a for a in org["agents"] if a["managerId"] is None)
+def _root_of(team: dict) -> dict:
+    return next(a for a in team["agents"] if a["managerId"] is None)
 
 
-def _seed_live_actuation(actuation_id: str, org_id: str) -> None:
-    """Simulate an actuated org without booting subprocess agents: a live actuation row is all the
+def _seed_live_actuation(actuation_id: str, team_id: str) -> None:
+    """Simulate an actuated team without booting subprocess agents: a live actuation row is all the
     operator intent endpoint reads (via actuator.get_current)."""
     from canopy_server.deps import get_db, now_iso
 
     ts = now_iso()
     with get_db().transaction() as conn:
         conn.execute(
-            "INSERT INTO actuation (id, org_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (actuation_id, org_id, "live", ts, ts),
+            "INSERT INTO actuation (id, team_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (actuation_id, team_id, "live", ts, ts),
         )
 
 
 def test_submit_intent_requires_actuation(client, make_org):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    r = client.post(f"/api/organizations/{org['id']}/intents", json={"text": "do it"})
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    r = client.post(f"/api/teams/{team['id']}/intents", json={"text": "do it"})
     assert r.status_code == 409 and r.json()["error"]["code"] == "NOT_ACTUATED"
 
-    assert client.post("/api/organizations/nope/intents", json={"text": "x"}).status_code == 404
+    assert client.post("/api/teams/nope/intents", json={"text": "x"}).status_code == 404
 
 
 def test_intent_to_deliverable_over_http(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
 
     # Operator submits the intent → root assignment is created and funded.
     r = client.post(
-        f"/api/organizations/{org['id']}/intents",
+        f"/api/teams/{team['id']}/intents",
         json={"text": "Add CSV export", "targetNodeId": root["id"]},
     )
     assert r.status_code == 201, r.text
@@ -97,20 +97,20 @@ def test_intent_to_deliverable_over_http(client, make_org, mint_session):
     assert idet["intent"]["rootAssignmentId"] == a["id"]
     assert len(idet["assignments"]) == 1
 
-    lst = client.get(f"/api/organizations/{org['id']}/assignments?node={root['id']}").json()
+    lst = client.get(f"/api/teams/{team['id']}/assignments?node={root['id']}").json()
     assert [x["id"] for x in lst["assignments"]] == [a["id"]]
 
 
 def test_data_plane_rejects_foreign_assignment(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    other = mint_session(org["id"], node_id="a_intruder")  # a different node's run token
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    other = mint_session(team["id"], node_id="a_intruder")  # a different node's run token
 
     from canopy_server.deps import get_engine
 
     a = get_engine().submit_intent(
-        org["id"], s["actuationId"], "mine", target_node=root["id"]
+        team["id"], s["actuationId"], "mine", target_node=root["id"]
     ).assignment
 
     r = client.post("/api/dp/plan", headers=_h(other["token"]),
@@ -126,18 +126,18 @@ def test_staged_fanout_and_rework_over_http(client, make_org, mint_session):
     """The E2a slice of the mvp §3 demo, all via API: staged fan-out with a verify-dependency,
     plan-review approval from the operator surface, delivery resolving the dependency, and a
     rejection funding rework on the same still-open assignment."""
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead = next(a for a in org["agents"] if a["role"]["key"] == "engineering-lead")
-    be_node = next(a for a in org["agents"] if a["role"]["key"] == "backend-engineer")
-    qa_node = next(a for a in org["agents"] if a["role"]["key"] == "qa-engineer")
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_be = mint_session(org["id"], node_id=be_node["id"], actuation_id=s_lead["actuationId"])
-    s_qa = mint_session(org["id"], node_id=qa_node["id"], actuation_id=s_lead["actuationId"])
-    _seed_live_actuation(s_lead["actuationId"], org["id"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead = next(a for a in team["agents"] if a["role"]["key"] == "engineering-lead")
+    be_node = next(a for a in team["agents"] if a["role"]["key"] == "backend-engineer")
+    qa_node = next(a for a in team["agents"] if a["role"]["key"] == "qa-engineer")
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_be = mint_session(team["id"], node_id=be_node["id"], actuation_id=s_lead["actuationId"])
+    s_qa = mint_session(team["id"], node_id=qa_node["id"], actuation_id=s_lead["actuationId"])
+    _seed_live_actuation(s_lead["actuationId"], team["id"])
 
     # Intent → root; the lead plans and fans out (staged: root assignments are checkpointed).
     root = client.post(
-        f"/api/organizations/{org['id']}/intents",
+        f"/api/teams/{team['id']}/intents",
         json={"text": "Add CSV export; all tests must pass", "targetNodeId": lead["id"]},
     ).json()["assignment"]
     client.post("/api/dp/assignment/events", headers=_h(s_lead["token"]),
@@ -161,7 +161,7 @@ def test_staged_fanout_and_rework_over_http(client, make_org, mint_session):
     assert r.status_code == 200
 
     # The operator inbox shows the plan-review gate; approval funds + dispatches the batch.
-    gates = client.get(f"/api/organizations/{org['id']}/gates?state=open&owner=operator").json()
+    gates = client.get(f"/api/teams/{team['id']}/gates?state=open&owner=operator").json()
     gate = next(g for g in gates["gates"] if g["kind"] == "approval")
     assert [b["assignmentId"] for b in gate["payload"]["batch"]] == [be["id"], qa["id"]]
     rr = client.post(f"/api/gates/{gate['id']}/resolve", json={"action": "approve"})
@@ -180,11 +180,11 @@ def test_staged_fanout_and_rework_over_http(client, make_org, mint_session):
     client.post("/api/dp/plan", headers=_h(s_be["token"]),
                 json={"assignmentId": be["id"], "stages": [{"title": "implement"}]})
     client.post("/api/dp/finish", headers=_h(s_be["token"]),
-                json={"assignmentId": be["id"], "refs": ["org://acme/be/pr@1"],
+                json={"assignmentId": be["id"], "refs": ["team://acme/be/pr@1"],
                       "summary": "PR v1"})
     qa_cur = client.get("/api/dp/assignment/current", headers=_h(s_qa["token"])).json()
     assert qa_cur["assignment"]["id"] == qa["id"]
-    assert "org://acme/be/pr@1" in qa_cur["brief"]["artifactRefs"]  # refs pinned + granted
+    assert "team://acme/be/pr@1" in qa_cur["brief"]["artifactRefs"]  # refs pinned + granted
 
     # The lead (woken by the delivery) rejects the still-open deliverable, citing QA's red run.
     meter_before = client.get(f"/api/assignments/{be['id']}").json()["meter"]
@@ -204,13 +204,13 @@ def test_staged_fanout_and_rework_over_http(client, make_org, mint_session):
 def test_artifact_fetch_requires_grant(client, make_org, mint_session):
     """An agent must not fetch a ref outside its brief's granted set (isolation invariant).
     Landed red-first pre-E2 (testing.md §4); E3's grant check turned it green."""
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
 
     r = client.post(
-        f"/api/organizations/{org['id']}/intents",
+        f"/api/teams/{team['id']}/intents",
         json={"text": "produce something private", "targetNodeId": root["id"]},
     )
     a = r.json()["assignment"]
@@ -226,8 +226,8 @@ def test_artifact_fetch_requires_grant(client, make_org, mint_session):
     own = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(s["token"]))
     assert own.status_code == 200
 
-    # A sibling node in the SAME org, with no brief granting it this ref: refused.
-    intruder = mint_session(org["id"], node_id="a_intruder",
+    # A sibling node in the SAME team, with no brief granting it this ref: refused.
+    intruder = mint_session(team["id"], node_id="a_intruder",
                             actuation_id=s["actuationId"])
     got = client.get(f"/api/dp/artifacts?ref={ref}", headers=_h(intruder["token"]))
     assert got.status_code == 403 and got.json()["error"]["code"] == "GRANT_DENIED"
@@ -237,7 +237,7 @@ def test_artifact_fetch_requires_grant(client, make_org, mint_session):
 
     ws = get_work_store()
     granted = ws.create_assignment(
-        org_id=org["id"], actuation_id=s["actuationId"], intent_id=a["intentId"],
+        team_id=team["id"], actuation_id=s["actuationId"], intent_id=a["intentId"],
         node_id="a_intruder", issued_by=root["id"], contract_kind="artifact",
         contract_type="Deliverable", meter_id="mt_x", state="briefed",
     )
@@ -249,12 +249,12 @@ def test_artifact_fetch_requires_grant(client, make_org, mint_session):
 def test_operator_artifact_preview_and_plan_deliverable(client, make_org, mint_session):
     """The deliverable viewer (E7 follow-up): the plan aggregate carries the deliverable, and
     the operator artifact endpoint serves its content — you can't accept what you can't see."""
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
 
-    r = client.post(f"/api/organizations/{org['id']}/intents",
+    r = client.post(f"/api/teams/{team['id']}/intents",
                     json={"text": "hello world", "targetNodeId": root["id"]})
     a = r.json()["assignment"]
     intent_id = r.json()["intent"]["id"]
@@ -273,20 +273,20 @@ def test_operator_artifact_preview_and_plan_deliverable(client, make_org, mint_s
     dv = tree[0]["deliverable"]
     assert dv is not None and dv["artifactRefs"] == [ref] and dv["accepted"] is None
 
-    # Operator preview: meta + utf-8 content, org-scoped.
-    got = client.get(f"/api/organizations/{org['id']}/artifacts?ref={ref}")
+    # Operator preview: meta + utf-8 content, team-scoped.
+    got = client.get(f"/api/teams/{team['id']}/artifacts?ref={ref}")
     assert got.status_code == 200, got.text
     body = got.json()
     assert body["content"] == "print('hello world')\n" and body["reason"] is None
     assert body["meta"]["ref"] == ref
 
-    # Another org cannot read it; a bogus ref 404s.
+    # Another team cannot read it; a bogus ref 404s.
     other = make_org(name="Other")
     assert client.get(
-        f"/api/organizations/{other['id']}/artifacts?ref={ref}"
+        f"/api/teams/{other['id']}/artifacts?ref={ref}"
     ).status_code == 404
     assert client.get(
-        f"/api/organizations/{org['id']}/artifacts?ref=org://nope/x/y@1"
+        f"/api/teams/{team['id']}/artifacts?ref=team://nope/x/y@1"
     ).status_code == 404
 
     # Binary content refuses the inline preview but still serves the meta.
@@ -295,6 +295,6 @@ def test_operator_artifact_preview_and_plan_deliverable(client, make_org, mint_s
         "contentBase64": base64.b64encode(b"\x00\x01\x02").decode(),
     })
     got2 = client.get(
-        f"/api/organizations/{org['id']}/artifacts?ref={put2.json()['ref']}"
+        f"/api/teams/{team['id']}/artifacts?ref={put2.json()['ref']}"
     ).json()
     assert got2["content"] is None and got2["reason"] == "binary"

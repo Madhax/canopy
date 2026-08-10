@@ -1,5 +1,5 @@
 """The agent inspector surface (engine.md §6, operator-experience.md §3):
-`GET /organizations/{id}/agents/{nodeId}/state` aggregate + memory get/reset + workspace
+`GET /teams/{id}/agents/{nodeId}/state` aggregate + memory get/reset + workspace
 file preview. Drives a real assignment over the data plane, then reads it all back from the
 operator side."""
 
@@ -12,18 +12,18 @@ def _h(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _root_of(org: dict) -> dict:
-    return next(a for a in org["agents"] if a["managerId"] is None)
+def _root_of(team: dict) -> dict:
+    return next(a for a in team["agents"] if a["managerId"] is None)
 
 
-def _seed_live_actuation(actuation_id: str, org_id: str) -> None:
+def _seed_live_actuation(actuation_id: str, team_id: str) -> None:
     from canopy_server.deps import get_db, now_iso
 
     ts = now_iso()
     with get_db().transaction() as conn:
         conn.execute(
-            "INSERT INTO actuation (id, org_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (actuation_id, org_id, "live", ts, ts),
+            "INSERT INTO actuation (id, team_id, state, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (actuation_id, team_id, "live", ts, ts),
         )
 
 
@@ -50,18 +50,18 @@ def _drive_to_delivering(client, s: dict, assignment_id: str) -> None:
 
 
 def test_agent_state_aggregate(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
 
     a = client.post(
-        f"/api/organizations/{org['id']}/intents",
+        f"/api/teams/{team['id']}/intents",
         json={"text": "Add CSV export", "targetNodeId": root["id"]},
     ).json()["assignment"]
 
     # Freshly briefed = queued, nothing current yet.
-    st = client.get(f"/api/organizations/{org['id']}/agents/{root['id']}/state").json()
+    st = client.get(f"/api/teams/{team['id']}/agents/{root['id']}/state").json()
     assert st["nodeId"] == root["id"]
     assert st["charter"]["roleKey"] == "engineering-lead"
     assert st["charter"]["instructions"]
@@ -75,7 +75,7 @@ def test_agent_state_aggregate(client, make_org, mint_session):
 
     # Work it to delivering: it becomes current, with plan + steps + meter in the drill-down.
     _drive_to_delivering(client, s, a["id"])
-    st = client.get(f"/api/organizations/{org['id']}/agents/{root['id']}/state").json()
+    st = client.get(f"/api/teams/{team['id']}/agents/{root['id']}/state").json()
     assert st["current"]["assignment"]["id"] == a["id"]
     assert st["current"]["plan"]["stages"][0]["title"] == "implement"
     assert len(st["current"]["steps"]) == 1
@@ -85,7 +85,7 @@ def test_agent_state_aggregate(client, make_org, mint_session):
 
     # Accept: history gains the row (with its spend), stats read 1-for-1 accepted.
     client.post(f"/api/assignments/{a['id']}/accept", json={"note": "ship it"})
-    st = client.get(f"/api/organizations/{org['id']}/agents/{root['id']}/state").json()
+    st = client.get(f"/api/teams/{team['id']}/agents/{root['id']}/state").json()
     assert st["current"] is None
     assert st["stats"]["assignmentsDone"] == 1
     assert st["stats"]["acceptanceRate"] == 1.0
@@ -96,39 +96,39 @@ def test_agent_state_aggregate(client, make_org, mint_session):
 
 
 def test_agent_state_404s(client, make_org):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    assert client.get("/api/organizations/nope/agents/a_x/state").status_code == 404
-    r = client.get(f"/api/organizations/{org['id']}/agents/a_ghost/state")
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    assert client.get("/api/teams/nope/agents/a_x/state").status_code == 404
+    r = client.get(f"/api/teams/{team['id']}/agents/a_ghost/state")
     assert r.status_code == 404
 
 
 def test_memory_get_and_reset(client, make_org):
     from canopy_server.deps import get_activity, get_work_store
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    get_work_store().append_memory(org["id"], root["id"], {"outcome": "accepted", "n": 1})
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    get_work_store().append_memory(team["id"], root["id"], {"outcome": "accepted", "n": 1})
 
-    url = f"/api/organizations/{org['id']}/agents/{root['id']}/memory"
+    url = f"/api/teams/{team['id']}/agents/{root['id']}/memory"
     assert [e["entry"]["n"] for e in client.get(url).json()["entries"]] == [1]
 
     assert client.delete(url).json() == {"reset": True}
     assert client.get(url).json()["entries"] == []
     # The wipe is audited (and therefore rides the SSE activity stream).
-    kinds = [e["kind"] for e in get_activity().list(org["id"])]
+    kinds = [e["kind"] for e in get_activity().list(team["id"])]
     assert "memory.reset" in kinds
 
 
 def test_workspace_listing_and_preview(client, make_org, mint_session, tmp_path):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
-    _seed_live_actuation(s["actuationId"], org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    _seed_live_actuation(s["actuationId"], team["id"])
 
     # No sandbox on disk yet → no workspace, and the preview 404s.
-    st = client.get(f"/api/organizations/{org['id']}/agents/{root['id']}/state").json()
+    st = client.get(f"/api/teams/{team['id']}/agents/{root['id']}/state").json()
     assert st["workspace"] is None
-    base = f"/api/organizations/{org['id']}/agents/{root['id']}/workspace/file"
+    base = f"/api/teams/{team['id']}/agents/{root['id']}/workspace/file"
     assert client.get(f"{base}?path=out/x.txt").status_code == 404
 
     # Materialize what the sandbox would have created (CANOPY_DATA_DIR is tmp_path).
@@ -139,7 +139,7 @@ def test_workspace_listing_and_preview(client, make_org, mint_session, tmp_path)
     secret = Path(tmp_path) / "sandboxes" / "secret.txt"
     secret.write_text("no", encoding="utf-8")
 
-    st = client.get(f"/api/organizations/{org['id']}/agents/{root['id']}/state").json()
+    st = client.get(f"/api/teams/{team['id']}/agents/{root['id']}/state").json()
     paths = {f["path"] for f in st["workspace"]["files"]}
     assert paths == {"out/result.txt", "out/blob.bin"}
     assert st["workspace"]["truncated"] is False

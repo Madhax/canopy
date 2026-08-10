@@ -21,7 +21,7 @@ from .base import SandboxHandle, SandboxProvider, SandboxSpec, SandboxStatus
 _RUNTIME_MODULE = "canopy_agent"
 
 #: F16 retention: the adapter log rotates at this size, keeping one predecessor (``.1``) —
-#: an org-owned audit trail that cannot grow without bound across actuations.
+#: an team-owned audit trail that cannot grow without bound across actuations.
 _LOG_ROTATE_BYTES = 8 * 1024 * 1024
 
 

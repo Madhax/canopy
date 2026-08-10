@@ -3,8 +3,8 @@
 // engine API, kept fresh by the SSE channel (events.ts) with polling as the fallback.
 import { useMemo, useState } from "react";
 import { useCatalog } from "../api/catalog";
-import { useOrgEvents } from "../api/events";
-import { useOrganizations } from "../api/organizations";
+import { useTeamEvents } from "../api/events";
+import { useTeams } from "../api/teams";
 import {
   useAssignmentAction,
   useIntentPlan,
@@ -25,7 +25,7 @@ import { InspectorPanel } from "../components/execute/AgentInspector";
 import { CadenceSection, type CadenceSeed } from "../components/execute/CadenceSection";
 import { TriggerSection } from "../components/execute/TriggerSection";
 import { CostSection } from "../components/execute/CostExplorer";
-import { MissionControl, OrgPulse } from "../components/execute/MissionControl";
+import { MissionControl, TeamPulse } from "../components/execute/MissionControl";
 import { GateCard } from "../components/execute/GateCard";
 import { OrgPicker, orgLabelSuffix } from "../components/execute/OrgPicker";
 import { PlanOutline } from "../components/execute/PlanOutline";
@@ -36,29 +36,29 @@ const SEVERITY_TONE: Record<string, string> = {
   info: "border-border bg-surface",
 };
 
-function useOrgDoc(orgId: string | null) {
+function useOrgDoc(teamId: string | null) {
   return useQuery({
-    queryKey: ["org-doc", orgId],
-    queryFn: () => apiGet<{ agents: { id: string; name: string }[] }>(`/organizations/${orgId}`),
-    enabled: !!orgId,
+    queryKey: ["team-doc", teamId],
+    queryFn: () => apiGet<{ agents: { id: string; name: string }[] }>(`/teams/${teamId}`),
+    enabled: !!teamId,
     staleTime: 60_000,
   });
 }
 
 export function ExecutePage() {
-  const orgs = useOrganizations();
+  const teams = useTeams();
   useCatalog(); // warm the cache for names elsewhere
-  // F5: no default org — landing is the actuated-org picker, not org[0]'s (possibly dead)
-  // console. The header select stays as the switcher once an org is chosen.
-  const [orgId, setOrgId] = useState<string | null>(null);
-  const effectiveOrg = orgId;
+  // F5: no default team — landing is the actuated-team picker, not team[0]'s (possibly dead)
+  // console. The header select stays as the switcher once a team is chosen.
+  const [teamId, setOrgId] = useState<string | null>(null);
+  const effectiveOrg = teamId;
   const [intentId, setIntentId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [view, setView] = useState<"work" | "pulse" | "costs">("work");
   const [inspectNode, setInspectNode] = useState<string | null>(null);
   const [cadenceSeed, setCadenceSeed] = useState<CadenceSeed | null>(null);
 
-  const live = useOrgEvents(effectiveOrg);
+  const live = useTeamEvents(effectiveOrg);
   const pulse = usePulse(effectiveOrg);
   const intents = useIntents(effectiveOrg);
   const gates = useOperatorGates(effectiveOrg);
@@ -90,7 +90,7 @@ export function ExecutePage() {
     return set;
   }, [assignments.data, gates.data]);
 
-  const orgSuffix = useMemo(() => orgLabelSuffix(orgs.data ?? []), [orgs.data]);
+  const orgSuffix = useMemo(() => orgLabelSuffix(teams.data ?? []), [teams.data]);
 
   return (
     <div className="min-h-full">
@@ -98,11 +98,11 @@ export function ExecutePage() {
         <div>
           <h1 className="text-base font-semibold text-ink">Execute</h1>
           <p className="text-xs text-ink-muted">
-            Phase 3 · Execute — give the organization work and govern it through gates
+            Phase 3 · Execute — give the team work and govern it through gates
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* F4: the count of gates blocking this org is header-level, not a rail footnote. */}
+          {/* F4: the count of gates blocking this team is header-level, not a rail footnote. */}
           {effectiveOrg && (gates.data?.length ?? 0) > 0 && (
             <button
               onClick={() => setView("work")}
@@ -142,8 +142,8 @@ export function ExecutePage() {
             }}
             className="rounded-md border border-border bg-canvas px-2 py-1 text-sm outline-none focus:border-accent"
           >
-            <option value="">— pick an organization —</option>
-            {(orgs.data ?? []).map((o) => (
+            <option value="">— pick a team —</option>
+            {(teams.data ?? []).map((o) => (
               <option key={o.id} value={o.id}>
                 {orgSuffix(o.id) ? `${o.name} ${orgSuffix(o.id)}` : o.name}
               </option>
@@ -152,15 +152,15 @@ export function ExecutePage() {
         </div>
       </header>
 
-      {effectiveOrg && pulse.data && <OrgPulse pulse={pulse.data} />}
+      {effectiveOrg && pulse.data && <TeamPulse pulse={pulse.data} />}
 
-      {orgs.isLoading ? (
+      {teams.isLoading ? (
         <CenteredSpinner label="Loading organizations…" />
       ) : !effectiveOrg ? (
-        <OrgPicker orgs={orgs.data ?? []} onPick={setOrgId} />
+        <OrgPicker teams={teams.data ?? []} onPick={setOrgId} />
       ) : view === "costs" ? (
         <main className="mx-auto max-w-6xl px-6 py-6">
-          <CostSection orgId={effectiveOrg} nodeName={nodeName} />
+          <CostSection teamId={effectiveOrg} nodeName={nodeName} />
         </main>
       ) : view === "pulse" ? (
         <main className="mx-auto max-w-6xl px-6 py-6">
@@ -169,7 +169,7 @@ export function ExecutePage() {
               <MissionControl pulse={pulse.data} onInspect={setInspectNode} />
               {pulse.data.intents.open === 0 && (
                 <p className="mt-4 text-center text-xs text-ink-muted">
-                  No open intents — give the org work from the{" "}
+                  No open intents — give the team work from the{" "}
                   <button className="text-accent hover:underline" onClick={() => setView("work")}>
                     work view
                   </button>
@@ -189,7 +189,7 @@ export function ExecutePage() {
             {(gates.data ?? []).length > 0 && (
               <section className="flex flex-col gap-3">
                 <h2 className="text-sm font-semibold text-danger">
-                  Needs your decision — the org is blocked on these
+                  Needs your decision — the team is blocked on these
                 </h2>
                 {(gates.data ?? []).map((g) => (
                   <GateCard
@@ -228,7 +228,7 @@ export function ExecutePage() {
                     }
                   }}
                   rows={2}
-                  placeholder={'Give the org work — e.g. "Add CSV export; all tests must pass". Markdown welcome; Ctrl+Enter submits.'}
+                  placeholder={'Give the team work — e.g. "Add CSV export; all tests must pass". Markdown welcome; Ctrl+Enter submits.'}
                   className="flex-1 resize-none rounded-md border border-border bg-canvas px-3 py-2 text-sm outline-none focus:border-accent"
                 />
                 <Button type="submit" disabled={submit.isPending || !text.trim()}>
@@ -237,7 +237,7 @@ export function ExecutePage() {
               </form>
               {submit.isError && (
                 <p className="mb-2 text-xs text-danger">
-                  {(submit.error as Error).message} — is the organization actuated?
+                  {(submit.error as Error).message} — is the team actuated?
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
@@ -319,7 +319,7 @@ export function ExecutePage() {
                     key={n.assignment.id}
                     node={n}
                     nodeName={nodeName}
-                    orgId={effectiveOrg}
+                    teamId={effectiveOrg}
                     onNote={(assignmentId, stageIdx, noteText) =>
                       leaveNote.mutate({
                         intentId: effectiveIntent,
@@ -348,16 +348,16 @@ export function ExecutePage() {
               )}
             </section>
 
-            {/* Standing work (standing-orgs-ux.md §2): time fires cadences; events fire
+            {/* Standing work (standing-teams-ux.md §2): time fires cadences; events fire
                 triggers. Both open ordinary intents — sources are governable objects. */}
             <CadenceSection
-              orgId={effectiveOrg}
+              teamId={effectiveOrg}
               nodeName={nodeName}
               seed={cadenceSeed}
               onSeedConsumed={() => setCadenceSeed(null)}
             />
             <TriggerSection
-              orgId={effectiveOrg}
+              teamId={effectiveOrg}
               nodeName={nodeName}
               nodes={(orgDoc.data?.agents ?? []).map((a) => ({ id: a.id, name: a.name }))}
             />
@@ -382,14 +382,14 @@ export function ExecutePage() {
               </div>
             ))}
             {(gates.data?.length ?? 0) === 0 && (notifications.data?.length ?? 0) === 0 && (
-              <p className="text-xs text-ink-muted">Nothing needs you. The org is working.</p>
+              <p className="text-xs text-ink-muted">Nothing needs you. The team is working.</p>
             )}
           </aside>
         </main>
       )}
       {inspectNode && effectiveOrg && (
         <InspectorPanel
-          orgId={effectiveOrg}
+          teamId={effectiveOrg}
           nodeId={inspectNode}
           nodeName={nodeName}
           onClose={() => setInspectNode(null)}

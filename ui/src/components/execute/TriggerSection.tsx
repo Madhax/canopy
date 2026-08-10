@@ -1,4 +1,4 @@
-// Triggers (docs/design/standing-orgs-ux.md §2): the event-driven half of Standing work.
+// Triggers (docs/design/standing-teams-ux.md §2): the event-driven half of Standing work.
 // Each row states its source as a sentence, its target, its health, and its controls; the
 // create card is When → Then → Guardrails with a dry-run before anything is enabled.
 import { useState } from "react";
@@ -122,7 +122,7 @@ export function TriggerPanel({
             <select value={nodeId ?? ""} onChange={(e) => setNodeId(e.target.value || null)}
                     aria-label="target node"
                     className="rounded-md border border-border bg-surface px-2 py-1 outline-none focus:border-accent">
-              <option value="">the org root</option>
+              <option value="">the team root</option>
               {nodes.map((n) => (
                 <option key={n.id} value={n.id}>{n.name}</option>
               ))}
@@ -152,7 +152,7 @@ export function TriggerPanel({
                   new issues{(t.config.labels?.length ?? 0) > 0 && ` labeled ${t.config.labels!.join(", ")}`} in{" "}
                   <span className="text-ink">{inst?.name ?? t.instanceId}</span>
                 </span>
-                <span className="text-ink-subtle">→ {t.nodeId ? nodeName(t.nodeId) : "org root"}</span>
+                <span className="text-ink-subtle">→ {t.nodeId ? nodeName(t.nodeId) : "team root"}</span>
                 {t.lastError && (
                   <span className="rounded-full bg-danger/15 px-1.5 text-[10px] text-danger"
                         title={t.lastError}>
@@ -217,21 +217,21 @@ export function TriggerPanel({
 
 // ---------------------------------------------------------------- wired
 export function TriggerSection({
-  orgId,
+  teamId,
   nodeName,
   nodes,
 }: {
-  orgId: string;
+  teamId: string;
   nodeName: (id: string) => string;
   nodes: { id: string; name: string }[];
 }) {
-  const triggers = useTriggers(orgId);
-  const instances = useConnectorInstances(orgId);
-  const create = useCreateTrigger(orgId);
-  const update = useUpdateTrigger(orgId);
-  const remove = useDeleteTrigger(orgId);
-  const check = useCheckTrigger(orgId);
-  const dryRun = useDryRunTrigger(orgId);
+  const triggers = useTriggers(teamId);
+  const instances = useConnectorInstances(teamId);
+  const create = useCreateTrigger(teamId);
+  const update = useUpdateTrigger(teamId);
+  const remove = useDeleteTrigger(teamId);
+  const check = useCheckTrigger(teamId);
+  const dryRun = useDryRunTrigger(teamId);
 
   return (
     <TriggerPanel

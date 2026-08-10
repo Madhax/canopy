@@ -1,4 +1,4 @@
-// Mission control's feed (operator-experience.md §2): the org pulse header + one overlay row
+// Mission control's feed (operator-experience.md §2): the team pulse header + one overlay row
 // per node, one aggregate. Fresh via SSE invalidation ("pulse" key), polling fallback.
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "./client";
@@ -39,11 +39,11 @@ export interface Pulse {
   nodes: PulseNode[];
 }
 
-export function usePulse(orgId: string | null) {
+export function usePulse(teamId: string | null) {
   return useQuery({
-    queryKey: ["pulse", orgId],
-    queryFn: () => apiGet<Pulse>(`/organizations/${orgId}/pulse`),
-    enabled: !!orgId,
+    queryKey: ["pulse", teamId],
+    queryFn: () => apiGet<Pulse>(`/teams/${teamId}/pulse`),
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
   });
 }

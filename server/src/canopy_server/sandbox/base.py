@@ -21,7 +21,7 @@ class SandboxSpec(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     actuation_id: str
     node_id: str
-    org_id: str
+    team_id: str
     runtime: str = "canopy-agent"  # entrypoint identity; later: image ref for containers
     workspace_root: Path
     # F16: stable (actuation-independent) home for the adapter log; None keeps the legacy

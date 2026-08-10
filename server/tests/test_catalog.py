@@ -36,7 +36,7 @@ def test_every_formation_slot_and_dep_resolves():
 
 
 def test_formation_verify_edges_match_teams_doc():
-    """The verify (resolveOn: delivered) edges are exactly the ones docs/teams.md annotates.
+    """The verify (resolveOn: delivered) edges are exactly the ones docs/formations.md annotates.
 
     Catches the catalog and the doc drifting apart; parse-level enum enforcement means any
     other value fails before this test runs.

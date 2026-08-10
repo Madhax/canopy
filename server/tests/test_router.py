@@ -6,7 +6,7 @@ import pytest
 
 from canopy_server.bus import SqliteBus
 from canopy_server.db import Db
-from canopy_server.models import Agent, Organization, RoleRef, Salary
+from canopy_server.models import Agent, RoleRef, Salary, Team
 from canopy_server.router import ChannelForbidden, MessageRouter, inbox_topic
 
 
@@ -16,11 +16,11 @@ def _setup(tmp_path):
     return db, bus, MessageRouter(db, bus)
 
 
-def _org() -> Organization:
+def _org() -> Team:
     def agent(aid, mgr):
         return Agent(id=aid, name=aid, role=RoleRef(key="backend-engineer"), managerId=mgr,
                      salary=Salary(perAssignmentAllowance=1000))
-    return Organization(
+    return Team(
         id="o", name="O", organizationType="product-engineering",
         agents=[agent("a_root", None), agent("a_be", "a_root"), agent("a_qa", "a_root")],
     )

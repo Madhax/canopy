@@ -1,4 +1,4 @@
-// TriggerPanel (standing-orgs-ux.md §2): the row reads as a sentence, the create card
+// TriggerPanel (standing-teams-ux.md §2): the row reads as a sentence, the create card
 // requires a source, dry-run renders, and failure shows one honest chip.
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,14 +7,14 @@ import type { Trigger } from "../../api/work";
 import { TriggerPanel } from "./TriggerSection";
 
 const inst: ConnectorInstance = {
-  id: "ci_1", organizationId: "o1", packKey: "github", name: "canopy repo",
+  id: "ci_1", teamId: "o1", packKey: "github", name: "canopy repo",
   config: { owner: "acme", repo: "canopy" }, secretBindings: { "scm-token": "sec_1" },
   enabledGrants: ["connector.github.issues.read"], nodeLinks: null, enabled: true,
   createdAt: "2026-08-08T00:00:00Z", updatedAt: "2026-08-08T00:00:00Z",
 };
 
 const trigger: Trigger = {
-  id: "tr_1", orgId: "o1", name: "bug intake", kind: "github-issues", nodeId: null,
+  id: "tr_1", teamId: "o1", name: "bug intake", kind: "github-issues", nodeId: null,
   instanceId: "ci_1", config: { labels: ["bug"] },
   intentTemplate: "Fix {{url}}", enabled: true, cursor: null,
   lastCheckedAt: "2026-08-08T01:00:00Z", lastFiredAt: null,
@@ -39,7 +39,7 @@ describe("TriggerPanel", () => {
     expect(screen.getByText(/bug intake/)).toBeInTheDocument();
     expect(screen.getByText(/new issues labeled bug in/)).toBeInTheDocument();
     expect(screen.getByText("canopy repo")).toBeInTheDocument();
-    expect(screen.getByText(/org root/)).toBeInTheDocument();
+    expect(screen.getByText(/team root/)).toBeInTheDocument();
     const failing = screen.getByText("failing");
     expect(failing).toHaveAttribute("title", "github: 401 bad credentials");
   });

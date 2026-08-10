@@ -15,8 +15,8 @@ def _post(client, token, **body):
 
 
 def test_mock_completion_is_metered(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    s = mint_session(org["id"], allowance=5000)
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    s = mint_session(team["id"], allowance=5000)
     r = _post(client, s["token"], kind="production")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -26,7 +26,7 @@ def test_mock_completion_is_metered(client, make_org, mint_session):
     assert body["stepId"].startswith("st_")
     assert body["priceKnown"] is True  # mock-1 is in the price table (free)
 
-    roll = client.get(f"/api/organizations/{org['id']}/spend?groupBy=node").json()
+    roll = client.get(f"/api/teams/{team['id']}/spend?groupBy=node").json()
     assert roll["costsAreEstimates"] is True
     assert any(row["key"] == s["nodeId"] for row in roll["rows"])
 
@@ -36,30 +36,30 @@ def test_missing_token_is_401(client):
 
 
 def test_bad_token_is_401(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    mint_session(org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    mint_session(team["id"])
     assert _post(client, "not-a-real-token").status_code == 401
 
 
 def test_hard_stop_returns_402_before_dispatch(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
     # allowance 10 < maxOutput 4096 → the very first reservation cannot be covered.
-    s = mint_session(org["id"], allowance=10, max_output=4096)
+    s = mint_session(team["id"], allowance=10, max_output=4096)
     r = _post(client, s["token"])
     assert r.status_code == 402
     assert r.json()["error"]["code"] == "BUDGET_EXHAUSTED"
     assert r.json()["error"]["meterId"] == s["meterId"]
 
     # Nothing was dispatched or recorded — the halt is *before* the model call.
-    roll = client.get(f"/api/organizations/{org['id']}/spend?groupBy=node").json()
+    roll = client.get(f"/api/teams/{team['id']}/spend?groupBy=node").json()
     assert roll["rows"] == []
-    feed = client.get(f"/api/organizations/{org['id']}/activity").json()
+    feed = client.get(f"/api/teams/{team['id']}/activity").json()
     assert any(e["kind"] == "budget.hard_stop" for e in feed["events"])
 
 
 def test_step_is_tagged_coordination(client, make_org, mint_session):
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    s = mint_session(org["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    s = mint_session(team["id"])
     r = _post(client, s["token"], kind="coordination")
     assert r.status_code == 200
     assert r.json()["kind"] == "coordination"

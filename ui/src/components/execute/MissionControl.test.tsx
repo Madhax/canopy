@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Pulse } from "../../api/pulse";
-import { MissionControl, OrgPulse } from "./MissionControl";
+import { MissionControl, TeamPulse } from "./MissionControl";
 
 function pulse(): Pulse {
   return {
@@ -43,9 +43,9 @@ function pulse(): Pulse {
   };
 }
 
-describe("OrgPulse", () => {
+describe("TeamPulse", () => {
   it("shows actuation, intents, burn, the narrative, and the attention badge", () => {
-    render(<OrgPulse pulse={pulse()} />);
+    render(<TeamPulse pulse={pulse()} />);
     expect(screen.getByText("live")).toBeTruthy();
     expect(
       screen.getByText((_, el) => el?.textContent === "2 open intents"),

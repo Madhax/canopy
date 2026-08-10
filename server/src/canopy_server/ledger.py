@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS ix_meter_node ON ledger_meter (actuation_id, node_id)
 CREATE TABLE IF NOT EXISTS ledger_spend_event (
     id              TEXT PRIMARY KEY,
     step_id         TEXT NOT NULL UNIQUE,
-    org_id          TEXT NOT NULL,
+    team_id          TEXT NOT NULL,
     actuation_id    TEXT NOT NULL,
     node_id         TEXT NOT NULL,
     task_id         TEXT,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS ledger_spend_event (
     est_cost_micros INTEGER NOT NULL,
     created_at      TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_spend_org ON ledger_spend_event (org_id);
+CREATE INDEX IF NOT EXISTS ix_spend_org ON ledger_spend_event (team_id);
 """
 register_schema(SCHEMA)
 
@@ -120,7 +120,7 @@ class Meter(BaseModel):
 class SpendEvent(BaseModel):
     id: str
     stepId: str
-    orgId: str
+    teamId: str
     actuationId: str
     nodeId: str
     taskId: str | None
@@ -160,7 +160,7 @@ class BudgetLedger(ABC):
 
     @abstractmethod
     def record(
-        self, meter_id: str, *, step_id: str, org_id: str, node_id: str, actuation_id: str,
+        self, meter_id: str, *, step_id: str, team_id: str, node_id: str, actuation_id: str,
         provider: str, model: str, input_tokens: int, output_tokens: int, est_cost_micros: int,
         reserved: int, task_id: str | None = None,
         cache_read_tokens: int = 0, cache_creation_tokens: int = 0,
@@ -180,7 +180,7 @@ class BudgetLedger(ABC):
     def get_meter(self, meter_id: str) -> Meter | None: ...
 
     @abstractmethod
-    def rollup(self, org_id: str, group_by: str) -> list[dict]: ...
+    def rollup(self, team_id: str, group_by: str) -> list[dict]: ...
 
 
 def _row_to_meter(row) -> Meter:
@@ -260,7 +260,7 @@ class SqliteLedger(BudgetLedger):
             )
 
     def record(
-        self, meter_id, *, step_id, org_id, node_id, actuation_id, provider, model,
+        self, meter_id, *, step_id, team_id, node_id, actuation_id, provider, model,
         input_tokens, output_tokens, est_cost_micros, reserved, task_id=None,
         cache_read_tokens=0, cache_creation_tokens=0,
     ) -> RecordOutcome:
@@ -311,11 +311,11 @@ class SqliteLedger(BudgetLedger):
             )
             sid = new_spend_id()
             conn.execute(
-                "INSERT INTO ledger_spend_event (id, step_id, org_id, actuation_id, node_id, "
+                "INSERT INTO ledger_spend_event (id, step_id, team_id, actuation_id, node_id, "
                 "task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, "
                 "cache_creation_tokens, est_cost_micros, "
                 "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (sid, step_id, org_id, actuation_id, node_id, task_id, provider, model,
+                (sid, step_id, team_id, actuation_id, node_id, task_id, provider, model,
                  int(input_tokens), int(output_tokens), int(cache_read_tokens),
                  int(cache_creation_tokens), int(est_cost_micros), ts),
             )
@@ -326,7 +326,7 @@ class SqliteLedger(BudgetLedger):
         return RecordOutcome(
             meter=_row_to_meter(mrow2),
             spendEvent=SpendEvent(
-                id=sid, stepId=step_id, orgId=org_id, actuationId=actuation_id, nodeId=node_id,
+                id=sid, stepId=step_id, teamId=team_id, actuationId=actuation_id, nodeId=node_id,
                 taskId=task_id, provider=provider, model=model, inputTokens=int(input_tokens),
                 outputTokens=int(output_tokens), estCostMicros=int(est_cost_micros), createdAt=ts,
             ),
@@ -368,7 +368,7 @@ class SqliteLedger(BudgetLedger):
             ).fetchone()
         return _row_to_meter(row) if row else None
 
-    def rollup(self, org_id: str, group_by: str) -> list[dict]:
+    def rollup(self, team_id: str, group_by: str) -> list[dict]:
         column = {"node": "node_id", "task": "task_id", "model": "model"}.get(group_by)
         if column is None:
             raise ValueError(f"bad group_by {group_by!r} (node|task|model)")
@@ -379,9 +379,9 @@ class SqliteLedger(BudgetLedger):
                 "SUM(cache_read_tokens) AS cache_read_tokens, "
                 "SUM(cache_creation_tokens) AS cache_creation_tokens, "
                 "SUM(est_cost_micros) AS est_cost_micros, COUNT(*) AS steps "
-                "FROM ledger_spend_event WHERE org_id = ? GROUP BY key ORDER BY est_cost_micros "
+                "FROM ledger_spend_event WHERE team_id = ? GROUP BY key ORDER BY est_cost_micros "
                 "DESC",
-                (org_id,),
+                (team_id,),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -390,7 +390,7 @@ def _spend_row_to_event(row) -> SpendEvent:
     return SpendEvent(
         id=row["id"],
         stepId=row["step_id"],
-        orgId=row["org_id"],
+        teamId=row["team_id"],
         actuationId=row["actuation_id"],
         nodeId=row["node_id"],
         taskId=row["task_id"],

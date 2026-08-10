@@ -15,7 +15,7 @@ interface Props {
   onAccept: (assignmentId: string) => void;
   onReject: (assignmentId: string, note: string) => void;
   onInspect?: (nodeId: string) => void;
-  orgId?: string | null; // enables artifact preview on deliverable cards
+  teamId?: string | null; // enables artifact preview on deliverable cards
   depth?: number;
 }
 
@@ -145,7 +145,7 @@ export function PlanOutline(props: Props) {
 
       {node.deliverable && (
         <DeliverableCard
-          orgId={props.orgId ?? null}
+          teamId={props.teamId ?? null}
           deliverable={node.deliverable}
           reviewable={a.state === "delivering"}
           onAccept={() => props.onAccept(a.id)}

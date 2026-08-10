@@ -176,7 +176,7 @@ class DefaultModelGateway(ModelGateway):
         if rec is None:
             raise GatewayAuthError("unknown or revoked run token")
 
-        binding = self.profiles.get_binding_for_node(rec.orgId, rec.nodeId, rec.orgPath)
+        binding = self.profiles.get_binding_for_node(rec.teamId, rec.nodeId, rec.teamPath)
         if binding is None:
             raise GatewayConfigError("BINDING_MISSING", f"node {rec.nodeId} has no profile binding")
         profile = self.profiles.get_profile(binding.profileId)
@@ -201,7 +201,7 @@ class DefaultModelGateway(ModelGateway):
             reservation = self.ledger.reserve(meter_id, estimate)
         except BudgetExhausted as exc:
             self.activity.log(
-                "system", "budget.hard_stop", org_id=rec.orgId,
+                "system", "budget.hard_stop", team_id=rec.teamId,
                 subject_ids=[rec.nodeId, meter_id],
                 payload={"actuationId": rec.actuationId, "reason": "reserve"},
             )
@@ -226,7 +226,7 @@ class DefaultModelGateway(ModelGateway):
         outcome = self.ledger.record(
             meter_id,
             step_id=step_id,
-            org_id=rec.orgId,
+            team_id=rec.teamId,
             node_id=rec.nodeId,
             actuation_id=rec.actuationId,
             provider=profile.provider,
@@ -239,12 +239,12 @@ class DefaultModelGateway(ModelGateway):
         )
         if outcome.crossedWarn:
             self.activity.log(
-                "system", "budget.warn", org_id=rec.orgId, subject_ids=[rec.nodeId, meter_id],
+                "system", "budget.warn", team_id=rec.teamId, subject_ids=[rec.nodeId, meter_id],
                 payload={"spent": outcome.meter.spent, "allowance": outcome.meter.allowance},
             )
         if outcome.exhausted:
             self.activity.log(
-                "system", "budget.hard_stop", org_id=rec.orgId,
+                "system", "budget.hard_stop", team_id=rec.teamId,
                 subject_ids=[rec.nodeId, meter_id],
                 payload={"actuationId": rec.actuationId, "reason": "record"},
             )

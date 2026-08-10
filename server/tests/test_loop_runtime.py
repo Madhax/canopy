@@ -22,18 +22,18 @@ if str(_AGENT_SRC) not in sys.path:
 from canopy_agent.runtime import AgentConfig, loop_tick  # noqa: E402
 
 
-def _root_of(org: dict) -> dict:
-    return next(a for a in org["agents"] if a["managerId"] is None)
+def _root_of(team: dict) -> dict:
+    return next(a for a in team["agents"] if a["managerId"] is None)
 
 
 def test_loop_runtime_drives_intent_to_deliverable(client, make_org, mint_session):
     from canopy_server.deps import get_db, get_engine
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
-    root = _root_of(org)
-    s = mint_session(org["id"], node_id=root["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
     a = get_engine().submit_intent(
-        org["id"], s["actuationId"], "Add CSV export to the report endpoints",
+        team["id"], s["actuationId"], "Add CSV export to the report endpoints",
         target_node=root["id"],
     ).assignment
 
@@ -84,24 +84,24 @@ def test_loop_manager_fans_out_and_synthesizes(client, make_org, mint_session):
     from canopy_server.deps import get_engine
     from canopy_server.main import app
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    by_role = {a["role"]["key"]: a for a in org["agents"]}
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    by_role = {a["role"]["key"]: a for a in team["agents"]}
     lead = by_role["engineering-lead"]
     ics = [by_role["backend-engineer"], by_role["frontend-engineer"], by_role["qa-engineer"]]
-    s_lead = mint_session(org["id"], node_id=lead["id"])
+    s_lead = mint_session(team["id"], node_id=lead["id"])
     sessions = {lead["id"]: s_lead}
     for ic in ics:
-        sessions[ic["id"]] = mint_session(org["id"], node_id=ic["id"],
+        sessions[ic["id"]] = mint_session(team["id"], node_id=ic["id"],
                                           actuation_id=s_lead["actuationId"])
     # Charters over HTTP need actuation rows; the loop's charter fetch tolerates a 404 and
     # would treat the lead as an IC — so seed real charters for everyone.
     from test_cli_runtime import _seed_charter
 
     for node_id in sessions:
-        _seed_charter(org, s_lead["actuationId"], node_id)
+        _seed_charter(team, s_lead["actuationId"], node_id)
 
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s_lead["actuationId"],
+    root = eng.submit_intent(team["id"], s_lead["actuationId"],
                              "ship the CSV export feature", target_node=lead["id"]).assignment
 
     def agent(node_id):
@@ -118,11 +118,11 @@ def test_loop_manager_fans_out_and_synthesizes(client, make_org, mint_session):
         for ic in ics:
             loop_tick(agent(ic["id"]), cfg(ic["id"]))
 
-    # Drive the org; approve the lead's staged fan-out when the plan-review gate appears.
+    # Drive the team; approve the lead's staged fan-out when the plan-review gate appears.
     for _ in range(20):
         tick_all()
         gates = client.get(
-            f"/api/organizations/{org['id']}/gates?state=open&owner=operator"
+            f"/api/teams/{team['id']}/gates?state=open&owner=operator"
         ).json()["gates"]
         for g in gates:
             if g["kind"] == "approval":
@@ -134,7 +134,7 @@ def test_loop_manager_fans_out_and_synthesizes(client, make_org, mint_session):
     detail = client.get(f"/api/assignments/{root.id}").json()
     assert detail["assignment"]["state"] == "delivering"  # the lead synthesized and finished
     children = client.get(
-        f"/api/organizations/{org['id']}/assignments"
+        f"/api/teams/{team['id']}/assignments"
     ).json()["assignments"]
     child_rows = [c for c in children if c["parentId"] == root.id]
     assert len(child_rows) == 3 and all(c["state"] == "closed" for c in child_rows)

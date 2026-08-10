@@ -1,11 +1,11 @@
-// Non-temporal UI state: which nested org is open (drill-in path) and what's selected.
+// Non-temporal UI state: which nested team is open (drill-in path) and what's selected.
 import { create } from "zustand";
 
 export type Selection =
   | { kind: "none" }
   | { kind: "agent"; id: string }
   | { kind: "dependency"; id: string }
-  | { kind: "childOrg"; id: string };
+  | { kind: "childTeam"; id: string };
 
 interface SelectionStore {
   path: string[];

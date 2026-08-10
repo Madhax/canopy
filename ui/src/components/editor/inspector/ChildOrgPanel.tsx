@@ -1,29 +1,29 @@
 import type { Catalog } from "../../../schema/catalog";
-import type { ChildOrganizationDoc, OrganizationDoc } from "../../../schema/organization";
+import type { ChildTeamDoc, TeamDoc } from "../../../schema/team";
 import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
 import { Button } from "../../common";
 
 interface Props {
-  child: ChildOrganizationDoc;
-  org: OrganizationDoc;
+  child: ChildTeamDoc;
+  team: TeamDoc;
   catalog: Catalog;
   onOpen: () => void;
 }
 
-export function ChildOrgPanel({ child, org, catalog, onOpen }: Props) {
+export function ChildOrgPanel({ child, team, catalog, onOpen }: Props) {
   const store = useDocumentStore();
   const path = useSelectionStore((s) => s.path);
   const clear = useSelectionStore((s) => s.clear);
 
-  const type = catalog.organizationTypes.find((o) => o.key === child.organization.organizationType);
-  const mountAgent = org.agents.find((a) => a.id === child.mountAgentId);
+  const type = catalog.organizationTypes.find((o) => o.key === child.team.organizationType);
+  const mountAgent = team.agents.find((a) => a.id === child.mountAgentId);
 
   return (
     <div className="flex flex-col gap-4 p-4">
       <div>
-        <h3 className="text-sm font-semibold text-ink">{child.organization.name}</h3>
-        <p className="text-xs text-ink-muted">{type?.title ?? child.organization.organizationType}</p>
+        <h3 className="text-sm font-semibold text-ink">{child.team.name}</h3>
+        <p className="text-xs text-ink-muted">{type?.title ?? child.team.organizationType}</p>
       </div>
 
       <label className="flex flex-col gap-1">
@@ -34,15 +34,15 @@ export function ChildOrgPanel({ child, org, catalog, onOpen }: Props) {
           value={child.mountAgentId}
           onChange={(e) =>
             store.applyBatch(path, (o) => {
-              const c = o.childOrganizations.find(
-                (x) => x.organization.id === child.organization.id,
+              const c = o.childTeams.find(
+                (x) => x.team.id === child.team.id,
               );
               if (c) c.mountAgentId = e.target.value;
             })
           }
           className="rounded-md border border-border bg-canvas px-2 py-1.5 text-sm outline-none focus:border-accent"
         >
-          {org.agents.map((a) => (
+          {team.agents.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
             </option>
@@ -60,14 +60,14 @@ export function ChildOrgPanel({ child, org, catalog, onOpen }: Props) {
           variant="danger"
           onClick={() => {
             store.applyBatch(path, (o) => {
-              o.childOrganizations = o.childOrganizations.filter(
-                (x) => x.organization.id !== child.organization.id,
+              o.childTeams = o.childTeams.filter(
+                (x) => x.team.id !== child.team.id,
               );
             });
             clear();
           }}
         >
-          Delete child organization
+          Delete child team
         </Button>
       </div>
     </div>

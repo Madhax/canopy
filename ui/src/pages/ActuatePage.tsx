@@ -1,9 +1,9 @@
-// Phase 2 · Actuate — the organizations you can spin up. Each row reuses the editor's
+// Phase 2 · Actuate — the teams you can spin up. Each row reuses the editor's
 // ActuationControls (▶ Actuate / live status / Deactuate + readiness dialog), so you can actuate
-// straight from the list. Invalid orgs point back to the editor to fix first.
+// straight from the list. Invalid teams point back to the editor to fix first.
 import { useNavigate } from "react-router-dom";
 import { indexCatalog, useCatalog } from "../api/catalog";
-import { useOrganizations } from "../api/organizations";
+import { useTeams } from "../api/teams";
 import type { OrgSummary } from "../api/types";
 import { LeafMark } from "../components/AppHeader";
 import { ActuationControls } from "../components/editor/ActuationControls";
@@ -11,7 +11,7 @@ import { Button, CenteredSpinner, EmptyState } from "../components/common";
 
 export function ActuatePage() {
   const navigate = useNavigate();
-  const orgs = useOrganizations();
+  const teams = useTeams();
   const catalog = useCatalog();
   const index = catalog.data ? indexCatalog(catalog.data) : null;
 
@@ -21,36 +21,36 @@ export function ActuatePage() {
         <div>
           <h1 className="text-base font-semibold text-ink">Actuate</h1>
           <p className="text-xs text-ink-muted">
-            Phase 2 · Actuate — spin up an organization's agents and make it ready for work
+            Phase 2 · Actuate — spin up a team's agents and make it ready for work
           </p>
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-8">
-        {orgs.isLoading ? (
+        {teams.isLoading ? (
           <CenteredSpinner label="Loading organizations…" />
-        ) : orgs.data && orgs.data.length > 0 ? (
+        ) : teams.data && teams.data.length > 0 ? (
           <div className="flex flex-col gap-3">
-            {orgs.data.map((s) => (
+            {teams.data.map((s) => (
               <ActuateRow
                 key={s.id}
                 summary={s}
                 typeTitle={index?.orgTypes.get(s.organizationType)?.title}
-                onOpen={() => navigate(`/organizations/${s.id}`)}
+                onOpen={() => navigate(`/teams/${s.id}`)}
               />
             ))}
           </div>
         ) : (
           <EmptyState
             icon={<LeafMark size={48} />}
-            title="No organizations to actuate yet."
+            title="No teams to actuate yet."
             action={
-              <Button variant="primary" onClick={() => navigate("/organizations/new")}>
-                Create an organization
+              <Button variant="primary" onClick={() => navigate("/teams/new")}>
+                Create a team
               </Button>
             }
           >
-            Build an organization first — then come back here to spin up its agents.
+            Build a team first — then come back here to spin up its agents.
           </EmptyState>
         )}
       </main>
@@ -68,7 +68,7 @@ function ActuateRow({
   onOpen: () => void;
 }) {
   const nodes = `${summary.agentCount} ${summary.agentCount === 1 ? "node" : "nodes"}`;
-  const subs = summary.childOrgCount > 0 ? ` · ${summary.childOrgCount} sub-orgs` : "";
+  const subs = summary.childTeamCount > 0 ? ` · ${summary.childTeamCount} sub-teams` : "";
 
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface px-4 py-3">
@@ -89,7 +89,7 @@ function ActuateRow({
 
       <div className="shrink-0">
         {summary.valid ? (
-          <ActuationControls orgId={summary.id} />
+          <ActuationControls teamId={summary.id} />
         ) : (
           <Button size="sm" variant="secondary" onClick={onOpen}>
             Fix in editor

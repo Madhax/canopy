@@ -12,7 +12,7 @@ export function ConflictDialog({ open, onReloadTheirs, onOverwriteMine }: Props)
     <Dialog
       open={open}
       onClose={onReloadTheirs}
-      title="This organization changed elsewhere"
+      title="This team changed elsewhere"
       footer={
         <>
           <Button variant="secondary" onClick={onReloadTheirs}>

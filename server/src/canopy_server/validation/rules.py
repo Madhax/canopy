@@ -1,8 +1,8 @@
 """The authoritative validation rule set (docs/org-chart-editor.md §4.1).
 
-``validate_organization`` walks a top-level :class:`~canopy_server.models.Organization` and every
-nested child organization, returning a flat list of :class:`ValidationIssue`. Nested issues carry an
-``orgPath`` (the list of child-org ids from the top document down to the offending level).
+``validate_team`` walks a top-level :class:`~canopy_server.models.Team` and every
+nested child team, returning a flat list of :class:`ValidationIssue`. Nested issues carry an
+``teamPath`` (the list of child-team ids from the top document down to the offending level).
 
 Two modes:
 
@@ -12,7 +12,7 @@ Two modes:
 
 from __future__ import annotations
 
-from ..models import Catalog, Organization
+from ..models import Catalog, Team
 from .codes import Mode, ValidationIssue, issue
 
 
@@ -32,8 +32,8 @@ def _valid_salary(salary) -> bool:
     )
 
 
-def validate_organization(
-    org: Organization,
+def validate_team(
+    team: Team,
     mode: Mode = "draft",
     catalog: Catalog | None = None,
     *,
@@ -45,90 +45,90 @@ def validate_organization(
     issues: list[ValidationIssue] = []
     root_severity = "warning" if mode == "draft" else "error"
 
-    agents = org.agents
-    deps = org.dependencies
-    children = org.childOrganizations
+    agents = team.agents
+    deps = team.dependencies
+    children = team.childTeams
 
     agent_ids = {a.id for a in agents}
-    child_org_ids = {c.organization.id for c in children}
-    # Dependency endpoints may be agents OR mounted child orgs (opaque, as a sibling).
-    endpoint_ids = agent_ids | child_org_ids
+    child_team_ids = {c.team.id for c in children}
+    # Dependency endpoints may be agents OR mounted child teams (opaque, as a sibling).
+    endpoint_ids = agent_ids | child_team_ids
 
-    # Parent map: an agent's parent is its managerId; a child org's parent is its mountAgentId.
+    # Parent map: an agent's parent is its managerId; a child team's parent is its mountAgentId.
     parent_of: dict[str, str | None] = {a.id: a.managerId for a in agents}
     for c in children:
-        parent_of[c.organization.id] = c.mountAgentId
+        parent_of[c.team.id] = c.mountAgentId
 
     # -- DUPLICATE_ID (agents, then dependencies) ---------------------------
     agent_dupes = _duplicates([a.id for a in agents])
     if agent_dupes:
-        issues.append(issue("DUPLICATE_ID", "error", agentIds=agent_dupes, orgPath=path))
+        issues.append(issue("DUPLICATE_ID", "error", agentIds=agent_dupes, teamPath=path))
     dep_dupes = _duplicates([d.id for d in deps])
     if dep_dupes:
-        issues.append(issue("DUPLICATE_ID", "error", dependencyIds=dep_dupes, orgPath=path))
+        issues.append(issue("DUPLICATE_ID", "error", dependencyIds=dep_dupes, teamPath=path))
 
     # -- Roots --------------------------------------------------------------
     roots = [a.id for a in agents if a.managerId is None]
     if len(roots) == 0 and agents:
-        issues.append(issue("NO_ROOT", root_severity, orgPath=path))
+        issues.append(issue("NO_ROOT", root_severity, teamPath=path))
     elif len(roots) == 0 and not agents:
-        # Truly empty org: still flag NO_ROOT so export gates on it.
-        issues.append(issue("NO_ROOT", root_severity, orgPath=path))
+        # Truly empty team: still flag NO_ROOT so export gates on it.
+        issues.append(issue("NO_ROOT", root_severity, teamPath=path))
     if len(roots) > 1:
-        issues.append(issue("MULTIPLE_ROOTS", root_severity, agentIds=roots, orgPath=path))
+        issues.append(issue("MULTIPLE_ROOTS", root_severity, agentIds=roots, teamPath=path))
 
     # -- MANAGER_DANGLING ---------------------------------------------------
     for a in agents:
         if a.managerId is not None and a.managerId not in agent_ids:
-            issues.append(issue("MANAGER_DANGLING", "error", agentIds=[a.id], orgPath=path))
+            issues.append(issue("MANAGER_DANGLING", "error", agentIds=[a.id], teamPath=path))
 
     # -- REPORTS_CYCLE ------------------------------------------------------
     cycle_nodes = _reporting_cycle_nodes(agents, agent_ids)
     if cycle_nodes:
-        issues.append(issue("REPORTS_CYCLE", "error", agentIds=sorted(cycle_nodes), orgPath=path))
+        issues.append(issue("REPORTS_CYCLE", "error", agentIds=sorted(cycle_nodes), teamPath=path))
 
     # -- MOUNT_DANGLING -----------------------------------------------------
     for c in children:
         if c.mountAgentId not in agent_ids:
             issues.append(
-                issue("MOUNT_DANGLING", "error", agentIds=[c.mountAgentId], orgPath=path)
+                issue("MOUNT_DANGLING", "error", agentIds=[c.mountAgentId], teamPath=path)
             )
 
     # -- Dependencies -------------------------------------------------------
     seen_pairs: set[tuple[str, str]] = set()
     for d in deps:
         if d.from_ == d.to:
-            issues.append(issue("DEP_SELF", "error", dependencyIds=[d.id], orgPath=path))
+            issues.append(issue("DEP_SELF", "error", dependencyIds=[d.id], teamPath=path))
             continue
         if d.from_ not in endpoint_ids or d.to not in endpoint_ids:
-            issues.append(issue("DEP_DANGLING", "error", dependencyIds=[d.id], orgPath=path))
+            issues.append(issue("DEP_DANGLING", "error", dependencyIds=[d.id], teamPath=path))
             continue
         pair = (d.from_, d.to)
         if pair in seen_pairs:
-            issues.append(issue("DEP_DUPLICATE", "error", dependencyIds=[d.id], orgPath=path))
+            issues.append(issue("DEP_DUPLICATE", "error", dependencyIds=[d.id], teamPath=path))
         seen_pairs.add(pair)
         if parent_of.get(d.from_) != parent_of.get(d.to):
             issues.append(
-                issue("DEP_NOT_SIBLINGS", "error", dependencyIds=[d.id], orgPath=path)
+                issue("DEP_NOT_SIBLINGS", "error", dependencyIds=[d.id], teamPath=path)
             )
 
     cyclic_deps = _dependency_cycle_ids(deps, endpoint_ids)
     if cyclic_deps:
-        issues.append(issue("DEP_CYCLE", "error", dependencyIds=sorted(cyclic_deps), orgPath=path))
+        issues.append(issue("DEP_CYCLE", "error", dependencyIds=sorted(cyclic_deps), teamPath=path))
 
     # -- Roles + salary -----------------------------------------------------
     local_role_versions: dict[str, set[int]] = {k: set(v) for k, v in role_idx.items()}
-    for cr in org.customRoles:
+    for cr in team.customRoles:
         local_role_versions.setdefault(cr.key, set()).add(cr.version)
 
     for a in agents:
         key, ver = a.role.key, a.role.version
         if key not in local_role_versions:
-            issues.append(issue("ROLE_UNKNOWN", "warning", agentIds=[a.id], orgPath=path))
+            issues.append(issue("ROLE_UNKNOWN", "warning", agentIds=[a.id], teamPath=path))
         elif ver not in local_role_versions[key]:
-            issues.append(issue("ROLE_VERSION_UNKNOWN", "warning", agentIds=[a.id], orgPath=path))
+            issues.append(issue("ROLE_VERSION_UNKNOWN", "warning", agentIds=[a.id], teamPath=path))
         if not _valid_salary(a.salary):
-            issues.append(issue("SALARY_INVALID", "error", agentIds=[a.id], orgPath=path))
+            issues.append(issue("SALARY_INVALID", "error", agentIds=[a.id], teamPath=path))
 
     # -- AGENT_ORPHAN (drafting aid) ---------------------------------------
     in_dep = {d.from_ for d in deps} | {d.to for d in deps}
@@ -139,18 +139,18 @@ def validate_organization(
             and a.id not in in_dep
             and a.id not in has_report
         ):
-            issues.append(issue("AGENT_ORPHAN", "warning", agentIds=[a.id], orgPath=path))
+            issues.append(issue("AGENT_ORPHAN", "warning", agentIds=[a.id], teamPath=path))
 
     # -- Recurse into children ---------------------------------------------
     for c in children:
-        child_path = path + [c.organization.id]
-        child_issues = validate_organization(
-            c.organization, mode, catalog, _path=child_path, _catalog_index=role_idx
+        child_path = path + [c.team.id]
+        child_issues = validate_team(
+            c.team, mode, catalog, _path=child_path, _catalog_index=role_idx
         )
         issues.extend(child_issues)
         if any(ci.severity == "error" for ci in child_issues):
             issues.append(
-                issue("CHILD_INVALID", "error", agentIds=[c.mountAgentId], orgPath=child_path)
+                issue("CHILD_INVALID", "error", agentIds=[c.mountAgentId], teamPath=child_path)
             )
 
     return issues

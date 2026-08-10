@@ -1,5 +1,5 @@
-// The single source of truth: ONE top-level Organization document, with undo/redo (docs §7.5).
-// All mutations are named actions; each operates on the org at a given drill-in `path`.
+// The single source of truth: ONE top-level Team document, with undo/redo (docs §7.5).
+// All mutations are named actions; each operates on the team at a given drill-in `path`.
 import { create } from "zustand";
 import { temporal } from "zundo";
 import type { Catalog } from "../schema/catalog";
@@ -7,9 +7,9 @@ import type {
   Agent,
   CustomRole,
   Dependency,
-  OrganizationDoc,
+  TeamDoc,
   Salary,
-} from "../schema/organization";
+} from "../schema/team";
 import { newAgentId, newDependencyId } from "../lib/ids";
 import { buildFormationSubtree } from "../lib/formation";
 import { getOrgAtPath, updateOrgAtPath } from "./orgTree";
@@ -36,9 +36,9 @@ function agentFromRole(
 }
 
 export interface DocStore {
-  doc: OrganizationDoc | null;
+  doc: TeamDoc | null;
 
-  load: (doc: OrganizationDoc) => void;
+  load: (doc: TeamDoc) => void;
   renameOrg: (path: string[], name: string) => void;
   setUpdatedAt: (ts: string | null) => void;
 
@@ -75,11 +75,11 @@ export interface DocStore {
     catalog: Catalog,
   ) => void;
 
-  mountChildOrg: (path: string[], mountAgentId: string, child: OrganizationDoc) => void;
+  mountChildTeam: (path: string[], mountAgentId: string, child: TeamDoc) => void;
   addCustomRole: (path: string[], role: CustomRole) => void;
   replaceChart: (path: string[], agents: Agent[], dependencies: Dependency[]) => void;
 
-  applyBatch: (path: string[], mutate: (org: OrganizationDoc) => void) => void;
+  applyBatch: (path: string[], mutate: (team: TeamDoc) => void) => void;
 }
 
 function patchAgent(
@@ -91,8 +91,8 @@ function patchAgent(
   set((s) => {
     if (!s.doc) return {};
     return {
-      doc: updateOrgAtPath(s.doc, path, (org) => {
-        const a = org.agents.find((x) => x.id === agentId);
+      doc: updateOrgAtPath(s.doc, path, (team) => {
+        const a = team.agents.find((x) => x.id === agentId);
         if (a) fn(a);
       }),
     };
@@ -112,8 +112,8 @@ export const useDocumentStore = create<DocStore>()(
       setUpdatedAt: (ts) => set((s) => (s.doc ? { doc: { ...s.doc, updatedAt: ts } } : {})),
 
       placeAgent: (path, roleKey, position, catalog) => {
-        const org = get().doc ? getOrgAtPath(get().doc!, path) : null;
-        const hasRoot = !!org?.agents.some((a) => a.managerId === null);
+        const team = get().doc ? getOrgAtPath(get().doc!, path) : null;
+        const hasRoot = !!team?.agents.some((a) => a.managerId === null);
         const agent = agentFromRole(catalog, roleKey, null, position);
         // First agent in a rootless chart becomes the root; otherwise it's unparented until wired.
         void hasRoot;
@@ -153,12 +153,12 @@ export const useDocumentStore = create<DocStore>()(
         set((s) => {
           if (!s.doc) return {};
           return {
-            doc: updateOrgAtPath(s.doc, path, (org) => {
-              org.agents = org.agents.filter((a) => a.id !== agentId);
+            doc: updateOrgAtPath(s.doc, path, (team) => {
+              team.agents = team.agents.filter((a) => a.id !== agentId);
               // Orphan the reports (they lose their manager) rather than cascade-deleting.
-              for (const a of org.agents) if (a.managerId === agentId) a.managerId = null;
+              for (const a of team.agents) if (a.managerId === agentId) a.managerId = null;
               // Drop dependencies and child mounts referencing the removed agent.
-              org.dependencies = org.dependencies.filter(
+              team.dependencies = team.dependencies.filter(
                 (d) => d.from !== agentId && d.to !== agentId,
               );
             }),
@@ -228,21 +228,21 @@ export const useDocumentStore = create<DocStore>()(
           // Drop-on-empty-rootless: the formation manager becomes the root (mountAgentId null).
           // Drop-on-agent: the manager reports to that agent. One undo unit (single set).
           return {
-            doc: updateOrgAtPath(s.doc, path, (org) => {
-              org.agents.push(...agents);
-              org.dependencies.push(...dependencies);
+            doc: updateOrgAtPath(s.doc, path, (team) => {
+              team.agents.push(...agents);
+              team.dependencies.push(...dependencies);
             }),
           };
         }),
 
-      mountChildOrg: (path, mountAgentId, child) =>
+      mountChildTeam: (path, mountAgentId, child) =>
         set((s) =>
           s.doc
             ? {
                 doc: updateOrgAtPath(
                   s.doc,
                   path,
-                  (o) => void o.childOrganizations.push({ mountAgentId, organization: child }),
+                  (o) => void o.childTeams.push({ mountAgentId, team: child }),
                 ),
               }
             : {},
@@ -266,11 +266,11 @@ export const useDocumentStore = create<DocStore>()(
           s.doc
             ? {
                 doc: updateOrgAtPath(s.doc, path, (o) => {
-                  // Reset the chart to a template: swap agents + dependencies, drop child orgs.
+                  // Reset the chart to a template: swap agents + dependencies, drop child teams.
                   // Custom role definitions are kept (they're reusable, document-local).
                   o.agents = agents;
                   o.dependencies = dependencies;
-                  o.childOrganizations = [];
+                  o.childTeams = [];
                 }),
               }
             : {},

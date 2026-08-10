@@ -1,7 +1,7 @@
 """Agent inspector — the operator's per-node introspection surface (engine.md §6,
 operator-experience.md §3: "introspect the state of any one agent").
 
-One aggregate (`GET /organizations/{id}/agents/{nodeId}/state`) feeds the eight-tab panel;
+One aggregate (`GET /teams/{id}/agents/{nodeId}/state`) feeds the eight-tab panel;
 memory get/reset and the workspace file preview are the only extra endpoints. Everything is
 read-only except the memory reset (the "backfill the position" act — audited). Workspace
 inspection honors invariant 2's spirit: the platform and its operator can look, no agent can.
@@ -49,12 +49,12 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
 
 
-def _find_node(org, node_id: str):
+def _find_node(team, node_id: str):
     from ..actuator import enumerate_nodes
 
-    for org_path, agent in enumerate_nodes(org):
+    for team_path, agent in enumerate_nodes(team):
         if agent.id == node_id:
-            return org_path, agent
+            return team_path, agent
     return None
 
 
@@ -72,9 +72,9 @@ def _node_root(actuation_id: str, node_id: str) -> Path:
     return get_data_dir() / "sandboxes" / actuation_id / node_id
 
 
-def _work_home(org_id: str, node_id: str) -> Path:
+def _work_home(team_id: str, node_id: str) -> Path:
     """F13/F16: the position's actuation-independent home (assignments, logs, transcripts)."""
-    return get_data_dir() / "work" / org_id / node_id
+    return get_data_dir() / "work" / team_id / node_id
 
 
 def _best_actuation(current_id: str | None, assignments, node_id: str) -> str | None:
@@ -97,11 +97,11 @@ def _best_actuation(current_id: str | None, assignments, node_id: str) -> str | 
     return candidates[0] if candidates else None
 
 
-def _workspace_root(org_id: str, node_id: str, actuation_id: str | None) -> Path | None:
+def _workspace_root(team_id: str, node_id: str, actuation_id: str | None) -> Path | None:
     """The root the operator inspects: the stable work home (F13 — where cli assignments,
     logs and archived transcripts live) when it has content, else the actuation's sandbox
     workspace (loop runtime / legacy layouts)."""
-    home = _work_home(org_id, node_id)
+    home = _work_home(team_id, node_id)
     if home.is_dir() and any(home.iterdir()):
         return home
     if actuation_id:
@@ -130,10 +130,10 @@ def _list_workspace(root: Path) -> dict[str, Any] | None:
     return {"root": str(root), "files": files, "truncated": False}
 
 
-def _log_tail(org_id: str, node_id: str, actuation_id: str | None) -> list[str]:
+def _log_tail(team_id: str, node_id: str, actuation_id: str | None) -> list[str]:
     """The node's subprocess log, last ~200 lines — the Session tab's raw feed. The stable
     work home (F16) wins; the per-actuation shard remains as the pre-F16 fallback."""
-    log = _work_home(org_id, node_id) / "logs" / f"{node_id}.log"
+    log = _work_home(team_id, node_id) / "logs" / f"{node_id}.log"
     if not log.is_file() and actuation_id:
         log = _node_root(actuation_id, node_id) / "logs" / f"{node_id}.log"
     if not log.is_file():
@@ -145,9 +145,9 @@ def _log_tail(org_id: str, node_id: str, actuation_id: str | None) -> list[str]:
     return text.splitlines()[-_LOG_TAIL_LINES:]
 
 
-@router.get("/organizations/{org_id}/agents/{node_id}/state")
+@router.get("/teams/{team_id}/agents/{node_id}/state")
 def agent_state(
-    org_id: str,
+    team_id: str,
     node_id: str,
     store=Depends(get_store),
     work_store=Depends(get_work_store),
@@ -156,21 +156,21 @@ def agent_state(
     actuator=Depends(get_actuator),
     directory=Depends(get_directory),
 ) -> Any:
-    if not store.exists(org_id):
-        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
-    org = store.read(org_id)
-    found = _find_node(org, node_id)
+    if not store.exists(team_id):
+        return _error(404, "NOT_FOUND", f"No team {team_id!r}")
+    team = store.read(team_id)
+    found = _find_node(team, node_id)
     if found is None:
-        return _error(404, "NOT_FOUND", f"No agent {node_id!r} in organization {org_id!r}")
-    org_path, agent = found
+        return _error(404, "NOT_FOUND", f"No agent {node_id!r} in team {team_id!r}")
+    team_path, agent = found
 
     # ---- Overview: charter (compiled fresh from the current doc), binding, live status
-    binding = profiles.get_binding_for_node(org_id, node_id, org_path)
+    binding = profiles.get_binding_for_node(team_id, node_id, team_path)
     profile = profiles.get_profile(binding.profileId) if binding else None
-    current_view = actuator.get_current(org_id)
+    current_view = actuator.get_current(team_id)
     actuation_id = current_view.id if current_view else None
     charter = compile_charter(
-        org, org_path, node_id, catalog=get_catalog(), actuation_id=actuation_id or "",
+        team, team_path, node_id, catalog=get_catalog(), actuation_id=actuation_id or "",
         profile_preamble=profile.systemPreamble if profile else "",
     )
     runtime_kind = get_runtime_override() or (charter.defaultRuntime if charter else "loop")
@@ -182,7 +182,7 @@ def agent_state(
 
     # ---- Assignments: current / queue / history
     assignments = sorted(
-        work_store.list_assignments(org_id=org_id, node_id=node_id),
+        work_store.list_assignments(team_id=team_id, node_id=node_id),
         key=lambda a: a.createdAt, reverse=True,
     )
     active = [a for a in assignments if a.state in ASSIGNMENT_ACTIVE_STATES]
@@ -193,31 +193,31 @@ def agent_state(
     )
     terminal = [a for a in assignments if a.state in ASSIGNMENT_TERMINAL_STATES]
 
-    # ---- Spend: node totals, share of org, per-assignment (history sparkline)
+    # ---- Spend: node totals, share of team, per-assignment (history sparkline)
     with get_db().connect() as conn:
         node_row = conn.execute(
             "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens "
-            "FROM ledger_spend_event WHERE org_id = ? AND node_id = ?",
-            (org_id, node_id),
+            "FROM ledger_spend_event WHERE team_id = ? AND node_id = ?",
+            (team_id, node_id),
         ).fetchone()
-        org_row = conn.execute(
+        team_row = conn.execute(
             "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens "
-            "FROM ledger_spend_event WHERE org_id = ?",
-            (org_id,),
+            "FROM ledger_spend_event WHERE team_id = ?",
+            (team_id,),
         ).fetchone()
         per_assignment = {
             r["task_id"]: r["tokens"]
             for r in conn.execute(
                 "SELECT task_id, SUM(input_tokens + output_tokens) AS tokens "
-                "FROM ledger_spend_event WHERE org_id = ? AND node_id = ? AND task_id IS NOT "
+                "FROM ledger_spend_event WHERE team_id = ? AND node_id = ? AND task_id IS NOT "
                 "NULL GROUP BY task_id",
-                (org_id, node_id),
+                (team_id, node_id),
             ).fetchall()
         }
-    node_tokens, org_tokens = node_row["tokens"], org_row["tokens"]
+    node_tokens, team_tokens = node_row["tokens"], team_row["tokens"]
 
     # ---- Lifetime stats (acceptance = accepted-or-closed over terminal; escalations raised)
-    gates = work_store.list_gates_for_node(org_id, node_id)
+    gates = work_store.list_gates_for_node(team_id, node_id)
     accepted = sum(1 for a in terminal if a.state in ("accepted", "closed"))
     stats = {
         "assignmentsTotal": len(assignments),
@@ -236,11 +236,11 @@ def agent_state(
         work_store.list_tool_events(session_actuation, node_id)[-_TOOL_EVENT_LIMIT:]
         if session_actuation else []
     )
-    inspect_root = _workspace_root(org_id, node_id, session_actuation)
+    inspect_root = _workspace_root(team_id, node_id, session_actuation)
 
     return {
         "nodeId": node_id,
-        "orgPath": org_path,
+        "teamPath": team_path,
         "charter": charter.model_dump() if charter else None,
         "binding": (
             {"profileId": profile.id, "name": profile.name, "provider": profile.provider,
@@ -274,53 +274,53 @@ def agent_state(
         },
         "spend": {
             "nodeTokens": node_tokens,
-            "orgTokens": org_tokens,
-            "sharePct": (100.0 * node_tokens / org_tokens) if org_tokens else 0.0,
+            "orgTokens": team_tokens,
+            "sharePct": (100.0 * node_tokens / team_tokens) if team_tokens else 0.0,
         },
-        "memory": [m.model_dump() for m in work_store.get_memory(org_id, node_id, limit=50)],
+        "memory": [m.model_dump() for m in work_store.get_memory(team_id, node_id, limit=50)],
         "session": {
             "sessionRef": session_ref,
             "transcriptPath": transcript_path,
             "toolEvents": tool_events,
-            "logTail": _log_tail(org_id, node_id, session_actuation),
+            "logTail": _log_tail(team_id, node_id, session_actuation),
         },
         "workspace": _list_workspace(inspect_root) if inspect_root else None,
     }
 
 
-@router.get("/organizations/{org_id}/agents/{node_id}/memory")
+@router.get("/teams/{team_id}/agents/{node_id}/memory")
 def get_node_memory(
-    org_id: str, node_id: str, limit: int = 50, work_store=Depends(get_work_store),
+    team_id: str, node_id: str, limit: int = 50, work_store=Depends(get_work_store),
 ) -> Any:
     limit = max(1, min(limit, 200))
-    return {"entries": [m.model_dump() for m in work_store.get_memory(org_id, node_id, limit)]}
+    return {"entries": [m.model_dump() for m in work_store.get_memory(team_id, node_id, limit)]}
 
 
-@router.delete("/organizations/{org_id}/agents/{node_id}/memory")
+@router.delete("/teams/{team_id}/agents/{node_id}/memory")
 def reset_node_memory(
-    org_id: str, node_id: str,
+    team_id: str, node_id: str,
     work_store=Depends(get_work_store), activity=Depends(get_activity),
 ) -> Any:
     """The "backfill the position" act (operator-experience.md §3): wipe the node's durable
     memory. Confirm-gating is the UI's job; the audit trail is ours."""
-    work_store.reset_memory(org_id, node_id)
-    activity.log("operator", "memory.reset", org_id=org_id, subject_ids=[node_id])
+    work_store.reset_memory(team_id, node_id)
+    activity.log("operator", "memory.reset", team_id=team_id, subject_ids=[node_id])
     return {"reset": True}
 
 
-@router.get("/organizations/{org_id}/agents/{node_id}/workspace/file")
+@router.get("/teams/{team_id}/agents/{node_id}/workspace/file")
 def workspace_file(
-    org_id: str, node_id: str, path: str,
+    team_id: str, node_id: str, path: str,
     actuator=Depends(get_actuator), work_store=Depends(get_work_store),
 ) -> Any:
     """Text preview of one workspace file (≤ 256 KB). Path is relative to the node's
     workspace root; anything escaping it is rejected."""
-    current_view = actuator.get_current(org_id)
-    assignments = work_store.list_assignments(org_id=org_id, node_id=node_id)
+    current_view = actuator.get_current(team_id)
+    assignments = work_store.list_assignments(team_id=team_id, node_id=node_id)
     actuation_id = _best_actuation(
         current_view.id if current_view else None, assignments, node_id
     )
-    base = _workspace_root(org_id, node_id, actuation_id)
+    base = _workspace_root(team_id, node_id, actuation_id)
     if base is None:
         return _error(404, "NOT_FOUND", "No workspace for this node")
     root = base.resolve()

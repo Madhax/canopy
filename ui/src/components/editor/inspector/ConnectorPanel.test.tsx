@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectorInstance, ConnectorPack } from "../../../api/connectors";
-import type { OrganizationDoc } from "../../../schema/organization";
+import type { TeamDoc } from "../../../schema/team";
 import { ToastProvider } from "../../common";
 import { ConnectorPanel } from "./ConnectorPanel";
 
@@ -28,7 +28,7 @@ const pack: ConnectorPack = {
 };
 
 const instance: ConnectorInstance = {
-  id: "ci_1", organizationId: "o1", packKey: "github", name: "canopy repo",
+  id: "ci_1", teamId: "o1", packKey: "github", name: "canopy repo",
   config: { owner: "acme", repo: "canopy" },
   secretBindings: { "scm-token": "sec_1" },
   enabledGrants: ["connector.github.issues.read"],
@@ -36,19 +36,19 @@ const instance: ConnectorInstance = {
   createdAt: "2026-08-08T00:00:00Z", updatedAt: "2026-08-08T00:00:00Z",
 };
 
-const org = {
+const team = {
   agents: [
     { id: "a_1", name: "Lead", managerId: null, role: { key: "engineering-lead" } },
     { id: "a_2", name: "Writer", managerId: "a_1", role: { key: "tech-writer" } },
   ],
-} as unknown as OrganizationDoc;
+} as unknown as TeamDoc;
 
 function renderPanel(inst: ConnectorInstance = instance) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <ConnectorPanel orgId="o1" instance={inst} pack={pack} org={org} onClose={vi.fn()} />
+        <ConnectorPanel teamId="o1" instance={inst} pack={pack} team={team} onClose={vi.fn()} />
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -78,10 +78,10 @@ describe("ConnectorPanel", () => {
     expect(screen.getByText(/contents:rw, issues:ro/)).toBeInTheDocument();
   });
 
-  it("shows org-wide scope and the fixed-vs-narrowable config marks", () => {
+  it("shows team-wide scope and the fixed-vs-narrowable config marks", () => {
     renderPanel();
     const radios = screen.getAllByRole("radio");
-    expect((radios[0] as HTMLInputElement).checked).toBe(true); // org-wide
+    expect((radios[0] as HTMLInputElement).checked).toBe(true); // team-wide
     expect(screen.getAllByText("fixed at instance").length).toBe(2);
     expect(screen.getByText("roles/nodes may tighten")).toBeInTheDocument();
   });

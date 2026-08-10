@@ -1,5 +1,5 @@
 // Org-settings section: manage Agent Profiles and Secrets (control-plane.md §10).
-// These are control-plane records, kept OUT of the Organization document (agent-profile.md) — the
+// These are control-plane records, kept OUT of the Team document (agent-profile.md) — the
 // chart stays portable structure; this panel carries the machine-local, secret-adjacent config.
 import { useState } from "react";
 import {
@@ -17,11 +17,11 @@ const KNOWN_MODELS: Record<Provider, string[]> = {
   mock: ["mock-1"],
 };
 
-export function ProfilesSecretsPanel({ orgId }: { orgId: string }) {
-  const profiles = useProfiles(orgId);
-  const secrets = useSecrets(orgId);
-  const profileM = useProfileMutations(orgId);
-  const secretM = useSecretMutations(orgId);
+export function ProfilesSecretsPanel({ teamId }: { teamId: string }) {
+  const profiles = useProfiles(teamId);
+  const secrets = useSecrets(teamId);
+  const profileM = useProfileMutations(teamId);
+  const secretM = useSecretMutations(teamId);
 
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<Provider>("mock");

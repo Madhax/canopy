@@ -1,6 +1,6 @@
 {
   "id": "ap_examplex1",
-  "organizationId": "6b9f2c1e-1111-2222-3333-444455556666",
+  "teamId": "6b9f2c1e-1111-2222-3333-444455556666",
   "name": "Sonnet — default engineer",
   "provider": "anthropic",
   "model": "claude-sonnet-5",

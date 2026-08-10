@@ -5,8 +5,8 @@ watch the 402. That needs a bound profile + a funded meter + a run token — all
 Actuator will mint in A2. Until then this CLI mints a throwaway "session" so the *real* gateway
 resolution path (token → binding → profile → secret → meter) is exercised end to end, not stubbed.
 
-    uv run --project server python -m canopy_server.devkit mint-session --org <ORG_ID>
-    uv run --project server python -m canopy_server.devkit mint-session --org <ORG_ID> \
+    uv run --project server python -m canopy_server.devkit mint-session --team <ORG_ID>
+    uv run --project server python -m canopy_server.devkit mint-session --team <ORG_ID> \
         --provider anthropic --model claude-sonnet-5 --secret-value sk-ant-...
 
 Not wired into the app; it is not an HTTP surface.
@@ -30,24 +30,24 @@ def _mint_session(args: argparse.Namespace) -> int:
 
     secret_id = None
     if args.secret_value:
-        secret_id = secrets.create(args.org, args.secret_name, args.secret_value).id
+        secret_id = secrets.create(args.team, args.secret_name, args.secret_value).id
 
     profile = profiles.create_profile(
-        args.org,
+        args.team,
         name=args.profile_name,
         provider=args.provider,
         model=args.model,
         api_key_secret_id=secret_id,
     )
     node_id = args.node or new_agent_id()
-    profiles.set_binding(args.org, node_id, profile.id)
+    profiles.set_binding(args.team, node_id, profile.id)
 
     actuation_id = new_actuation_id()
     meter = ledger.open_meter(
         actuation_id, node_id, args.allowance, warn_threshold_pct=args.warn, hard_stop=True
     )
     token, _ = runtokens.issue(
-        actuation_id, node_id, args.org, default_meter_id=meter.id
+        actuation_id, node_id, args.team, default_meter_id=meter.id
     )
 
     curl = (
@@ -56,7 +56,7 @@ def _mint_session(args: argparse.Namespace) -> int:
         f'-d \'{{"messages":[{{"role":"user","content":"hello"}}],"kind":"production"}}\''
     )
     print(json.dumps({
-        "organizationId": args.org,
+        "teamId": args.team,
         "actuationId": actuation_id,
         "nodeId": node_id,
         "profileId": profile.id,
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     ms = sub.add_parser("mint-session", help="mint a run token + meter for gateway curl testing")
-    ms.add_argument("--org", required=True, help="organization id")
+    ms.add_argument("--team", required=True, help="team id")
     ms.add_argument("--node", default=None, help="agent node id (default: a fresh synthetic id)")
     ms.add_argument("--provider", default="mock", choices=["mock", "anthropic", "gemini"])
     ms.add_argument("--model", default="mock-1")
