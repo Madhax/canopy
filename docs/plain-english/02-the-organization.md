@@ -205,7 +205,7 @@ unless the current build says otherwise. See [doc 06](06-status-and-direction.md
 rulebook) · [README.md](../README.md) (catalog layering, duty → deliverable) ·
 [archetypes.md](../archetypes.md) (the 26 company types) ·
 [roles.md](../roles.md) (the 87 roles) ·
-[teams.md](../teams.md) (formations, verify/consume) ·
+[formations.md](../formations.md) (formations, verify/consume) ·
 [manager-responsibilities.md](../manager-responsibilities.md) (manager powers and
 gaps — a proposal) · [use-cases.md](../use-cases.md) (the 31 requests) ·
 [org-roadmap.md](../org-roadmap.md) (30-of-31 expressible today) ·

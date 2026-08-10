@@ -1,6 +1,6 @@
 # 02 · Rubric and Judging — factors, weights, evaluators, and the Goodhart wall
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Reads with:** `01-experiment-model.md`, `../../domain-model.md` (§Economics — the Goodhart-proofing precedent), `../../execution/work-model.md` (the records measured factors read), `../organizations/02-capacity-model.md` §4 (the tier-of-truth pattern this reuses), `../../testing.md`
 
 ## 1. Four sources of truth

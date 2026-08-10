@@ -1,6 +1,8 @@
 # Standing Organizations — Design
 
-**Status:** Design (v1 scope committed) · **Date:** 2026-08-08
+**Status:** Implemented (2026-08-08, with `builder-connectors.md`) · **Date:** 2026-08-08
+
+> **Vocabulary note (2026-08-09).** "Org" below means the actuatable chart — a **Team** after the `organizations/` series' rename (C1); a "standing organization" is a *Team with work sources*, unrelated to the new Organization entity. **Not superseded** by `organizations/`: that series governs *capacity and grouping*, this one governs *work arrival* — they compose. The composition is load-bearing in one direction: trigger-fed teams run unattended, and unattended operation requires the C-series' capacity governance before it is allowed on a cadence (`../../org-roadmap.md` §2 rule 5; scheduler admission applies to trigger-born intents like any other).
 **Reads with:** [standing-orgs-ux.md](standing-orgs-ux.md) (the UX), `engine/cadence.py` + `execution/engine.md` §4 (the E7 machinery this mirrors), [builder-connectors.md](builder-connectors.md) (the event source), `work-model.md` (intents), `org-roadmap.md` §O2–O3 (the consumers).
 
 ---

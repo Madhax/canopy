@@ -7,18 +7,22 @@ Design documentation for Canopy: a framework for building AI-agent organizations
 | File | What it is | Domain concept it feeds |
 |---|---|---|
 | `domain-model.md` | The core abstractions, lifecycles, and invariants. Read this first. | everything below hangs off it |
-| `archetypes.md` | Organization types: the palette of org kinds a user can build, each with its role set and dynamics | `OrganizationType` |
+| `archetypes.md` | Team types: the palette of chart kinds a user can build, each with its role set and dynamics | `TeamType` |
 | `roles.md` | The role catalog: every role's purpose and responsibilities, written as duty → deliverable contract | `RoleTemplate` |
-| `teams.md` | Formations: reusable manager+members subtrees with pre-wired artifact flow and dependencies | blueprint fragments for the chart |
+| `formations.md` | Formations: reusable manager+members subtrees with pre-wired artifact flow and dependencies | blueprint fragments for the chart |
 | `use-cases.md` | The out-of-the-box acceptance suite: what a user can ask for on day one and what comes back | `Intent` recipes |
 | `manager-responsibilities.md` | Taxonomy of manager responsibilities across all archetypes, coverage verdicts against the domain model, and proposed extensions for the gaps (mid-flight intervention, scope-divergence detection, checkpoints, standing directives) | proposal feeding `domain-model.md` |
 | `phases.md` | The three phases — Build → Actuate → Execute — and the artifact each hands the next | product navigation |
-| `org-chart-editor.md` | Design spec for the phase-1 WYSIWYG org-chart editor: catalog/document schemas, validation rules, thin FastAPI server, React Flow UI, build milestones | the editor + the serialized `Organization` document |
+| `org-chart-editor.md` | Design spec for the phase-1 WYSIWYG org-chart editor: catalog/document schemas, validation rules, thin FastAPI server, React Flow UI, build milestones | the editor + the serialized `Team` document (`canopy.team` v2; see the 2026-08 amendment) |
 | `actuation/` | Phase-2 design suite: control/data plane topology, agent profiles (Claude/Gemini), sandboxes, agent runtime, workspaces/artifacts, A2A + bus fabric, roadmap. Start at `actuation/README.md`. | actuating the chart into running agents |
 | `execution/` | Phase-3 design suite: the work layer made executable (Assignments, five Gates, Plans/Steps, assignment-bound meters, memory, cadences), the Claude-CLI-wrapped agent runtime (no API key), the ongoing operator experience (mission control, agent inspector, cost explorer, inbox), and the MVP-1 software-team plan. Start at `execution/README.md`. | executing work through the chart |
 | `risks/` | Risk register and derisking strategy across seven contexts (problem-fit, usefulness, marketing, design, architecture, implementation, scalability). Start at `risks/README.md`. | keeping the project alive |
 | `testing.md` | The consolidated testing strategy: four pillars, the current test estate, standing coverage rules, the milestone-by-milestone gap plan, CI topology, and the manual live path | keeping every other row true |
 | `org-roadmap.md` | The milestone sequence in organizations, not features: the self-hosting ladder (docs → bug-close → feature → catalog → voice → frontdesk → Canopy Inc.), the trust/recursion rules, and the capabilities each rung pulls | what should be *running* on all of the above |
+| `design/connectors/` + `design/builder-connectors*.md` + `design/standing-orgs*.md` | Adopted + implemented: connector packs/instances/scoping/security, the builder UX (palette → pill → scope edge), and triggers (work arrives on its own) | `ConnectorInstance`, `WorkTrigger` |
+| `design/organizations/` | **Adopted, pre-MVP (C-series):** the Team/Organization/Pod vocabulary correction, the Organization entity (invariant 12), provider-truthful capacity, the portfolio scheduler, and the portfolio/capacity UX | `Organization`, `ProviderAccount`, `CapacityPool` |
+| `design/experiments/` | **Adopted, post-MVP (L-series):** A/B testing for team structures — experiments, variants, trials, rubrics, blinded panels, search under an envelope, governed promotion | `Experiment`, `Variant`, `Trial`, `Rubric` |
+| `plain-english/` | The companion series for non-engineers: what Canopy is, how work flows, how agents run, what keeps it safe — with a glossary | onboarding |
 
 The layering is strict: **use cases** are satisfied by **archetypes**, which compose **formations**, which compose **roles**, which are constrained by the **domain model**. Anything expressible in the lower layers but not deliverable through the upper ones is a catalog gap, not a user error.
 

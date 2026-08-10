@@ -4,7 +4,7 @@ The beauty of Canopy is that it treats organizational structure as a living, pro
 
 Below is a foundational document enumerating a variety of organizational archetypes, exploring their internal roles, the problems they solve, and the structural dynamics that make them work.
 
-**How to read an archetype.** An archetype is an `OrganizationType` in domain-model terms: it defines the role palette a user can drag from when building a chart of that type, and it suggests default formations (see `teams.md`). Roles are referenced by key from `roles.md`. Every archetype has a stable kebab-case key for serialization. Archetypes nest: a large company is a parent org (`saas-company`) with children (`customer-support-center`, `finance-back-office`) mounted at reporting points — the Corporate Chassis section exists precisely to be nested under any parent.
+**How to read an archetype.** An archetype is a `TeamType` in domain-model terms (formerly `OrganizationType`): it defines the role palette a user can drag from when building a chart of that type, and it suggests default formations (see `formations.md`). Roles are referenced by key from `roles.md`. Every archetype has a stable kebab-case key for serialization. Archetypes nest: a large company is a parent org (`saas-company`) with children (`customer-support-center`, `finance-back-office`) mounted at reporting points — the Corporate Chassis section exists precisely to be nested under any parent.
 
 ---
 

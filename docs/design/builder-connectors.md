@@ -1,6 +1,6 @@
 # Connectors in the Builder — Design
 
-**Status:** Design (v1 scope committed) · **Date:** 2026-08-08
+**Status:** Implemented (2026-08-08) · **Date:** 2026-08-08 · *Scope amendment (2026-08-09): "org" here = **Team** post-C1; instances stay team-scoped, packs importable at Organization level — see the amendment on [`connectors/README.md`](connectors/README.md).*
 **Reads with:** [builder-connectors-ux.md](builder-connectors-ux.md) (the UX), the `connectors/` governance series (this document implements its step-1 slice), `actuation/agent-envelope.md` §3, §5 (grants, readiness), `execution/cli-runtime.md` §2, §4 (compiled surface, MCP tool plane).
 
 ---

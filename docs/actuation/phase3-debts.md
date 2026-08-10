@@ -69,7 +69,7 @@ the run proved the ledger's input side blind.
 
 | # | Status | Where it closed |
 |---|---|---|
-| F1 | **Closed** | Cache-aware metering: `work_step`/`SpendEvent` carry both cache-token columns; settlement and cost estimation weight all four components. The meter-currency re-decision stays open (tracked in the F1 row's end-state). |
+| F1 | **Closed** | Cache-aware metering: `work_step`/`SpendEvent` carry both cache-token columns; settlement and cost estimation weight all four components. The meter-currency re-decision stays open (tracked in the F1 row's end-state) — and the half of F1's spirit the meter can never cover, "what I *spent*" vs "what I'm *allowed*", is designed as the capacity ledger: `../design/organizations/02-capacity-model.md` §9.1 (lands at C2). |
 | F2 | **Closed** | Token-share fallback when costs are all zero; "no price for X" surfaces honestly. |
 | F3 | **Closed** | With F14: liveness-aware no-delta trigger (grace window while the session streams); intervention-card node label fixed. |
 | F4 | **Closed** | Header gate badge + pulse chip; open-gate cards promoted into the main column; attention ring on intent chips and plan rows. |
@@ -85,6 +85,23 @@ the run proved the ledger's input side blind.
 | F14 | **Closed** | First-class liveness: per-assignment `lastActivityAt` + `sessionHealth` on a heartbeat cadence; the stall sweep keys on activity, not settled steps. |
 | F15 | **Closed** | Stage-based progress (done/total from the living plan) is the primary number on node cards and plan rows; the budget meter is a separate affordance labeled "budget". |
 | F16 | **Closed** | Org-owned audit home under `data/work/<orgId>/<nodeId>`: adapter log (size-rotated), per-session stderr (rotated), transcript pointer stored on the assignment, transcript copy archived per session; inspector reads the stable home. |
+
+## Adopted-design debts (registered at adoption, 2026-08-09)
+
+The two adopted proposal series (`../design/organizations/`, `../design/experiments/`) knowingly open the rows below. They are registered here at adoption so nothing is discovered twice; each activates when its series lands (C-series: pre-MVP; L-series: post-MVP) and follows the same rule as every row above — the PR that closes or sunsets one updates this file and the affected design doc together.
+
+| # | Debt | Class | End-state / sunset |
+|---|---|---|---|
+| CAP-D1 | **S4 usage-endpoint compliance exposure.** The provider usage-read source is ToS-gray. | compliance | Off-default, config-gated, isolated to one module (`../design/organizations/03` §6). Sunset if an official usage API ships. |
+| CAP-D2 | **Inference drift in observed-only mode.** Between provider anchors, window levels are estimates. | honesty | Honesty UI (source + staleness on every number) + closed-loop calibration; accepted until S3/S4 adoption or provider openness improves. |
+| CAP-D3 | **Chunking overhead.** Pacing via chunk+resume re-reads session context per resume (cache-priced, not free). | cost | Measured and surfaced in the cost explorer before K3 defaults ever tighten. |
+| CAP-D4 | **Rename long tail.** History (git, old exports, screenshots, the pitch) says "organization" in the chart sense forever. | vocabulary | Mitigated by the permanent v1 importer + the glossary note in `../domain-model.md`. Never fully sunsets. |
+| CAP-D5 | **`google-consumer` is schema-first.** Its load-bearing life awaits a `cli-gemini` runtime. | unexercised code | Kept classification+counting only until a runtime exercises it. |
+| LAB-D1 | **Imperfect blinding.** Exhibits carry stylistic tells. | judging | Panels + probes + human audit + the UI stating the limit; measured honestly forever, never fully sunsets. |
+| LAB-D2 | **Statistical crudeness.** Paired win rates + floors + minimum n; peeking inflates false-promotion odds. | statistics | Holdout confirmation + human ratification; revisit with Elo/sequential methods when trial counts earn it. |
+| LAB-D3 | **Generated-task validity.** A drifting task-author steers scores. | Goodhart | Review + replay anchoring + tag-balance surfacing; sunset after a month of accepted-rate history. |
+| LAB-D4 | **Evaluation overhead unbounded a priori.** Judging cost scales with trials × panel. | cost | Surfaced on the experiment header from L3; a cap knob if reality demands. |
+| LAB-D5 | **Promotion applies via deactuate→re-actuate.** Inherits D7/D8 (no live structural edits); mid-flight promotion waits for drain. | lifecycle | Sunsets with D7/D8 themselves. |
 
 ## Not debts — deliberate Phase-2 assets
 

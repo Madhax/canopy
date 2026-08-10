@@ -1,8 +1,10 @@
-# Canopy Team Formations
+# Canopy Formations
 
-A **formation** is a reusable subtree — a manager role plus member roles, pre-wired with the artifact flow and dependency shape that makes the team work. Formations are the middle layer between roles and archetypes: an archetype (see `archetypes.md`) composes one or more formations under its root; a formation composes roles (see `roles.md`).
+*(This file was `teams.md` until the 2026-08 vocabulary correction — `design/organizations/01` — renamed the derived manager-plus-reports grouping to **Pod** and freed "Team" for the chart unit.)*
 
-In domain-model terms, a formation is a blueprint fragment: dropping one into the editor creates the manager node, its report nodes, and the standing dependency/artifact-routing pattern between them. Teams at runtime are still *derived* (a manager plus its reports); the formation is just the recipe.
+A **formation** is a reusable subtree — a manager role plus member roles, pre-wired with the artifact flow and dependency shape that makes the pod work. Formations are the middle layer between roles and archetypes: an archetype (see `archetypes.md`) composes one or more formations under its root; a formation composes roles (see `roles.md`).
+
+In domain-model terms, a formation is a blueprint fragment: dropping one into the editor creates the manager node, its report nodes, and the standing dependency/artifact-routing pattern between them — a formation *stamps a pod*. Pods at runtime are still *derived* (a manager plus its reports, `domain-model.md` §Pod); the formation is just the recipe.
 
 Each formation has a stable `key`, the roles it wires (by role key), the canonical artifact flow, and the intents it's built to absorb.
 
@@ -40,7 +42,7 @@ Dependency edges carry a **resolution policy** (`resolveOn`, per `domain-model.m
 **Manager:** `engineering-lead` · **Members:** `platform-engineer`, `cloud-architect`, `security-engineer`
 **Purpose:** Internal developer platform — CI/CD, infra, paved roads.
 **Artifact flow:** `InfraSpec` → implementation `PullRequest` → security `SecurityReport` gate → release.
-**Distinctive:** its "customers" are other teams; requests arrive as escalations from peer pods resolved via brokered channels.
+**Distinctive:** its "customers" are other pods; requests arrive as escalations from peer pods resolved via brokered channels.
 
 ## `design-studio-cell`
 
@@ -129,3 +131,10 @@ Dependency edges carry a **resolution policy** (`resolveOn`, per `domain-model.m
 **Manager:** `development-director` · **Members:** `grant-writer`, `volunteer-coordinator`, `content-writer`
 **Purpose:** Fund and staff a mission.
 **Artifact flow:** `FundraisingPlan` → parallel `GrantProposal`s + donor `MeetingAttestation`s + `VolunteerRoster` → quarterly `StatusReport` rollup.
+
+## `experiment-lab` *(lands with the L-series — `design/experiments/`)*
+
+**Manager:** `lab-lead` · **Members:** `evaluator` ×N (from L3; `task-author` joins at L4, `structure-proposer` at L5)
+**Purpose:** Staff the experiment bench — blinded pairwise verdicts on trial exhibits, reviewed task generation, and variant proposals for the search policy.
+**Artifact flow:** anonymized exhibits → evaluator `VerdictCard`s (panel-aggregated) · task queue → `TaskDraft`s (operator-reviewed) · lineage + envelope → `VariantProposal`s.
+**Distinctive:** every output is an artifact; the lab holds no authority over production teams — instantiating variants and promoting a champion are platform actions behind operator-ratified gates (`design/experiments/03` §7). Judges never see team identities or costs; the proposer never sees holdout tasks.

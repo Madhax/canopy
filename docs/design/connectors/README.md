@@ -1,7 +1,9 @@
 # Connector Governance — Proposal Series
 
-**Status:** Proposal · **Date:** 2026-08-06
+**Status:** Adopted — first increments implemented 2026-08-08 (adoption steps 0/1/1.5: the `local-git` + `github` packs, ConnectorInstance store, governed PR-create, triggers) · **Date:** 2026-08-06
 **Produced by:** the connector-governance working group (synthesis of the technical-model, usefulness, and security analyses)
+
+> **Amendment (2026-08-09) — instance scope under the Team/Organization split.** This series predates the vocabulary correction of `../organizations/` (adopted 2026-08-09), so "org-scoped" throughout means the actuatable chart — which is now a **Team**. The scope decision, recorded: **ConnectorInstances stay team-scoped** — config, credential bindings, capability masks, and scope links all attach to one Team, exactly as implemented — and **packs become importable at the (new-sense) Organization level** as a convenience: importing a pack for an Organization makes it available to all member Teams' palettes, but each Team still creates and verifies its own instance with its own credentials. Nothing crosses the Organization wall (domain invariant 12): two Teams pointing at the same upstream each hold their own instance, and no instance, secret, or grant is ever visible across Organizations. The C1 rename sweeps this series' identifiers (`orgId` → `teamId` on instances, `/organizations/{id}/connectors` → `/teams/{id}/connectors`) with no semantic change.
 **Upstream:** `../../actuation/agent-envelope.md` (grants §3, Tool Proxy §3.4, MCP executor §3.6, tiers §5), `../../execution/cli-runtime.md` (compiled session config §2, canopy MCP server §4), `../../org-roadmap.md` (O2 — the immediate consumer), `../../actuation/threat-model.md`, `../../../catalog/catalog.json` (`toolGrants[]`, `roles[].toolGrants`).
 
 ## The question

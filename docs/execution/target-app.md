@@ -113,6 +113,8 @@ Same repo snapshot, same intent, two runs:
 
 Compare: total tokens, tokens-to-green, wall clock, intervention count — plus the column the baseline cannot fill at any price: provenance, per-step attribution, budget enforcement, consented merge, and an audit trail. Publish both numbers whichever way they fall (register move #1). If the org loses on raw cost — likely at this task size — the honest headline is the governance column, and the follow-up experiment is a task shaped for structure's win conditions (parallel, verification-heavy, longer-horizon).
 
+> **Generalized (2026-08-09).** This one-shot experiment is now standing machinery: the experiments series (`design/experiments/`) makes the bare-session baseline a first-class, default-on **solo baseline variant** in every experiment, scored per trial and published continuously on the leaderboard — including the per-tag slices ("solo wins `trivial`, loses `gnarly`") this section's follow-up experiment gestures at. This benchmark twin is Experiment #1; run it once by hand as written here, then let the lab keep the answer current.
+
 ## 11. E4 build checklist (this doc's acceptance)
 
 - App boots and both suites run green standalone (`uv run pytest tests`) on ubuntu + windows — added to CI as a third step of the server job so the fixture can't rot.

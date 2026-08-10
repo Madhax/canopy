@@ -1,6 +1,6 @@
 # 07 · Implementation Plan — migration, milestones, and the hand-off
 
-> **Status:** Proposal — portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
 > **Reads with:** the whole series; `../../execution/mvp.md` (milestone style this follows), `../../testing.md` (pillars every stage must honor), `../../actuation/phase3-debts.md` (the ledger that will track what this opens)
 > **Audience:** this document is written to be handed to Claude Code. Each milestone is independently green, demoable, and CI-covered on the `mock` spine.
 

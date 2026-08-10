@@ -1,6 +1,6 @@
 # 01 · Team and Organization — the domain model, corrected
 
-> **Status:** Proposal — portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
 > **Reads with:** `README.md` (this series), `../../domain-model.md`, `../../org-chart-editor.md` §3, `../../actuation/agent-profile.md`, `../../org-roadmap.md` §O8
 
 ## 1. The misnomer, named

@@ -1,6 +1,6 @@
 # Connectors in the Builder — UX
 
-**Status:** Design (v1 scope committed) · **Date:** 2026-08-08
+**Status:** Implemented (2026-08-08) · **Date:** 2026-08-08 · *Scope amendment (2026-08-09): "org" here = **Team** post-C1; instances stay team-scoped, packs importable at Organization level — see the amendment on [`connectors/README.md`](connectors/README.md).*
 **Reads with:** [builder-connectors.md](builder-connectors.md) (the technical design), `connectors/` (the governance series — declaration, scoping, security), `org-chart-editor.md` (the builder this extends), `actuation/agent-envelope.md` §3 (grants).
 
 ---

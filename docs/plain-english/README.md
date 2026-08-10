@@ -81,7 +81,7 @@ with the AI is a **turn** (an older doc says "tick" — we standardize on turn).
 | [domain-model.md](../domain-model.md) — the rulebook of concepts and invariants | [02](02-the-organization.md), [03](03-how-work-flows.md) |
 | [archetypes.md](../archetypes.md) — the 26 ready-made company types | [02](02-the-organization.md) §"Archetypes" |
 | [roles.md](../roles.md) — the job descriptions (about 87 by actual count; several design docs say ~75 — another counting drift) | [02](02-the-organization.md) §"Roles" |
-| [teams.md](../teams.md) — the 17 pre-wired team blueprints ("formations") | [02](02-the-organization.md) §"Teams and formations" |
+| [formations.md](../formations.md) — the 17 pre-wired team blueprints ("formations") | [02](02-the-organization.md) §"Teams and formations" |
 | [manager-responsibilities.md](../manager-responsibilities.md) — what managers can and can't do (proposal) | [02](02-the-organization.md) §"Managers", [03](03-how-work-flows.md) §"Steering", [06](06-status-and-direction.md) |
 | [use-cases.md](../use-cases.md) — 31 things you can ask for on day one | [02](02-the-organization.md) §"What you can ask for" |
 | [org-chart-editor.md](../org-chart-editor.md) — the drawing tool (built) | [02](02-the-organization.md) §"The org chart editor" |

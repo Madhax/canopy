@@ -1,6 +1,6 @@
 # 06 · Implementation Plan — the L-series, migration, and the hand-off
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Reads with:** the whole series; `../organizations/07-implementation-plan.md` (style and sequencing precedent), `../../testing.md` (pillars every stage honors), `../../actuation/phase3-debts.md` (gains this series' debts on adoption)
 > **Audience:** written to be handed to Claude Code. Each milestone independently green, demoable, and CI-covered on the `mock` + fake-CLI spine.
 

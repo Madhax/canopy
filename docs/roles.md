@@ -4,7 +4,7 @@ Every role below is a **RoleTemplate** in domain-model terms: catalog data, neve
 
 Deliverable notation: **(A)** = Artifact, **(Att)** = ActionAttestation.
 
-Roles are grouped by domain. Archetypes (see `archetypes.md`) compose their role palettes from these groups; formations (see `teams.md`) wire them into reusable subtrees.
+Roles are grouped by domain. Archetypes (see `archetypes.md`) compose their role palettes from these groups; formations (see `formations.md`) wire them into reusable subtrees.
 
 ---
 
@@ -171,3 +171,14 @@ These roles are managers: they decompose intents, issue briefs and directives, d
 | `grant-writer` | Grant Writer | Institutional funding | Draft grant applications → (A: GrantProposal); track deadlines → (A: DeadlineCalendar) |
 | `volunteer-coordinator` | Volunteer Coordinator | Mobilize and schedule people | Recruit volunteers → (A: VolunteerRoster); coordinate shifts (Att: ShiftConfirmation) |
 | `community-lead` | Community Lead | Local presence and engagement | Run community events (Att: EventAttestation); publish updates → (A: Newsletter) |
+
+## Experiment Lab *(lands with the L-series — `design/experiments/`)*
+
+The lab's cognition roles: they staff the `experiment-lab` formation (see `formations.md`) and only ever produce artifacts — the platform records, the operator ratifies (`design/experiments/03` §7). Judges never see team identities or costs; the proposer never sees holdout tasks.
+
+| Key | Title | Purpose | Responsibilities → Deliverables |
+|---|---|---|---|
+| `lab-lead` | Lab Lead | Runs the experiment bench; owns pool health and panel discipline | Curate task pools → (A: PoolReport); flag rubric drift → (A: CalibrationNote); compile experiment status → (A: LabReport) |
+| `evaluator` | Evaluator | Blinded pairwise judgment on trial exhibits | Judge anonymized exhibit pairs → (A: VerdictCard — scores, preference, rationale) |
+| `task-author` | Task Author | Grow the task pool without steering it | Draft candidate tasks from the purpose + tag balance → (A: TaskDraft — operator-reviewed before rotation) |
+| `structure-proposer` | Structure Proposer | Propose the next challenger variant inside the envelope | Analyze leaderboard + lineage → (A: VariantProposal — mutation, rationale, predicted effect) |

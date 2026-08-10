@@ -8,12 +8,15 @@ The chart isn't a diagram of the system. It **is** the system.
 
 ## The idea, in short
 
-- **Organizations are typed and nestable.** A `software-company` offers a different role palette than a `franchise-operation` or a `research-lab`, and any organization can nest child organizations — a support center inside a SaaS company, a single store inside a franchise network.
+- **Teams are typed and nestable.** A `software-company` team offers a different role palette than a `franchise-operation` or a `research-lab`, and any team can nest child teams — a support center inside a SaaS company, a single store inside a franchise network. *(A team is the actuatable chart; what Canopy called an "Organization" before the 2026-08 vocabulary correction — [`docs/design/organizations/`](docs/design/organizations/).)*
+- **Organizations group teams behind hard walls.** An Organization is a named, budgeted, isolated group of teams — your company's fleet next to your personal fleet, sharing one provider subscription under governed capacity: window gauges, per-team burn attribution, throttle knobs with predicted effects, and automatic hold-and-resume when a quota window exhausts.
 - **Every node is an agent, fully encapsulated.** Agents run in isolated workspaces, carry durable memory across engagements, and can never read or write another agent's workspace. They collaborate only through artifacts and messages the platform mediates — the same discipline a real org's reporting lines and confidentiality boundaries enforce.
 - **Communication and delegation follow the chart.** A manager delegates only to its direct reports. Two peers in different teams talk through their common manager, unless the chart explicitly opens a scoped, temporary channel between them — the exception is deliberate, not a loophole.
 - **Every responsibility ends in something checkable.** An agent's output is either an artifact (a document, a patch, a dataset) or an attestation that a real-world action happened (a call made, an approval granted). Nothing is "done" by vibes.
 - **Salary is a first-class constraint, enforced by the framework — not the model.** Every agent has a token budget; every model and tool call is metered between steps by the runtime itself. Managers see burn rate, plan progress, and stalls in real time, and can intervene before a runaway task becomes a runaway bill.
-- **Roles are data, not code.** The core engine has no idea what a "software engineer" or a "line cook" is. Organization types, roles, and team formations are catalog entries anyone can extend.
+- **Roles are data, not code.** The core engine has no idea what a "software engineer" or a "line cook" is. Team types, roles, formations — and connector packs (GitHub, local-git) — are catalog entries anyone can extend.
+- **The chart reaches outward, legibly.** Connectors are dragged onto the canvas like roles: an instance pill, a scope edge to the whole team or a single node, write-only credentials, and a capability mask — an agent's external reach is readable from the chart alone, and work can arrive on its own through triggers ("new issues labeled `bug` → an intent"). ([`docs/design/builder-connectors.md`](docs/design/builder-connectors.md))
+- **Structure is a hypothesis you can test.** The experiment lab (post-MVP, adopted) runs frozen team variants against each other on the same tasks — measured costs, programmatic probes, blinded judge panels — and promotes a cheaper-but-no-worse champion only through a gate you ratify. ([`docs/design/experiments/`](docs/design/experiments/))
 
 ## What it looks like
 
@@ -88,8 +91,14 @@ Three phases are implemented; the chart is built, actuated, **and worked**:
   covers it end to end: intent console, living plan, approvals inbox, mission control + org
   pulse, per-agent inspector, cost explorer, all pushed live over SSE.
 
-MVP hardening (E6) is in progress: crash/redelivery and re-actuation semantics are vectored;
-the headless end-to-end demo and this quickstart are the remainder.
+The E-series (E1–E8) is complete, capped by Canopy's first self-PR — a design proposal authored,
+reviewed, and PR'd by a Canopy org working on this repo. Connectors + triggers shipped next: the
+builder binds GitHub/local-git instances with on-canvas scope, PR-create is a governed action, and
+issue triggers generate intents on their own. **The MVP is not declared delivered until the
+C-series lands** ([`docs/design/organizations/`](docs/design/organizations/), adopted 2026-08-09):
+the Team/Organization vocabulary correction, the portfolio home, and provider-truthful capacity
+governance. After that, the L-series ([`docs/design/experiments/`](docs/design/experiments/))
+adds the experiment lab.
 
 ## Quickstart — run the software team
 
@@ -103,7 +112,8 @@ uv sync --project server     # server deps
 pnpm dev                     # server :8700 + UI :5173 → open http://localhost:5173
 ```
 
-Then, in the app:
+Then, in the app *(until milestone C1 lands, in-app labels still say "Organization" for what the
+docs now call a **Team** — create an organization, add a team)*:
 
 1. **Build** — *New Organization* → pick a software org type → *Start from a formation* → stamp
    the **Product Engineering Pod** (an engineering lead with backend, frontend, and QA reports).
@@ -128,10 +138,11 @@ See `docs/` for the full picture:
 
 | Doc | What's in it |
 |---|---|
-| [`docs/domain-model.md`](docs/domain-model.md) | The core abstractions — Organization, Agent, Assignment, Gate, BudgetMeter, Step — their lifecycles, and the invariants the runtime must honor |
-| [`docs/archetypes.md`](docs/archetypes.md) | 26 organization types, from software teams to franchises to research labs, each with example roles and dynamics |
-| [`docs/roles.md`](docs/roles.md) | 87 catalog roles, each with responsibilities written as duty → deliverable |
-| [`docs/teams.md`](docs/teams.md) | 16 reusable team formations — pre-wired manager + report subtrees with their artifact flow and dependencies |
+| [`docs/domain-model.md`](docs/domain-model.md) | The core abstractions — Organization, Team, Pod, Agent, Assignment, Gate, BudgetMeter, Step — their lifecycles, and the invariants the runtime must honor |
+| [`docs/archetypes.md`](docs/archetypes.md) | 26 team types, from software teams to franchises to research labs, each with example roles and dynamics |
+| [`docs/roles.md`](docs/roles.md) | 87+ catalog roles, each with responsibilities written as duty → deliverable |
+| [`docs/formations.md`](docs/formations.md) | 17 reusable formations — pre-wired manager + report subtrees with their artifact flow and dependencies |
+| [`docs/design/`](docs/design/) | Adopted design series: connector governance ([`connectors/`](docs/design/connectors/)), builder connectors + triggers, organizations & capacity ([`organizations/`](docs/design/organizations/), the pre-MVP C-series), and the experiment lab ([`experiments/`](docs/design/experiments/), the post-MVP L-series) |
 | [`docs/use-cases.md`](docs/use-cases.md) | The out-of-the-box acceptance suite: what you can ask for on day one |
 | [`docs/org-chart-editor.md`](docs/org-chart-editor.md) | Phase-1 front-end design spec: the editor, its REST contract, the serialization format, and the validation rules |
 | [`docs/actuation/`](docs/actuation/) | Phase-2 design suite: control plane, sandbox, message router, budget ledger, and the debt ledger that kept the seams honest |
@@ -162,8 +173,8 @@ hand off; Import/Upload round-trips it back in with fresh ids.
 
 ### Architecture at a glance
 
-- **`catalog/catalog.json`** — the machine-readable catalog (26 org types, 87 roles, 16 formations, tool grants), transcribed from the domain docs and integrity-checked in CI.
-- **`server/`** — the FastAPI control plane: the authoritative validator and org store (SQLite), budget ledger, Model Gateway, actuator + sandbox, message router/bus, the execution engine (`engine/`) with its gates and triggers, repo executors, the operator REST + SSE surface, and the Canopy MCP server agents use as their tool plane.
+- **`catalog/catalog.json`** — the machine-readable catalog (26 team types, 87+ roles, 17 formations, tool grants, connector packs), transcribed from the domain docs and integrity-checked in CI.
+- **`server/`** — the FastAPI control plane: the authoritative validator and team store (SQLite), budget ledger, Model Gateway, actuator + sandbox, message router/bus, the execution engine (`engine/`) with its gates and triggers, connector instances + the trigger scheduler, repo executors (incl. governed PR-create against GitHub), the operator REST + SSE surface, and the Canopy MCP server agents use as their tool plane. The C-series adds the organization store, capacity ledger + quota adapters, and the portfolio scheduler.
 - **`agent/`** — `canopy-agent`, the runtime that boots inside each sandbox: the keyless `loop` runtime and the `cli-claude` adapter that drives headless Claude Code sessions and reports settled Steps.
 - **`ui/`** — React + Vite: the React Flow chart editor (zustand/zundo, mirrored Zod validator) plus the Operate surface (intent console, living plan, inbox, mission control, inspector, cost explorer) over react-query + SSE.
 - **`examples/target-app`** — the seeded work object: a small FastAPI expense-reports service with a deliberately red acceptance suite, so a fresh org has something real to fix.

@@ -1,6 +1,6 @@
 # 03 · Search and Iteration — the next challenger, the envelope, and the lab itself
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Reads with:** `01-experiment-model.md`, `02-rubric-and-judging.md`, `../../manager-responsibilities.md` (the ⛔ this section extends, not violates), `../../org-roadmap.md` §2 (the trust ladder and recursion boundary), `../../roles.md`, `../../teams.md`
 
 ## 1. The variant space

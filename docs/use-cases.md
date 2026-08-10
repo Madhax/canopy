@@ -2,7 +2,7 @@
 
 The use cases Canopy supports on day one, without the user authoring any custom roles or archetypes. Each row is a recipe: the thing a user wants, phrased as they'd phrase it, mapped to the intent they'd submit, the formation/archetype that absorbs it, and the deliverables that come back.
 
-This list is the acceptance suite for the catalog: if a use case here can't be expressed with the shipped roles (`roles.md`), formations (`teams.md`), and archetypes (`archetypes.md`), the catalog — not the user — is wrong.
+This list is the acceptance suite for the catalog: if a use case here can't be expressed with the shipped roles (`roles.md`), formations (`formations.md`), and archetypes (`archetypes.md`), the catalog — not the user — is wrong.
 
 ## Software delivery
 

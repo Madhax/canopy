@@ -1,6 +1,6 @@
 # 03 · Provider Quota Adapters — reading the source of truth
 
-> **Status:** Proposal — portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
 > **Reads with:** `02-capacity-model.md` (the ledger these feed), `04-scheduling-and-throttles.md` (the consumer), `../../execution/cli-runtime.md` (session machinery), `../../actuation/agent-profile.md`
 > **Provenance discipline:** every surface below is labeled **[Official]** (provider-documented), **[Community]** (reverse-engineered, widely used, undocumented), or **[Uncertain]**. Facts current as of 2026-08-08; §7 records the citations. Adapters must treat [Community] surfaces as breakable and degrade to the next tier without operator action.
 

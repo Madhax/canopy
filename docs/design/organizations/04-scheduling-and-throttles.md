@@ -1,6 +1,6 @@
 # 04 · Scheduling and Throttles — the governor
 
-> **Status:** Proposal — portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
 > **Reads with:** `02-capacity-model.md` (state it consumes), `03-provider-quota-adapters.md` (signals), `../../execution/engine.md` §3 (gates), `../../execution/cli-runtime.md` §5–6 (turn boundary, kill+resume), `../../risks/scalability.md` (SC-4, SC-5), `../../actuation/phase3-debts.md` (F13)
 
 ## 1. What exists today (and what is genuinely missing)
