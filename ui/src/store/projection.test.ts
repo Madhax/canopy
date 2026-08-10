@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Catalog } from "../schema/catalog";
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import { projectEdges, projectNodes } from "./projection";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -11,9 +11,9 @@ const catalog = JSON.parse(
   readFileSync(join(here, "..", "..", "..", "catalog", "catalog.json"), "utf-8"),
 ) as Catalog;
 
-function pod(): OrganizationDoc {
+function pod(): TeamDoc {
   return {
-    kind: "canopy.organization",
+    kind: "canopy.team",
     schemaVersion: 1,
     id: "o1",
     name: "Pod",
@@ -24,13 +24,13 @@ function pod(): OrganizationDoc {
     ],
     dependencies: [{ id: "d1", from: "a_be", to: "a_lead", resolveOn: "accepted", note: null }],
     customRoles: [],
-    childOrganizations: [],
+    childTeams: [],
     meta: {},
   };
 }
 
 const input = () => ({
-  org: pod(),
+  team: pod(),
   catalog,
   issueAgentIds: new Set<string>(),
   issueDepIds: new Set<string>(),

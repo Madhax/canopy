@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Catalog } from "../schema/catalog";
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import type { ValidationIssue } from "../validation/codes";
-import { validateOrganization } from "../validation/rules";
+import { validateTeam } from "../validation/rules";
 
 const arraysEqual = (a: string[], b: string[]) =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
 /** Debounced full-tree validation (docs §7.4). Also derives issue sets for the current level. */
 export function useValidation(
-  doc: OrganizationDoc | null,
+  doc: TeamDoc | null,
   catalog: Catalog | undefined,
   path: string[],
 ) {
@@ -18,13 +18,13 @@ export function useValidation(
   useEffect(() => {
     if (!doc || !catalog) return;
     const handle = setTimeout(() => {
-      setIssues(validateOrganization(doc, "draft", catalog));
+      setIssues(validateTeam(doc, "draft", catalog));
     }, 300);
     return () => clearTimeout(handle);
   }, [doc, catalog]);
 
   const currentIssues = useMemo(
-    () => issues.filter((i) => arraysEqual(i.orgPath ?? [], path)),
+    () => issues.filter((i) => arraysEqual(i.teamPath ?? [], path)),
     [issues, path],
   );
 

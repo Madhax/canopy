@@ -2,14 +2,14 @@
 // "starts when: work is submitted (verify) / work is accepted (consume)".
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { OrganizationDoc } from "../../../schema/organization";
+import type { TeamDoc } from "../../../schema/team";
 import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
 import { DependencyPanel } from "./DependencyPanel";
 
-function docWithDep(): OrganizationDoc {
+function docWithDep(): TeamDoc {
   return {
-    kind: "canopy.organization",
+    kind: "canopy.team",
     schemaVersion: 1,
     id: "o1",
     name: "Test",
@@ -20,7 +20,7 @@ function docWithDep(): OrganizationDoc {
     ],
     dependencies: [{ id: "d1", from: "a_qa", to: "a_be", resolveOn: "accepted", note: null }],
     customRoles: [],
-    childOrganizations: [],
+    childTeams: [],
     meta: {},
   };
 }
@@ -35,7 +35,7 @@ beforeEach(() => {
 describe("DependencyPanel resolve-on toggle", () => {
   it("renders both options with the document's value checked", () => {
     const doc = useDocumentStore.getState().doc!;
-    render(<DependencyPanel dependency={doc.dependencies[0]} org={doc} />);
+    render(<DependencyPanel dependency={doc.dependencies[0]} team={doc} />);
     const accepted = screen.getByRole("radio", { name: "work is accepted" });
     const submitted = screen.getByRole("radio", { name: "work is submitted" });
     expect(accepted.getAttribute("aria-checked")).toBe("true");
@@ -44,7 +44,7 @@ describe("DependencyPanel resolve-on toggle", () => {
 
   it("clicking 'work is submitted' flips the dependency to delivered", () => {
     const doc = useDocumentStore.getState().doc!;
-    render(<DependencyPanel dependency={doc.dependencies[0]} org={doc} />);
+    render(<DependencyPanel dependency={doc.dependencies[0]} team={doc} />);
     fireEvent.click(screen.getByRole("radio", { name: "work is submitted" }));
     expect(dep().resolveOn).toBe("delivered");
   });
@@ -52,7 +52,7 @@ describe("DependencyPanel resolve-on toggle", () => {
   it("clicking 'work is accepted' flips it back", () => {
     useDocumentStore.getState().setDependencyResolveOn([], "d1", "delivered");
     const doc = useDocumentStore.getState().doc!;
-    render(<DependencyPanel dependency={doc.dependencies[0]} org={doc} />);
+    render(<DependencyPanel dependency={doc.dependencies[0]} team={doc} />);
     fireEvent.click(screen.getByRole("radio", { name: "work is accepted" }));
     expect(dep().resolveOn).toBe("accepted");
   });

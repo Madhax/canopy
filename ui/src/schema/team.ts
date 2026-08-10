@@ -1,11 +1,12 @@
-// Zod mirror of the organization document (server/src/canopy_server/models.py §Organization).
-// Recursive (child organizations nest full documents), so the schema is declared with z.lazy.
+// Zod mirror of the team document (server/src/canopy_server/models.py §Team).
+// Kind `canopy.team`, schemaVersion 2 (v1 `canopy.organization` migrates in migrate.ts).
+// Recursive (child teams nest full documents), so the schema is declared with z.lazy.
 import { z } from "zod";
 import { responsibilitySchema, salarySchema } from "./catalog";
 
 export type { Deliverable, Responsibility, Salary } from "./catalog";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const pointSchema = z.object({ x: z.number(), y: z.number() }).strict();
 
@@ -57,31 +58,33 @@ export const customRoleSchema = z
   })
   .strict();
 
-// ---- Recursive Organization / ChildOrganization ----------------------------
-export interface OrganizationDoc {
-  kind: "canopy.organization";
+// ---- Recursive Team / ChildTeam --------------------------------------------
+export interface TeamDoc {
+  kind: "canopy.team";
   schemaVersion: number;
   id: string;
   name: string;
+  // The archetype key (catalog `organizationTypes[]` — field name kept for catalog
+  // compatibility; the docs call the concept TeamType post-rename).
   organizationType: string;
   createdAt?: string | null;
   updatedAt?: string | null;
   agents: z.infer<typeof agentSchema>[];
   dependencies: z.infer<typeof dependencySchema>[];
   customRoles: z.infer<typeof customRoleSchema>[];
-  childOrganizations: ChildOrganizationDoc[];
+  childTeams: ChildTeamDoc[];
   meta: Record<string, unknown>;
 }
 
-export interface ChildOrganizationDoc {
+export interface ChildTeamDoc {
   mountAgentId: string;
-  organization: OrganizationDoc;
+  team: TeamDoc;
 }
 
-export const organizationSchema: z.ZodType<OrganizationDoc> = z.lazy(() =>
+export const teamSchema: z.ZodType<TeamDoc> = z.lazy(() =>
   z
     .object({
-      kind: z.literal("canopy.organization").default("canopy.organization"),
+      kind: z.literal("canopy.team").default("canopy.team"),
       schemaVersion: z.number().default(SCHEMA_VERSION),
       id: z.string(),
       name: z.string(),
@@ -91,20 +94,20 @@ export const organizationSchema: z.ZodType<OrganizationDoc> = z.lazy(() =>
       agents: z.array(agentSchema).default([]),
       dependencies: z.array(dependencySchema).default([]),
       customRoles: z.array(customRoleSchema).default([]),
-      childOrganizations: z.array(childOrganizationSchema).default([]),
+      childTeams: z.array(childTeamSchema).default([]),
       meta: z.record(z.unknown()).default({}),
     })
     .strict(),
-) as z.ZodType<OrganizationDoc>;
+) as z.ZodType<TeamDoc>;
 
-export const childOrganizationSchema: z.ZodType<ChildOrganizationDoc> = z.lazy(() =>
+export const childTeamSchema: z.ZodType<ChildTeamDoc> = z.lazy(() =>
   z
     .object({
       mountAgentId: z.string(),
-      organization: organizationSchema,
+      team: teamSchema,
     })
     .strict(),
-) as z.ZodType<ChildOrganizationDoc>;
+) as z.ZodType<ChildTeamDoc>;
 
 export type Agent = z.infer<typeof agentSchema>;
 export type Dependency = z.infer<typeof dependencySchema>;

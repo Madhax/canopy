@@ -1,6 +1,6 @@
-// The /execute landing (live-run finding F5): the operator picks WHICH org to drive before
-// seeing any org's console — the old default (first org in the list, possibly unactuated)
-// buried the live fleet. Actuated orgs sort first and carry their pulse narrative; the rest
+// The /execute landing (live-run finding F5): the operator picks WHICH team to drive before
+// seeing any team's console — the old default (first team in the list, possibly unactuated)
+// buried the live fleet. Actuated teams sort first and carry their pulse narrative; the rest
 // are one click from the same console. Duplicate names disambiguate with an id suffix (F9).
 import { useQueries } from "@tanstack/react-query";
 import { apiGet } from "../../api/client";
@@ -16,11 +16,11 @@ const ACTUATION_TONE: Record<string, string> = {
   draining: "bg-warn/15 text-warn",
 };
 
-/** F9: duplicate org names are indistinguishable on cards — suffix colliding names. */
-export function orgLabelSuffix(orgs: { id: string; name: string }[]): (id: string) => string {
+/** F9: duplicate team names are indistinguishable on cards — suffix colliding names. */
+export function orgLabelSuffix(teams: { id: string; name: string }[]): (id: string) => string {
   const counts = new Map<string, number>();
-  for (const o of orgs) counts.set(o.name, (counts.get(o.name) ?? 0) + 1);
-  const byId = new Map(orgs.map((o) => [o.id, o]));
+  for (const o of teams) counts.set(o.name, (counts.get(o.name) ?? 0) + 1);
+  const byId = new Map(teams.map((o) => [o.id, o]));
   return (id: string) => {
     const o = byId.get(id);
     return o && (counts.get(o.name) ?? 0) > 1 ? `· ${o.id.slice(-5)}` : "";
@@ -28,42 +28,42 @@ export function orgLabelSuffix(orgs: { id: string; name: string }[]): (id: strin
 }
 
 export function OrgPicker({
-  orgs,
+  teams,
   onPick,
 }: {
-  orgs: OrgSummary[];
-  onPick: (orgId: string) => void;
+  teams: OrgSummary[];
+  onPick: (teamId: string) => void;
 }) {
   const pulses = useQueries({
-    queries: orgs.map((o) => ({
+    queries: teams.map((o) => ({
       queryKey: ["pulse", o.id],
-      queryFn: () => apiGet<Pulse>(`/organizations/${o.id}/pulse`),
+      queryFn: () => apiGet<Pulse>(`/teams/${o.id}/pulse`),
       staleTime: 5_000,
     })),
   });
   const pulseOf = new Map<string, Pulse | undefined>(
-    orgs.map((o, i) => [o.id, pulses[i]?.data]),
+    teams.map((o, i) => [o.id, pulses[i]?.data]),
   );
   const isLive = (id: string) => {
     const s = pulseOf.get(id)?.actuation?.state;
     return s === "live" || s === "degraded";
   };
-  const sorted = [...orgs].sort((a, b) => {
+  const sorted = [...teams].sort((a, b) => {
     const la = isLive(a.id) ? 0 : 1;
     const lb = isLive(b.id) ? 0 : 1;
     if (la !== lb) return la - lb;
     return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
   });
-  const suffix = orgLabelSuffix(orgs);
+  const suffix = orgLabelSuffix(teams);
 
-  if (orgs.length === 0) {
-    return <EmptyState title="No organizations yet">Build one in the editor first.</EmptyState>;
+  if (teams.length === 0) {
+    return <EmptyState title="No teams yet">Build one in the editor first.</EmptyState>;
   }
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
-      <h2 className="mb-1 text-sm font-semibold text-ink">Pick an organization to drive</h2>
+      <h2 className="mb-1 text-sm font-semibold text-ink">Pick a team to drive</h2>
       <p className="mb-4 text-xs text-ink-muted">
-        Actuated organizations first — their pulse tells you whether anything needs you.
+        Actuated teams first — their pulse tells you whether anything needs you.
       </p>
       <div className="flex flex-col gap-2">
         {sorted.map((o) => {

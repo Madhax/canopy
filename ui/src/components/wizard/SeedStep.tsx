@@ -35,7 +35,7 @@ export function SeedStep({ catalog, orgType, name, onName, seed, onSeed }: Props
       </label>
 
       {formations.length > 0 && (
-        <Section title="Start from a formation" hint="Stamps a pre-wired team; its manager becomes the org root.">
+        <Section title="Start from a formation" hint="Stamps a pre-wired team; its manager becomes the team root.">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {formations.map((f) => (
               <FormationCard

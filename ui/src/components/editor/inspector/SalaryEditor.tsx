@@ -1,4 +1,4 @@
-import type { Salary } from "../../../schema/organization";
+import type { Salary } from "../../../schema/team";
 import { formatMoney } from "../../../lib/format";
 
 interface Props {

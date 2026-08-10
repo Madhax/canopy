@@ -14,20 +14,20 @@ const STATE_TONE: Record<string, string> = {
   draining: "bg-warn/15 text-warn",
 };
 
-export function ActuationControls({ orgId }: { orgId: string }) {
+export function ActuationControls({ teamId }: { teamId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: actuation } = useActuationCurrent(orgId);
+  const { data: actuation } = useActuationCurrent(teamId);
   const [busy, setBusy] = useState(false);
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null);
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ["actuation", orgId] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["actuation", teamId] });
   const active = !!actuation && actuation.state !== "stopped" && actuation.state !== "failed";
 
   const onActuate = async () => {
     setBusy(true);
     try {
-      await actuate(orgId);
+      await actuate(teamId);
       refresh();
     } catch (e) {
       if (e instanceof ApiError && e.code === "ACTUATION_BLOCKED") setIssues(e.issues ?? []);
@@ -40,7 +40,7 @@ export function ActuationControls({ orgId }: { orgId: string }) {
   const onDeactuate = async () => {
     setBusy(true);
     try {
-      await deactuate(orgId);
+      await deactuate(teamId);
       refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Deactuate failed.", "error");
@@ -86,7 +86,7 @@ export function ActuationControls({ orgId }: { orgId: string }) {
         }
       >
         <p className="mb-3 text-ink-muted">
-          Every node needs a valid Agent Profile binding before the org can be actuated. Fix these,
+          Every node needs a valid Agent Profile binding before the team can be actuated. Fix these,
           then try again:
         </p>
         <ul className="flex flex-col gap-2">

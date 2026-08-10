@@ -88,12 +88,18 @@ class Db:
             conn.close()
 
     def ensure_schema(self) -> None:
-        """Apply every registered module schema. Idempotent; safe to call repeatedly."""
+        """Apply every registered module schema. Idempotent; safe to call repeatedly.
+
+        The C1 column renames run FIRST: a pre-rename DB still carries ``org_id``-family
+        columns, and the registered scripts include ``CREATE INDEX IF NOT EXISTS`` statements
+        that reference the new names — creating those against un-renamed tables would fail.
+        On a fresh DB the rename pass sees no tables and is a no-op.
+        """
         conn = self._open()
         try:
+            self._migrate_c1_columns(conn)
             for sql in _SCHEMAS:
                 conn.executescript(sql)
-            self._migrate_c1_columns(conn)
             self._migrate_c1_refs(conn)
         finally:
             conn.close()

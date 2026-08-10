@@ -18,7 +18,7 @@ export type ProfileParams = z.infer<typeof profileParamsSchema>;
 export const agentProfileSchema = z
   .object({
     id: z.string(),
-    organizationId: z.string(),
+    teamId: z.string(),
     name: z.string(),
     provider: providerSchema,
     model: z.string(),
@@ -35,9 +35,9 @@ export type AgentProfile = z.infer<typeof agentProfileSchema>;
 export const agentBindingSchema = z
   .object({
     id: z.string(),
-    organizationId: z.string(),
+    teamId: z.string(),
     agentNodeId: z.string(),
-    orgPath: z.array(z.string()).default([]),
+    teamPath: z.array(z.string()).default([]),
     profileId: z.string(),
   })
   .strict();
@@ -46,7 +46,7 @@ export type AgentBinding = z.infer<typeof agentBindingSchema>;
 export const secretMetaSchema = z
   .object({
     id: z.string(),
-    organizationId: z.string(),
+    teamId: z.string(),
     name: z.string(),
     createdAt: z.string(),
   })

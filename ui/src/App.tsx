@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/common";
 import { MainLayout } from "./components/MainLayout";
-import { OrganizationListPage } from "./pages/OrganizationListPage";
-import { NewOrganizationWizard } from "./pages/NewOrganizationWizard";
+import { PortfolioPage } from "./pages/PortfolioPage";
+import { NewTeamWizard } from "./pages/NewTeamWizard";
 import { EditorPage } from "./pages/EditorPage";
 import { ActuatePage } from "./pages/ActuatePage";
 import { ExecutePage } from "./pages/ExecutePage";
@@ -19,13 +19,13 @@ export function App() {
         <BrowserRouter>
           <Routes>
             <Route element={<MainLayout />}>
-              <Route path="/" element={<OrganizationListPage />} />
+              <Route path="/" element={<PortfolioPage />} />
               <Route path="/actuate" element={<ActuatePage />} />
               <Route path="/execute" element={<ExecutePage />} />
             </Route>
-            <Route path="/organizations/new" element={<NewOrganizationWizard />} />
-            <Route path="/organizations/:id" element={<EditorPage />} />
-            <Route path="/organizations/:id/org/*" element={<EditorPage />} />
+            <Route path="/teams/new" element={<NewTeamWizard />} />
+            <Route path="/teams/:id" element={<EditorPage />} />
+            <Route path="/teams/:id/team/*" element={<EditorPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

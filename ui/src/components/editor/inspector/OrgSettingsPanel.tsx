@@ -1,4 +1,4 @@
-import type { OrganizationDoc } from "../../../schema/organization";
+import type { TeamDoc } from "../../../schema/team";
 import type { ValidationIssue } from "../../../validation/codes";
 import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
@@ -6,12 +6,12 @@ import { IssuesPanel } from "./IssuesPanel";
 import { ProfilesSecretsPanel } from "./ProfilesSecretsPanel";
 
 interface Props {
-  org: OrganizationDoc;
+  team: TeamDoc;
   issues: ValidationIssue[];
   onFocusIssue: (issue: ValidationIssue) => void;
 }
 
-export function OrgSettingsPanel({ org, issues, onFocusIssue }: Props) {
+export function OrgSettingsPanel({ team, issues, onFocusIssue }: Props) {
   const store = useDocumentStore();
   const path = useSelectionStore((s) => s.path);
   const topOrgId = useDocumentStore((s) => s.doc?.id);
@@ -20,10 +20,10 @@ export function OrgSettingsPanel({ org, issues, onFocusIssue }: Props) {
     <div className="flex flex-col gap-5 p-4">
       <label className="flex flex-col gap-1">
         <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          Organization name
+          Team name
         </span>
         <input
-          value={org.name}
+          value={team.name}
           onChange={(e) => store.renameOrg(path, e.target.value)}
           className="rounded-md border border-border bg-canvas px-2 py-1.5 text-sm outline-none focus:border-accent"
         />
@@ -31,10 +31,10 @@ export function OrgSettingsPanel({ org, issues, onFocusIssue }: Props) {
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Type</span>
-        <span className="text-sm text-ink-muted">{org.organizationType}</span>
+        <span className="text-sm text-ink-muted">{team.organizationType}</span>
       </div>
 
-      {topOrgId && <ProfilesSecretsPanel orgId={topOrgId} />}
+      {topOrgId && <ProfilesSecretsPanel teamId={topOrgId} />}
 
       <div className="border-t border-border pt-4">
         <IssuesPanel issues={issues} onFocus={onFocusIssue} />

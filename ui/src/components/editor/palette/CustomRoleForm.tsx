@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CustomRole, Responsibility } from "../../../schema/organization";
+import type { CustomRole, Responsibility } from "../../../schema/team";
 import { slugify } from "../../../lib/format";
 import { Button, Dialog } from "../../common";
 

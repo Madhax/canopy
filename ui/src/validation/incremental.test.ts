@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import { checkDependency, checkReparent } from "./incremental";
 
-function doc(): OrganizationDoc {
+function doc(): TeamDoc {
   const agent = (id: string, managerId: string | null) => ({
     id,
     name: id,
@@ -13,7 +13,7 @@ function doc(): OrganizationDoc {
     position: { x: 0, y: 0 },
   });
   return {
-    kind: "canopy.organization",
+    kind: "canopy.team",
     schemaVersion: 1,
     id: "o1",
     name: "T",
@@ -28,7 +28,7 @@ function doc(): OrganizationDoc {
     ],
     dependencies: [{ id: "d1", from: "c1", to: "c2", resolveOn: "accepted", note: null }],
     customRoles: [],
-    childOrganizations: [],
+    childTeams: [],
     meta: {},
   };
 }

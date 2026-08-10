@@ -10,27 +10,27 @@ import type {
 } from "../schema/actuation";
 
 // -- queries ---------------------------------------------------------------- //
-export function useProfiles(orgId: string | undefined) {
+export function useProfiles(teamId: string | undefined) {
   return useQuery({
-    queryKey: ["profiles", orgId],
-    queryFn: () => apiGet<AgentProfile[]>(`/organizations/${orgId}/profiles`),
-    enabled: !!orgId,
+    queryKey: ["profiles", teamId],
+    queryFn: () => apiGet<AgentProfile[]>(`/teams/${teamId}/profiles`),
+    enabled: !!teamId,
   });
 }
 
-export function useBindings(orgId: string | undefined) {
+export function useBindings(teamId: string | undefined) {
   return useQuery({
-    queryKey: ["bindings", orgId],
-    queryFn: () => apiGet<AgentBinding[]>(`/organizations/${orgId}/bindings`),
-    enabled: !!orgId,
+    queryKey: ["bindings", teamId],
+    queryFn: () => apiGet<AgentBinding[]>(`/teams/${teamId}/bindings`),
+    enabled: !!teamId,
   });
 }
 
-export function useSecrets(orgId: string | undefined) {
+export function useSecrets(teamId: string | undefined) {
   return useQuery({
-    queryKey: ["secrets", orgId],
-    queryFn: () => apiGet<SecretMeta[]>(`/organizations/${orgId}/secrets`),
-    enabled: !!orgId,
+    queryKey: ["secrets", teamId],
+    queryFn: () => apiGet<SecretMeta[]>(`/teams/${teamId}/secrets`),
+    enabled: !!teamId,
   });
 }
 
@@ -45,51 +45,51 @@ export interface ProfileInput {
   params?: { maxOutputTokens?: number; temperature?: number };
 }
 
-export function useProfileMutations(orgId: string | undefined) {
+export function useProfileMutations(teamId: string | undefined) {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["profiles", orgId] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["profiles", teamId] });
   return {
     create: useMutation({
       mutationFn: (body: ProfileInput) =>
-        apiSend<AgentProfile>("POST", `/organizations/${orgId}/profiles`, body),
+        apiSend<AgentProfile>("POST", `/teams/${teamId}/profiles`, body),
       onSuccess: invalidate,
     }),
     update: useMutation({
       mutationFn: ({ id, patch }: { id: string; patch: Partial<ProfileInput> }) =>
-        apiSend<AgentProfile>("PUT", `/organizations/${orgId}/profiles/${id}`, patch),
+        apiSend<AgentProfile>("PUT", `/teams/${teamId}/profiles/${id}`, patch),
       onSuccess: invalidate,
     }),
     remove: useMutation({
       mutationFn: (id: string) =>
-        apiSend<void>("DELETE", `/organizations/${orgId}/profiles/${id}`),
+        apiSend<void>("DELETE", `/teams/${teamId}/profiles/${id}`),
       onSuccess: invalidate,
     }),
   };
 }
 
-export function validateProfile(orgId: string, profileId: string) {
+export function validateProfile(teamId: string, profileId: string) {
   return apiSend<ValidationResult>(
     "POST",
-    `/organizations/${orgId}/profiles/${profileId}/validate`,
+    `/teams/${teamId}/profiles/${profileId}/validate`,
   );
 }
 
 // -- binding mutations ------------------------------------------------------ //
-export function useBindingMutations(orgId: string | undefined) {
+export function useBindingMutations(teamId: string | undefined) {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["bindings", orgId] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["bindings", teamId] });
   return {
     set: useMutation({
-      mutationFn: (body: { agentNodeId: string; profileId: string; orgPath: string[] }) =>
-        apiSend<AgentBinding>("PUT", `/organizations/${orgId}/bindings`, body),
+      mutationFn: (body: { agentNodeId: string; profileId: string; teamPath: string[] }) =>
+        apiSend<AgentBinding>("PUT", `/teams/${teamId}/bindings`, body),
       onSuccess: invalidate,
     }),
     remove: useMutation({
-      mutationFn: ({ agentNodeId, orgPath }: { agentNodeId: string; orgPath: string[] }) => {
-        const q = orgPath.length ? `?orgPath=${orgPath.join(",")}` : "";
+      mutationFn: ({ agentNodeId, teamPath }: { agentNodeId: string; teamPath: string[] }) => {
+        const q = teamPath.length ? `?teamPath=${teamPath.join(",")}` : "";
         return apiSend<void>(
           "DELETE",
-          `/organizations/${orgId}/bindings/${agentNodeId}${q}`,
+          `/teams/${teamId}/bindings/${agentNodeId}${q}`,
         );
       },
       onSuccess: invalidate,
@@ -98,18 +98,18 @@ export function useBindingMutations(orgId: string | undefined) {
 }
 
 // -- secret mutations ------------------------------------------------------- //
-export function useSecretMutations(orgId: string | undefined) {
+export function useSecretMutations(teamId: string | undefined) {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["secrets", orgId] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["secrets", teamId] });
   return {
     create: useMutation({
       mutationFn: (body: { name: string; value: string }) =>
-        apiSend<SecretMeta>("POST", `/organizations/${orgId}/secrets`, body),
+        apiSend<SecretMeta>("POST", `/teams/${teamId}/secrets`, body),
       onSuccess: invalidate,
     }),
     remove: useMutation({
       mutationFn: (id: string) =>
-        apiSend<void>("DELETE", `/organizations/${orgId}/secrets/${id}`),
+        apiSend<void>("DELETE", `/teams/${teamId}/secrets/${id}`),
       onSuccess: invalidate,
     }),
   };
@@ -118,7 +118,7 @@ export function useSecretMutations(orgId: string | undefined) {
 // -- actuation -------------------------------------------------------------- //
 export interface ActuationNodeView {
   nodeId: string;
-  orgPath: string[];
+  teamPath: string[];
   subState: string;
   status: string | null;
   endpointUrl: string | null;
@@ -127,7 +127,7 @@ export interface ActuationNodeView {
 
 export interface ActuationView {
   id: string;
-  orgId: string;
+  teamId: string;
   state: string;
   error: string | null;
   createdAt: string;
@@ -135,11 +135,11 @@ export interface ActuationView {
   nodes: ActuationNodeView[];
 }
 
-export function useActuationCurrent(orgId: string | undefined) {
+export function useActuationCurrent(teamId: string | undefined) {
   return useQuery({
-    queryKey: ["actuation", orgId],
-    queryFn: () => apiGet<ActuationView | null>(`/organizations/${orgId}/actuations/current`),
-    enabled: !!orgId,
+    queryKey: ["actuation", teamId],
+    queryFn: () => apiGet<ActuationView | null>(`/teams/${teamId}/actuations/current`),
+    enabled: !!teamId,
     // Poll on a steady cadence so per-node status stays fresh through provisioning → live →
     // teardown. A conditional interval doesn't reliably re-arm across the null→active transition,
     // and one small GET every 2 s on the open editor is negligible. Paused when the tab is hidden.
@@ -148,16 +148,16 @@ export function useActuationCurrent(orgId: string | undefined) {
   });
 }
 
-export function actuate(orgId: string) {
+export function actuate(teamId: string) {
   return apiSend<{ actuationId: string; state: string }>(
     "POST",
-    `/organizations/${orgId}/actuations`,
+    `/teams/${teamId}/actuations`,
   );
 }
 
-export function deactuate(orgId: string) {
+export function deactuate(teamId: string) {
   return apiSend<{ actuationId: string; state: string }>(
     "DELETE",
-    `/organizations/${orgId}/actuations/current`,
+    `/teams/${teamId}/actuations/current`,
   );
 }

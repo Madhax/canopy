@@ -2,14 +2,14 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCatalog } from "../api/catalog";
-import { createOrganization } from "../api/organizations";
+import { createTeam } from "../api/teams";
 import type { OrgType, SeedSpec } from "../api/types";
 import { AppHeader } from "../components/AppHeader";
 import { Button, CenteredSpinner, useToast } from "../components/common";
 import { TypeStep } from "../components/wizard/TypeStep";
 import { SeedStep } from "../components/wizard/SeedStep";
 
-export function NewOrganizationWizard() {
+export function NewTeamWizard() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -38,15 +38,15 @@ export function NewOrganizationWizard() {
     if (!type) return;
     setBusy(true);
     try {
-      const doc = await createOrganization({
+      const doc = await createTeam({
         name: name.trim() || `Untitled ${type.title}`,
         organizationType: type.key,
         seed,
       });
-      qc.invalidateQueries({ queryKey: ["organizations"] });
-      navigate(`/organizations/${doc.id}`);
+      qc.invalidateQueries({ queryKey: ["teams"] });
+      navigate(`/teams/${doc.id}`);
     } catch {
-      toast("Could not create organization.", "error");
+      toast("Could not create team.", "error");
       setBusy(false);
     }
   }
@@ -62,7 +62,7 @@ export function NewOrganizationWizard() {
       />
       <main className="mx-auto max-w-4xl px-6 py-8">
         <div className="mb-6 flex items-center gap-3 text-sm">
-          <StepDot n={1} active={step === 1} done={step > 1} label="Organization type" />
+          <StepDot n={1} active={step === 1} done={step > 1} label="Team type" />
           <div className="h-px flex-1 bg-border" />
           <StepDot n={2} active={step === 2} done={false} label="Name & seed" />
         </div>
@@ -86,7 +86,7 @@ export function NewOrganizationWizard() {
                 ← Back
               </Button>
               <Button variant="primary" disabled={busy} onClick={create}>
-                {busy ? "Creating…" : "Create organization"}
+                {busy ? "Creating…" : "Create team"}
               </Button>
             </div>
           </>

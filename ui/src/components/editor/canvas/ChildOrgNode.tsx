@@ -6,7 +6,7 @@ import { sectionColor } from "../../../lib/theme";
 function ChildOrgNodeImpl({ data, selected }: NodeProps & { data: ChildOrgNodeData }) {
   const { child, typeTitle, section, agentCount, hasIssue, direction } = data;
   const color = sectionColor(section);
-  // A child org only reports upward; its incoming handle sits toward its manager.
+  // A child team only reports upward; its incoming handle sits toward its manager.
   const targetPos = direction === "BT" ? Position.Bottom : Position.Top;
 
   return (
@@ -15,7 +15,7 @@ function ChildOrgNodeImpl({ data, selected }: NodeProps & { data: ChildOrgNodeDa
         selected ? "border-accent ring-1 ring-accent" : "border-border-strong"
       }`}
     >
-      {/* a child org reports to its mount agent and can be a sibling dependency endpoint */}
+      {/* a child team reports to its mount agent and can be a sibling dependency endpoint */}
       <Handle type="target" position={targetPos} id="report-target" />
       <Handle type="source" position={Position.Left} id="dep-left" />
       <Handle type="target" position={Position.Right} id="dep-right" />
@@ -30,7 +30,7 @@ function ChildOrgNodeImpl({ data, selected }: NodeProps & { data: ChildOrgNodeDa
           </span>
           {hasIssue && <span className="size-2 shrink-0 rounded-full bg-warn" />}
         </div>
-        <div className="mt-1 truncate text-sm font-semibold text-ink">{child.organization.name}</div>
+        <div className="mt-1 truncate text-sm font-semibold text-ink">{child.team.name}</div>
         <div className="mt-1 flex items-center justify-between text-[10px] text-ink-muted">
           <span>
             {agentCount} agent{agentCount === 1 ? "" : "s"}

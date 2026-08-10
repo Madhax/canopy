@@ -1,13 +1,13 @@
-import type { OrganizationDoc } from "../../schema/organization";
+import type { TeamDoc } from "../../schema/team";
 import { breadcrumbs } from "../../store/orgTree";
 
 interface Props {
-  doc: OrganizationDoc;
+  doc: TeamDoc;
   path: string[];
   onNavigate: (path: string[]) => void;
 }
 
-// Breadcrumbs are the nesting UI: each segment is one organization (docs §7.4).
+// Breadcrumbs are the nesting UI: each segment is one team (docs §7.4).
 export function Breadcrumbs({ doc, path, onNavigate }: Props) {
   const trail = breadcrumbs(doc, path);
   return (

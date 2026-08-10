@@ -14,7 +14,7 @@ interface OrgDoc {
 }
 
 async function seedBoundPod(request: APIRequestContext): Promise<OrgDoc> {
-  const orgRes = await request.post("/api/organizations", {
+  const orgRes = await request.post("/api/teams", {
     data: {
       name: "E2E Software Team",
       organizationType: "product-engineering",
@@ -22,36 +22,36 @@ async function seedBoundPod(request: APIRequestContext): Promise<OrgDoc> {
     },
   });
   expect(orgRes.ok()).toBeTruthy();
-  const org: OrgDoc = await orgRes.json();
+  const team: OrgDoc = await orgRes.json();
 
-  const profRes = await request.post(`/api/organizations/${org.id}/profiles`, {
+  const profRes = await request.post(`/api/teams/${team.id}/profiles`, {
     data: { name: "Mock", provider: "mock", model: "mock-1" },
   });
   expect(profRes.ok()).toBeTruthy();
   const profile = await profRes.json();
-  for (const agent of org.agents) {
-    const bind = await request.put(`/api/organizations/${org.id}/bindings`, {
+  for (const agent of team.agents) {
+    const bind = await request.put(`/api/teams/${team.id}/bindings`, {
       data: { agentNodeId: agent.id, profileId: profile.id },
     });
     expect(bind.ok()).toBeTruthy();
   }
-  return org;
+  return team;
 }
 
 test("the software team runs an intent end to end", async ({ page, request }) => {
-  const org = await seedBoundPod(request);
+  const team = await seedBoundPod(request);
 
   // ---- Actuate: four real agent processes boot and register.
   await page.goto("/actuate");
-  const row = page.locator("div.rounded-xl").filter({ hasText: org.name });
+  const row = page.locator("div.rounded-xl").filter({ hasText: team.name });
   await row.getByRole("button", { name: "▶ Actuate" }).click();
   await expect(row.getByText(/live · 4\/4 ready/)).toBeVisible({ timeout: 90_000 });
 
   // ---- Submit the intent from the console; the SSE channel is the freshness spine.
   await page.goto("/execute");
-  await page.getByRole("combobox").selectOption({ label: org.name });
+  await page.getByRole("combobox").selectOption({ label: team.name });
   await expect(page.getByTitle("Live over SSE")).toBeVisible({ timeout: 20_000 });
-  await page.getByPlaceholder(/Give the org work/).fill(INTENT);
+  await page.getByPlaceholder(/Give the team work/).fill(INTENT);
   await page.getByRole("button", { name: "Submit intent" }).click();
 
   // ---- The lead's staged fan-out lands in the inbox as the REAL proposed batch.

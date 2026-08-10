@@ -177,7 +177,7 @@ export function Palette({
             onClick={onAddChildOrg}
             className="w-full rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-surface-2"
           >
-            ＋ Child organization
+            ＋ Child team
           </button>
         </div>
       </div>

@@ -10,14 +10,14 @@ import {
   type ConnectorPack,
   type VerifyResult,
 } from "../../../api/connectors";
-import type { OrganizationDoc } from "../../../schema/organization";
+import type { TeamDoc } from "../../../schema/team";
 import { Button, useToast } from "../../common";
 
 interface Props {
-  orgId: string;
+  teamId: string;
   instance: ConnectorInstance;
   pack: ConnectorPack | undefined;
-  org: OrganizationDoc;
+  team: TeamDoc;
   onClose: () => void;
 }
 
@@ -28,11 +28,11 @@ const RISK_TONES: Record<string, string> = {
   consequential: "bg-danger/15 text-danger",
 };
 
-export function ConnectorPanel({ orgId, instance, pack, org, onClose }: Props) {
+export function ConnectorPanel({ teamId, instance, pack, team, onClose }: Props) {
   const { toast } = useToast();
-  const update = useUpdateInstance(orgId);
-  const remove = useDeleteInstance(orgId);
-  const verify = useVerifyInstance(orgId);
+  const update = useUpdateInstance(teamId);
+  const remove = useDeleteInstance(teamId);
+  const verify = useVerifyInstance(teamId);
 
   const [name, setName] = useState(instance.name);
   const [config, setConfig] = useState<Record<string, string>>(instance.config);
@@ -162,7 +162,7 @@ export function ConnectorPanel({ orgId, instance, pack, org, onClose }: Props) {
         </>
       )}
 
-      {/* Capabilities — the org-level mask */}
+      {/* Capabilities — the team-level mask */}
       <h3 className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">
         Capabilities
       </h3>
@@ -199,9 +199,9 @@ export function ConnectorPanel({ orgId, instance, pack, org, onClose }: Props) {
         <input
           type="radio"
           checked={orgWide}
-          onChange={() => patch({ linkScope: "org" })}
+          onChange={() => patch({ linkScope: "team" })}
         />
-        Org-wide — every node this org runs can reach it
+        Org-wide — every node this team runs can reach it
       </label>
       <label className="mb-1 flex items-center gap-2 text-xs text-ink">
         <input
@@ -213,7 +213,7 @@ export function ConnectorPanel({ orgId, instance, pack, org, onClose }: Props) {
       </label>
       {!orgWide && (
         <div className="mb-2 ml-5">
-          {org.agents.map((a) => (
+          {team.agents.map((a) => (
             <label key={a.id} className="flex items-center gap-2 text-xs text-ink-muted">
               <input
                 type="checkbox"

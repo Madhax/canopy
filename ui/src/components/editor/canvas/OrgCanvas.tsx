@@ -16,7 +16,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import type { Catalog } from "../../../schema/catalog";
-import type { OrganizationDoc } from "../../../schema/organization";
+import type { TeamDoc } from "../../../schema/team";
 import { checkDependency, checkReparent } from "../../../validation/incremental";
 import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
@@ -29,15 +29,15 @@ import { ChildOrgNode } from "./ChildOrgNode";
 import { ConnectorPill } from "./ConnectorPill";
 import { DependencyEdge, ReportingEdge } from "./edges";
 
-const nodeTypes = { agent: AgentNode, childOrg: ChildOrgNode, connector: ConnectorPill };
+const nodeTypes = { agent: AgentNode, childTeam: ChildOrgNode, connector: ConnectorPill };
 const edgeTypes = { reporting: ReportingEdge, dependency: DependencyEdge };
 
 interface Props {
-  org: OrganizationDoc;
+  team: TeamDoc;
   catalog: Catalog;
   issueAgentIds: Set<string>;
   issueDepIds: Set<string>;
-  onOpenChild: (childOrgId: string) => void;
+  onOpenChild: (childTeamId: string) => void;
   nodeStatus?: Map<string, string>;
   // Connector overlay (builder-connectors.md §7): instances are server truth projected onto
   // the canvas as pills + dashed scope edges — never chart data, never in undo history.
@@ -53,11 +53,11 @@ interface Props {
 // Exported for tests: the canvas edge layer can't render in the headless preview (rAF),
 // so the projection is pinned as pure functions.
 export function connectorNodes(
-  connectors: ConnectorInstance[], org: OrganizationDoc, governed: Set<string>,
+  connectors: ConnectorInstance[], team: TeamDoc, governed: Set<string>,
   selectedId: string | null | undefined,
 ): Node[] {
-  const minX = org.agents.length ? Math.min(...org.agents.map((a) => a.position.x)) : 360;
-  const minY = org.agents.length ? Math.min(...org.agents.map((a) => a.position.y)) : 120;
+  const minX = team.agents.length ? Math.min(...team.agents.map((a) => a.position.x)) : 360;
+  const minY = team.agents.length ? Math.min(...team.agents.map((a) => a.position.y)) : 120;
   return connectors.map((c, i) => ({
     id: c.id,
     type: "connector" as const,
@@ -72,14 +72,14 @@ export function connectorNodes(
   }));
 }
 
-export function connectorEdges(connectors: ConnectorInstance[], org: OrganizationDoc): Edge[] {
-  const root = org.agents.find((a) => a.managerId === null);
+export function connectorEdges(connectors: ConnectorInstance[], team: TeamDoc): Edge[] {
+  const root = team.agents.find((a) => a.managerId === null);
   const out: Edge[] = [];
   for (const c of connectors) {
     if (!c.enabled) continue;
     const targets = c.nodeLinks === null ? (root ? [root.id] : []) : c.nodeLinks;
     for (const t of targets) {
-      if (!org.agents.some((a) => a.id === t)) continue;
+      if (!team.agents.some((a) => a.id === t)) continue;
       out.push({
         id: `cl-${c.id}-${t}`,
         source: c.id,
@@ -88,7 +88,7 @@ export function connectorEdges(connectors: ConnectorInstance[], org: Organizatio
         targetHandle: "report-target",
         type: "default",
         style: { strokeDasharray: "6 3", stroke: "var(--color-border-strong, #888)" },
-        label: c.nodeLinks === null ? "org-wide" : undefined,
+        label: c.nodeLinks === null ? "team-wide" : undefined,
         labelStyle: { fontSize: 9, fill: "var(--color-ink-muted)" },
         selectable: false,
       });
@@ -98,7 +98,7 @@ export function connectorEdges(connectors: ConnectorInstance[], org: Organizatio
 }
 
 function Canvas({
-  org, catalog, issueAgentIds, issueDepIds, onOpenChild, nodeStatus,
+  team, catalog, issueAgentIds, issueDepIds, onOpenChild, nodeStatus,
   connectors, connectorGoverned, selectedConnectorId, onSelectConnector, onLinkConnector,
   onDropConnector,
 }: Props) {
@@ -114,18 +114,18 @@ function Canvas({
 
   const selectedId = selection.kind !== "none" ? selection.id : undefined;
   const projectionInput = useMemo(
-    () => ({ org, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus }),
-    [org, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus],
+    () => ({ team, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus }),
+    [team, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus],
   );
 
   const overlay = useMemo(() => {
     const list = connectors ?? [];
     const governed = connectorGoverned ?? new Set<string>();
     return {
-      nodes: connectorNodes(list, org, governed, selectedConnectorId),
-      edges: connectorEdges(list, org),
+      nodes: connectorNodes(list, team, governed, selectedConnectorId),
+      edges: connectorEdges(list, team),
     };
-  }, [connectors, connectorGoverned, selectedConnectorId, org]);
+  }, [connectors, connectorGoverned, selectedConnectorId, team]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(
     [...projectNodes(projectionInput), ...overlay.nodes],
@@ -147,13 +147,13 @@ function Canvas({
   // Defer the re-measure across two animation frames so it runs AFTER the handles have painted
   // at their new positions — otherwise the very first render routes edges to the wrong edge.
   const nodeIdsKey =
-    org.agents.map((a) => a.id).join(",") +
+    team.agents.map((a) => a.id).join(",") +
     "#" +
-    org.childOrganizations.map((c) => c.organization.id).join(",");
+    team.childTeams.map((c) => c.team.id).join(",");
   useEffect(() => {
     const ids = [
-      ...org.agents.map((a) => a.id),
-      ...org.childOrganizations.map((c) => c.organization.id),
+      ...team.agents.map((a) => a.id),
+      ...team.childTeams.map((c) => c.team.id),
     ];
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
@@ -196,23 +196,23 @@ function Canvas({
     (c: Connection) => {
       if (!c.source || !c.target) return;
       if (c.sourceHandle === "connector-link") {
-        // connector scope: link the instance to the target node (the root = org-wide).
-        if (org.agents.some((a) => a.id === c.target)) onLinkConnector?.(c.source, c.target);
+        // connector scope: link the instance to the target node (the root = team-wide).
+        if (team.agents.some((a) => a.id === c.target)) onLinkConnector?.(c.source, c.target);
         return;
       }
       if (c.sourceHandle === "report-source" && c.targetHandle === "report-target") {
         // reporting: the target reports to the source (re-parent)
-        const res = checkReparent(org, c.target, c.source);
+        const res = checkReparent(team, c.target, c.source);
         if (!res.ok) return toast(res.message ?? "Invalid connection.", "error");
         store.reparentAgent(path, c.target, c.source);
       } else if (c.sourceHandle === "dep-left" && c.targetHandle === "dep-right") {
         // dependency: source depends on target
-        const res = checkDependency(org, c.source, c.target);
+        const res = checkDependency(team, c.source, c.target);
         if (!res.ok) return toast(res.message ?? "Invalid connection.", "error");
         store.addDependency(path, c.source, c.target);
       }
     },
-    [org, path, store, toast, onLinkConnector],
+    [team, path, store, toast, onLinkConnector],
   );
 
   const onDrop = useCallback(
@@ -239,13 +239,13 @@ function Canvas({
         // chart the manager becomes the root; on a rooted chart it attaches under the root.
         const nodeEl = (event.target as HTMLElement).closest(".react-flow__node");
         const droppedOnId = nodeEl?.getAttribute("data-id") ?? null;
-        const onAgent = org.agents.find((a) => a.id === droppedOnId);
-        const root = org.agents.find((a) => a.managerId === null);
+        const onAgent = team.agents.find((a) => a.id === droppedOnId);
+        const root = team.agents.find((a) => a.managerId === null);
         const mount = onAgent ? onAgent.id : root ? root.id : null;
         store.stampFormation(path, formationKey, mount, position, catalog);
       }
     },
-    [screenToFlowPosition, store, path, catalog, select, org],
+    [screenToFlowPosition, store, path, catalog, select, team],
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -261,7 +261,7 @@ function Canvas({
         return;
       }
       onSelectConnector?.(null);
-      if (node.type === "childOrg") select({ kind: "childOrg", id: node.id });
+      if (node.type === "childTeam") select({ kind: "childTeam", id: node.id });
       else select({ kind: "agent", id: node.id });
     },
     [select, onSelectConnector],
@@ -269,7 +269,7 @@ function Canvas({
 
   const onNodeDoubleClick = useCallback(
     (_: unknown, node: Node) => {
-      if (node.type === "childOrg") onOpenChild(node.id);
+      if (node.type === "childTeam") onOpenChild(node.id);
     },
     [onOpenChild],
   );

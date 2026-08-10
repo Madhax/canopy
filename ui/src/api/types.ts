@@ -1,11 +1,11 @@
 export type { Catalog, CatalogRole, Formation, OrgType } from "../schema/catalog";
 export type {
   Agent,
-  ChildOrganizationDoc,
+  ChildTeamDoc,
   CustomRole,
   Dependency,
-  OrganizationDoc,
-} from "../schema/organization";
+  TeamDoc,
+} from "../schema/team";
 export type { ValidationIssue } from "../validation/codes";
 
 export interface OrgSummary {
@@ -13,9 +13,11 @@ export interface OrgSummary {
   name: string;
   organizationType: string;
   agentCount: number;
-  childOrgCount: number;
+  childTeamCount: number;
   updatedAt: string | null;
   valid: boolean;
+  /** Organization membership — server-side state, never part of the document (C1). */
+  organizationId?: string | null;
 }
 
 export type SeedSpec =

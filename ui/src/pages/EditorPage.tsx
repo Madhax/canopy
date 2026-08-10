@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useCatalog } from "../api/catalog";
-import { importOrganization, useOrganization } from "../api/organizations";
+import { importTeam, useTeam } from "../api/teams";
 import { useActuationCurrent } from "../api/actuation";
 import { apiGet } from "../api/client";
-import type { OrganizationDoc } from "../schema/organization";
+import type { TeamDoc } from "../schema/team";
 import type { ValidationIssue } from "../validation/codes";
 import { useDocumentStore, useTemporalStore } from "../store/documentStore";
 import { useSelectionStore } from "../store/selectionStore";
@@ -33,14 +33,14 @@ import { Palette } from "../components/editor/palette/Palette";
 import { ConnectorPanel } from "../components/editor/inspector/ConnectorPanel";
 import { Inspector } from "../components/editor/inspector/Inspector";
 import { JsonDrawer } from "../components/editor/JsonDrawer";
-import { ChildOrgDialog } from "../components/editor/palette/ChildOrgDialog";
+import { ChildTeamDialog } from "../components/editor/palette/ChildTeamDialog";
 import { CustomRoleForm } from "../components/editor/palette/CustomRoleForm";
 
 export function EditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const query = useOrganization(id);
+  const query = useTeam(id);
   const catalog = useCatalog();
 
   const doc = useDocumentStore((s) => s.doc);
@@ -61,7 +61,7 @@ export function EditorPage() {
   const [childDialog, setChildDialog] = useState(false);
   const [customRoleDialog, setCustomRoleDialog] = useState(false);
   const [resetDialog, setResetDialog] = useState(false);
-  const [rescueDoc, setRescueDoc] = useState<OrganizationDoc | null>(null);
+  const [rescueDoc, setRescueDoc] = useState<TeamDoc | null>(null);
   const [pendingLayout, setPendingLayout] = useState(false);
 
   // Load the fetched document into the store once, resetting history + selection.
@@ -78,7 +78,7 @@ export function EditorPage() {
       const raw = sessionStorage.getItem(`canopy:rescue:${query.data.id}`);
       if (raw) {
         try {
-          const parsed = JSON.parse(raw) as OrganizationDoc;
+          const parsed = JSON.parse(raw) as TeamDoc;
           const server = query.data;
           const differs =
             JSON.stringify({ ...parsed, updatedAt: null }) !==
@@ -90,14 +90,14 @@ export function EditorPage() {
         }
       }
 
-      // Freshly created orgs are flagged for an initial auto-layout in the current direction.
+      // Freshly created teams are flagged for an initial auto-layout in the current direction.
       if ((query.data.meta as Record<string, unknown> | undefined)?.needsLayout) {
         setPendingLayout(true);
       }
     }
   }, [query.data, load, setPath, markSavedSignature]);
 
-  const org = doc ? getOrgAtPath(doc, path) : null;
+  const team = doc ? getOrgAtPath(doc, path) : null;
   const { currentIssues, issueAgentIds, issueDepIds, errorCount, warningCount } = useValidation(
     doc,
     catalog.data,
@@ -105,7 +105,7 @@ export function EditorPage() {
   );
 
   // Connectors (builder-connectors.md §7): server truth beside the chart, canvas overlay +
-  // panel. Only shown at the ROOT canvas — instances don't scope into child orgs in v1.
+  // panel. Only shown at the ROOT canvas — instances don't scope into child teams in v1.
   const { data: connectorPacks } = useConnectorPacks(doc?.id);
   const { data: connectorInstances } = useConnectorInstances(doc?.id);
   const createInstance = useCreateInstance(doc?.id);
@@ -155,11 +155,11 @@ export function EditorPage() {
   const linkConnector = useCallback(
     (instanceId: string, targetNodeId: string) => {
       const inst = connectorInstances?.find((i) => i.id === instanceId);
-      if (!inst || !org) return;
-      const root = org.agents.find((a) => a.managerId === null);
+      if (!inst || !team) return;
+      const root = team.agents.find((a) => a.managerId === null);
       if (root && targetNodeId === root.id) {
-        updateInstance.mutate({ id: instanceId, patch: { linkScope: "org" } });
-        toast("Linked org-wide — every node can reach it.", "success");
+        updateInstance.mutate({ id: instanceId, patch: { linkScope: "team" } });
+        toast("Linked team-wide — every node can reach it.", "success");
       } else {
         const links = new Set(inst.nodeLinks ?? []);
         links.add(targetNodeId);
@@ -181,7 +181,7 @@ export function EditorPage() {
     if (actuation) {
       const pathKey = JSON.stringify(path);
       for (const n of actuation.nodes) {
-        if (JSON.stringify(n.orgPath) !== pathKey) continue;
+        if (JSON.stringify(n.teamPath) !== pathKey) continue;
         m.set(n.nodeId, n.subState === "ready" ? n.status ?? "idle" : n.subState);
       }
     }
@@ -192,7 +192,7 @@ export function EditorPage() {
 
   const focusIssue = useCallback(
     (issue: ValidationIssue) => {
-      if (issue.orgPath && issue.orgPath.length > 0) setPath(issue.orgPath);
+      if (issue.teamPath && issue.teamPath.length > 0) setPath(issue.teamPath);
       if (issue.agentIds?.[0]) select({ kind: "agent", id: issue.agentIds[0] });
       else if (issue.dependencyIds?.[0]) select({ kind: "dependency", id: issue.dependencyIds[0] });
     },
@@ -207,9 +207,9 @@ export function EditorPage() {
           const p = positions.get(a.id);
           if (p) a.position = p;
         }
-        for (const c of o.childOrganizations) {
-          const p = positions.get(c.organization.id);
-          if (p) c.organization.meta = { ...c.organization.meta, position: p };
+        for (const c of o.childTeams) {
+          const p = positions.get(c.team.id);
+          if (p) c.team.meta = { ...c.team.meta, position: p };
         }
       });
     },
@@ -224,9 +224,9 @@ export function EditorPage() {
     runLayout(next);
   }, [direction, setLayoutDirection, runLayout]);
 
-  // Initial auto-layout for freshly created orgs (one history entry, then reset history).
+  // Initial auto-layout for freshly created teams (one history entry, then reset history).
   useEffect(() => {
-    if (!pendingLayout || !doc || !org) return;
+    if (!pendingLayout || !doc || !team) return;
     store.applyBatch([], (o) => {
       const positions = layoutReportingTree(o, direction);
       for (const a of o.agents) {
@@ -237,18 +237,18 @@ export function EditorPage() {
     });
     useTemporalStore.getState().clear();
     setPendingLayout(false);
-  }, [pendingLayout, doc, org, direction, store]);
+  }, [pendingLayout, doc, team, direction, store]);
 
   const onExport = useCallback(async () => {
     if (!doc) return;
     try {
-      const res = await fetch(`/api/organizations/${doc.id}/export`);
+      const res = await fetch(`/api/teams/${doc.id}/export`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         toast(body?.error?.message ?? "Export blocked by validation errors.", "error");
         return;
       }
-      downloadJson(`${slugify(doc.name)}.organization.json`, await res.text());
+      downloadJson(`${slugify(doc.name)}.team.json`, await res.text());
       toast("Exported canonical document.", "success");
     } catch {
       toast("Export failed.", "error");
@@ -257,7 +257,7 @@ export function EditorPage() {
 
   const onDownload = useCallback(() => {
     if (!doc) return;
-    downloadJson(`${slugify(doc.name)}.organization.json`, doc);
+    downloadJson(`${slugify(doc.name)}.team.json`, doc);
     toast("Downloaded current document.", "success");
   }, [doc, toast]);
 
@@ -265,8 +265,8 @@ export function EditorPage() {
     try {
       const picked = await pickJsonFile();
       if (!picked) return;
-      const imported = await importOrganization(picked);
-      navigate(`/organizations/${imported.document.id}`);
+      const imported = await importTeam(picked);
+      navigate(`/teams/${imported.document.id}`);
     } catch {
       toast("Could not import that file.", "error");
     }
@@ -274,7 +274,7 @@ export function EditorPage() {
 
   const reloadTheirs = useCallback(async () => {
     if (!id) return;
-    const fresh = await apiGet<OrganizationDoc>(`/organizations/${id}`);
+    const fresh = await apiGet<TeamDoc>(`/teams/${id}`);
     load(fresh);
     useTemporalStore.getState().clear();
     markSavedSignature(fresh);
@@ -282,15 +282,15 @@ export function EditorPage() {
 
   const doOverwrite = useCallback(async () => {
     if (!id) return;
-    const fresh = await apiGet<OrganizationDoc>(`/organizations/${id}`);
+    const fresh = await apiGet<TeamDoc>(`/teams/${id}`);
     await overwriteMine(fresh.updatedAt ?? null);
   }, [id, overwriteMine]);
 
-  if (query.isLoading || catalog.isLoading || !doc || !catalog.data || !org) {
+  if (query.isLoading || catalog.isLoading || !doc || !catalog.data || !team) {
     return <CenteredSpinner label="Loading editor…" />;
   }
 
-  const orgType = catalog.data.organizationTypes.find((o) => o.key === org.organizationType);
+  const orgType = catalog.data.organizationTypes.find((o) => o.key === team.organizationType);
 
   return (
     <div className="flex h-screen flex-col">
@@ -323,7 +323,7 @@ export function EditorPage() {
       <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2">
         <div className="flex items-center gap-3">
           <Breadcrumbs doc={doc} path={path} onNavigate={setPath} />
-          <ActuationControls orgId={doc.id} />
+          <ActuationControls teamId={doc.id} />
         </div>
         <Toolbar
           status={status}
@@ -351,13 +351,13 @@ export function EditorPage() {
             select({ kind: "agent", id: store.placeAgent(path, roleKey, { x: 360, y: 200 }, catalog.data!) })
           }
           onStampFormation={(formationKey) => {
-            const root = org.agents.find((a) => a.managerId === null);
+            const root = team.agents.find((a) => a.managerId === null);
             store.stampFormation(path, formationKey, root?.id ?? null, { x: 400, y: 140 }, catalog.data!);
           }}
           onAddCustomRole={() => setCustomRoleDialog(true)}
           onAddChildOrg={() => {
-            if (org.agents.length === 0) {
-              toast("Add an agent first — a child org mounts under one.", "info");
+            if (team.agents.length === 0) {
+              toast("Add an agent first — a child team mounts under one.", "info");
               return;
             }
             setChildDialog(true);
@@ -368,11 +368,11 @@ export function EditorPage() {
 
         <div className="min-w-0 flex-1">
           <OrgCanvas
-            org={org}
+            team={team}
             catalog={catalog.data}
             issueAgentIds={issueAgentIds}
             issueDepIds={issueDepIds}
-            onOpenChild={(childOrgId) => setPath([...path, childOrgId])}
+            onOpenChild={(childTeamId) => setPath([...path, childTeamId])}
             nodeStatus={nodeStatus}
             connectors={atRoot ? connectorInstances : undefined}
             connectorGoverned={connectorGoverned}
@@ -385,41 +385,41 @@ export function EditorPage() {
 
         {connectorSel && connectorInstances?.some((i) => i.id === connectorSel) ? (
           <ConnectorPanel
-            orgId={doc.id}
+            teamId={doc.id}
             instance={connectorInstances.find((i) => i.id === connectorSel)!}
             pack={connectorPacks?.find(
               (p) => p.key === connectorInstances.find((i) => i.id === connectorSel)!.packKey,
             )}
-            org={org}
+            team={team}
             onClose={() => setConnectorSel(null)}
           />
         ) : (
           <Inspector
-            org={org}
+            team={team}
             catalog={catalog.data}
             issues={currentIssues}
             onFocusIssue={focusIssue}
-            onOpenChild={(childOrgId) => setPath([...path, childOrgId])}
+            onOpenChild={(childTeamId) => setPath([...path, childTeamId])}
           />
         )}
 
         <JsonDrawer doc={doc} open={jsonOpen} onClose={() => setJsonOpen(false)} />
       </div>
 
-      <ChildOrgDialog
+      <ChildTeamDialog
         open={childDialog}
         catalog={catalog.data}
-        agents={org.agents}
+        agents={team.agents}
         defaultMountId={
           useSelectionStore.getState().selection.kind === "agent"
             ? (useSelectionStore.getState().selection as { id: string }).id
-            : org.agents.find((a) => a.managerId === null)?.id
+            : team.agents.find((a) => a.managerId === null)?.id
         }
         onClose={() => setChildDialog(false)}
         onCreate={(mountAgentId, child) => {
-          store.mountChildOrg(path, mountAgentId, child);
+          store.mountChildTeam(path, mountAgentId, child);
           setChildDialog(false);
-          select({ kind: "childOrg", id: child.id });
+          select({ kind: "childTeam", id: child.id });
         }}
       />
 
@@ -436,7 +436,7 @@ export function EditorPage() {
       <ResetDialog
         open={resetDialog}
         catalog={catalog.data}
-        org={org}
+        team={team}
         onClose={() => setResetDialog(false)}
         onApply={(agents, deps) => {
           store.replaceChart(path, agents, deps);

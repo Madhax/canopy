@@ -1,4 +1,4 @@
-import type { Extensions, Responsibility } from "../../../schema/organization";
+import type { Extensions, Responsibility } from "../../../schema/team";
 
 interface Props {
   extensions: Extensions;

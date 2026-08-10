@@ -1,4 +1,4 @@
-// Mission control (operator-experience.md §2): "what is my organization doing?" — the org
+// Mission control (operator-experience.md §2): "what is my team doing?" — the team
 // pulse header (always visible in every Operate view) and the chart projected as a live tree
 // of node cards with the operations overlay: status, current work, queue/WIP, meter, gate
 // padlocks, runtime kind. Every card deep-links into the inspector.
@@ -37,7 +37,7 @@ export const STATE_LABEL: Record<string, string> = {
 
 export const stateLabel = (s: string) => STATE_LABEL[s] ?? s;
 
-/** F5: one line of narrative — what the org is doing and whether any of it needs you. */
+/** F5: one line of narrative — what the team is doing and whether any of it needs you. */
 export function pulseNarrative(pulse: Pulse, opts?: { includeAttention?: boolean }): string {
   const parts: string[] = [];
   const working = pulse.nodes.filter(
@@ -55,7 +55,7 @@ export function pulseNarrative(pulse: Pulse, opts?: { includeAttention?: boolean
 }
 
 /** The always-visible observability strip: actuation · intents · burn · gates · attention. */
-export function OrgPulse({ pulse }: { pulse: Pulse }) {
+export function TeamPulse({ pulse }: { pulse: Pulse }) {
   const actuation = pulse.actuation?.state ?? "not actuated";
   const internal = pulse.gates.open - pulse.gates.attention;
   const gateSummary = Object.entries(pulse.gates.byKind)

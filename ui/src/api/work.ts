@@ -90,7 +90,7 @@ export interface Intent {
   createdAt: string;
   rootAssignmentId: string | null;
   cadenceId: string | null;
-  // Trigger provenance (standing-orgs.md §3): the ⚡ chip and its external key.
+  // Trigger provenance (standing-teams.md §3): the ⚡ chip and its external key.
   triggerId?: string | null;
   externalKey?: string | null;
 }
@@ -98,7 +98,7 @@ export interface Intent {
 // A standing schedule (E7, engine.md §4): each due occurrence fires an ordinary intent.
 export interface Cadence {
   id: string;
-  nodeId: string | null; // null ⇒ the org root at fire time
+  nodeId: string | null; // null ⇒ the team root at fire time
   name: string;
   cron: string; // five UTC fields: minute hour day-of-month month day-of-week
   intentText: string;
@@ -108,11 +108,11 @@ export interface Cadence {
   createdAt: string;
 }
 
-// An event-driven work source (standing-orgs.md §2): polls a connector instance, opens one
+// An event-driven work source (standing-teams.md §2): polls a connector instance, opens one
 // episodic intent per new external event, deduped by the server's fire ledger.
 export interface Trigger {
   id: string;
-  orgId: string;
+  teamId: string;
   name: string;
   kind: string; // 'github-issues' (v1)
   nodeId: string | null;
@@ -180,11 +180,11 @@ export function usePollInterval(): number | false {
   return useLiveStore((s) => s.live) ? false : POLL;
 }
 
-export function useIntents(orgId: string | null) {
+export function useIntents(teamId: string | null) {
   return useQuery({
-    queryKey: ["intents", orgId],
-    queryFn: () => apiGet<{ intents: Intent[] }>(`/organizations/${orgId}/intents`),
-    enabled: !!orgId,
+    queryKey: ["intents", teamId],
+    queryFn: () => apiGet<{ intents: Intent[] }>(`/teams/${teamId}/intents`),
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.intents,
   });
@@ -203,28 +203,28 @@ export function useIntentPlan(intentId: string | null) {
 }
 
 export function useSpend(
-  orgId: string | null,
+  teamId: string | null,
   groupBy: "node" | "intent" | "assignment",
   split = true,
 ) {
   return useQuery({
-    queryKey: ["spend", orgId, groupBy, split],
+    queryKey: ["spend", teamId, groupBy, split],
     queryFn: () =>
       apiGet<{ rows: SpendRow[]; costsAreEstimates: boolean }>(
-        `/organizations/${orgId}/spend?groupBy=${groupBy}&split=${split}`,
+        `/teams/${teamId}/spend?groupBy=${groupBy}&split=${split}`,
       ),
-    enabled: !!orgId,
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.rows,
   });
 }
 
-export function useAssignments(orgId: string | null) {
+export function useAssignments(teamId: string | null) {
   return useQuery({
-    queryKey: ["assignments", orgId],
+    queryKey: ["assignments", teamId],
     queryFn: () =>
-      apiGet<{ assignments: Assignment[] }>(`/organizations/${orgId}/assignments`),
-    enabled: !!orgId,
+      apiGet<{ assignments: Assignment[] }>(`/teams/${teamId}/assignments`),
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.assignments,
   });
@@ -243,38 +243,38 @@ export function useAssignmentDetail(assignmentId: string | null) {
   });
 }
 
-export function useOperatorGates(orgId: string | null) {
+export function useOperatorGates(teamId: string | null) {
   return useQuery({
-    queryKey: ["gates", orgId],
+    queryKey: ["gates", teamId],
     queryFn: () =>
-      apiGet<{ gates: Gate[] }>(`/organizations/${orgId}/gates?state=open&owner=operator`),
-    enabled: !!orgId,
+      apiGet<{ gates: Gate[] }>(`/teams/${teamId}/gates?state=open&owner=operator`),
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.gates,
   });
 }
 
-export function useNotifications(orgId: string | null) {
+export function useNotifications(teamId: string | null) {
   return useQuery({
-    queryKey: ["notifications", orgId],
+    queryKey: ["notifications", teamId],
     queryFn: () =>
       apiGet<{ notifications: Notification[] }>(
-        `/organizations/${orgId}/notifications?unread=true`,
+        `/teams/${teamId}/notifications?unread=true`,
       ),
-    enabled: !!orgId,
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.notifications,
   });
 }
 
-function useInvalidateWork(orgId: string | null) {
+function useInvalidateWork(teamId: string | null) {
   const qc = useQueryClient();
   return () => {
     for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments",
                        "spend", "assignment-detail", "cadences", "triggers"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
-    void orgId;
+    void teamId;
   };
 }
 
@@ -294,65 +294,65 @@ export interface ArtifactPreview {
   reason: "too-large" | "binary" | "missing-blob" | null;
 }
 
-export function useArtifact(orgId: string | null, ref: string | null) {
+export function useArtifact(teamId: string | null, ref: string | null) {
   return useQuery({
-    queryKey: ["artifact", orgId, ref],
+    queryKey: ["artifact", teamId, ref],
     queryFn: () =>
       apiGet<ArtifactPreview>(
-        `/organizations/${orgId}/artifacts?ref=${encodeURIComponent(ref!)}`,
+        `/teams/${teamId}/artifacts?ref=${encodeURIComponent(ref!)}`,
       ),
-    enabled: !!orgId && !!ref,
+    enabled: !!teamId && !!ref,
     staleTime: Infinity,
   });
 }
 
-export function useCadences(orgId: string | null) {
+export function useCadences(teamId: string | null) {
   return useQuery({
-    queryKey: ["cadences", orgId],
-    queryFn: () => apiGet<{ cadences: Cadence[] }>(`/organizations/${orgId}/cadences`),
-    enabled: !!orgId,
+    queryKey: ["cadences", teamId],
+    queryFn: () => apiGet<{ cadences: Cadence[] }>(`/teams/${teamId}/cadences`),
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.cadences,
   });
 }
 
-export function useCreateCadence(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useCreateCadence(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (body: {
       name: string;
       cron: string;
       intentText: string;
       nodeId?: string | null;
-    }) => apiSend("POST", `/organizations/${orgId}/cadences`, body),
+    }) => apiSend("POST", `/teams/${teamId}/cadences`, body),
     onSuccess: invalidate,
   });
 }
 
-export function useUpdateCadence(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useUpdateCadence(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: ({ cadenceId, body }: { cadenceId: string; body: { enabled?: boolean } }) =>
-      apiSend("PUT", `/organizations/${orgId}/cadences/${cadenceId}`, body),
+      apiSend("PUT", `/teams/${teamId}/cadences/${cadenceId}`, body),
     onSuccess: invalidate,
   });
 }
 
-export function useDeleteCadence(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useDeleteCadence(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (cadenceId: string) =>
-      apiSend("DELETE", `/organizations/${orgId}/cadences/${cadenceId}`),
+      apiSend("DELETE", `/teams/${teamId}/cadences/${cadenceId}`),
     onSuccess: invalidate,
   });
 }
 
-// ---- triggers (standing-orgs.md §4) ----
-export function useTriggers(orgId: string | null) {
+// ---- triggers (standing-teams.md §4) ----
+export function useTriggers(teamId: string | null) {
   return useQuery({
-    queryKey: ["triggers", orgId],
-    queryFn: () => apiGet<{ triggers: Trigger[] }>(`/organizations/${orgId}/triggers`),
-    enabled: !!orgId,
+    queryKey: ["triggers", teamId],
+    queryFn: () => apiGet<{ triggers: Trigger[] }>(`/teams/${teamId}/triggers`),
+    enabled: !!teamId,
     refetchInterval: usePollInterval(),
     select: (d) => d.triggers,
   });
@@ -366,56 +366,56 @@ export interface TriggerBody {
   config?: Trigger["config"];
 }
 
-export function useCreateTrigger(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useCreateTrigger(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (body: TriggerBody) =>
-      apiSend<Trigger>("POST", `/organizations/${orgId}/triggers`, body),
+      apiSend<Trigger>("POST", `/teams/${teamId}/triggers`, body),
     onSuccess: invalidate,
   });
 }
 
-export function useUpdateTrigger(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useUpdateTrigger(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: ({ triggerId, body }: { triggerId: string; body: Partial<TriggerBody> & { enabled?: boolean } }) =>
-      apiSend<Trigger>("PUT", `/organizations/${orgId}/triggers/${triggerId}`, body),
+      apiSend<Trigger>("PUT", `/teams/${teamId}/triggers/${triggerId}`, body),
     onSuccess: invalidate,
   });
 }
 
-export function useDeleteTrigger(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useDeleteTrigger(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (triggerId: string) =>
-      apiSend("DELETE", `/organizations/${orgId}/triggers/${triggerId}`),
+      apiSend("DELETE", `/teams/${teamId}/triggers/${triggerId}`),
     onSuccess: invalidate,
   });
 }
 
-export function useCheckTrigger(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useCheckTrigger(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (triggerId: string) =>
       apiSend<{ fired: string[]; candidates: number }>(
-        "POST", `/organizations/${orgId}/triggers/${triggerId}/check`,
+        "POST", `/teams/${teamId}/triggers/${triggerId}/check`,
       ),
     onSuccess: invalidate,
   });
 }
 
-export function useDryRunTrigger(orgId: string | null) {
+export function useDryRunTrigger(teamId: string | null) {
   return useMutation({
     mutationFn: (triggerId: string) =>
-      apiSend<TriggerDryRun>("POST", `/organizations/${orgId}/triggers/${triggerId}/dry-run`),
+      apiSend<TriggerDryRun>("POST", `/teams/${teamId}/triggers/${triggerId}/dry-run`),
   });
 }
 
-export function useSubmitIntent(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useSubmitIntent(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (body: { text: string; targetNodeId?: string }) =>
-      apiSend("POST", `/organizations/${orgId}/intents`, body),
+      apiSend("POST", `/teams/${teamId}/intents`, body),
     onSuccess: invalidate,
   });
 }
@@ -430,8 +430,8 @@ export interface ResolveBody {
   assignmentId?: string;
 }
 
-export function useResolveGate(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useResolveGate(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: ({ gateId, body }: { gateId: string; body: ResolveBody }) =>
       apiSend("POST", `/gates/${gateId}/resolve`, body),
@@ -439,8 +439,8 @@ export function useResolveGate(orgId: string | null) {
   });
 }
 
-export function useAssignmentAction(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useAssignmentAction(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: ({
       assignmentId,
@@ -455,8 +455,8 @@ export function useAssignmentAction(orgId: string | null) {
   });
 }
 
-export function useLeaveNote(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useLeaveNote(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: ({
       intentId,
@@ -469,11 +469,11 @@ export function useLeaveNote(orgId: string | null) {
   });
 }
 
-export function useMarkNotificationsRead(orgId: string | null) {
-  const invalidate = useInvalidateWork(orgId);
+export function useMarkNotificationsRead(teamId: string | null) {
+  const invalidate = useInvalidateWork(teamId);
   return useMutation({
     mutationFn: (ids?: string[]) =>
-      apiSend("POST", `/organizations/${orgId}/notifications/read`, { ids: ids ?? null }),
+      apiSend("POST", `/teams/${teamId}/notifications/read`, { ids: ids ?? null }),
     onSuccess: invalidate,
   });
 }

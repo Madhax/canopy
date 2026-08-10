@@ -1,5 +1,5 @@
-// The live channel (E5, operator-experience.md §1): one SSE stream per org
-// (`GET /organizations/{id}/events`) replaces the 2.5s polling. Events map to targeted
+// The live channel (E5, operator-experience.md §1): one SSE stream per team
+// (`GET /teams/{id}/events`) replaces the 2.5s polling. Events map to targeted
 // react-query invalidations; when the stream drops, `useLiveStore.live` flips false and the
 // work.ts hooks fall back to their intervals while EventSource reconnects on its own.
 import { useEffect } from "react";
@@ -43,13 +43,13 @@ function invalidate(qc: QueryClient, keys: string[]) {
   for (const key of keys) qc.invalidateQueries({ queryKey: [key] });
 }
 
-/** Subscribe the org's SSE stream to the query cache. Returns whether the channel is live. */
-export function useOrgEvents(orgId: string | null): boolean {
+/** Subscribe the team's SSE stream to the query cache. Returns whether the channel is live. */
+export function useTeamEvents(teamId: string | null): boolean {
   const qc = useQueryClient();
 
   useEffect(() => {
-    if (!orgId) return;
-    const es = new EventSource(`/api/organizations/${orgId}/events`);
+    if (!teamId) return;
+    const es = new EventSource(`/api/teams/${teamId}/events`);
     let lastStepAt = 0;
     let stepTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -94,7 +94,7 @@ export function useOrgEvents(orgId: string | null): boolean {
       if (stepTimer !== null) clearTimeout(stepTimer);
       useLiveStore.setState({ live: false });
     };
-  }, [orgId, qc]);
+  }, [teamId, qc]);
 
   return useLiveStore((s) => s.live);
 }

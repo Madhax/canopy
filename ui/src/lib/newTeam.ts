@@ -1,7 +1,7 @@
-// Build a nested child Organization document client-side. Child orgs aren't separately addressable
+// Build a nested child Team document client-side. Child teams aren't separately addressable
 // on the server (docs §6) — they're created in the browser and saved as part of the top document.
 import type { Catalog, OrgType } from "../schema/catalog";
-import type { Agent, Dependency, OrganizationDoc, Salary } from "../schema/organization";
+import type { Agent, Dependency, TeamDoc, Salary } from "../schema/team";
 import { buildFormationSubtree } from "./formation";
 import { newAgentId } from "./ids";
 
@@ -52,9 +52,9 @@ export function newChildOrgDoc(
   name: string,
   organizationType: string,
   seed: ChildSeed,
-): OrganizationDoc {
+): TeamDoc {
   let agents: Agent[] = [];
-  let dependencies: OrganizationDoc["dependencies"] = [];
+  let dependencies: TeamDoc["dependencies"] = [];
 
   if (seed.kind === "root") {
     agents = [agentFromRole(catalog, seed.roleKey)];
@@ -65,7 +65,7 @@ export function newChildOrgDoc(
   }
 
   return {
-    kind: "canopy.organization",
+    kind: "canopy.team",
     schemaVersion: 1,
     id: crypto.randomUUID(),
     name,
@@ -73,7 +73,7 @@ export function newChildOrgDoc(
     agents,
     dependencies,
     customRoles: [],
-    childOrganizations: [],
+    childTeams: [],
     meta: {},
   };
 }

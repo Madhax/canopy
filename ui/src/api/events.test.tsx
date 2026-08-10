@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore, useOrgEvents } from "./events";
+import { useLiveStore, useTeamEvents } from "./events";
 
 type Listener = (e: MessageEvent) => void;
 
@@ -33,18 +33,18 @@ class MockEventSource {
   }
 }
 
-function setup(orgId: string | null = "or_1") {
+function setup(teamId: string | null = "or_1") {
   const qc = new QueryClient();
   const invalidated = vi.spyOn(qc, "invalidateQueries");
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
-  const hook = renderHook(() => useOrgEvents(orgId), { wrapper });
+  const hook = renderHook(() => useTeamEvents(teamId), { wrapper });
   const keys = () => invalidated.mock.calls.map((c) => (c[0]!.queryKey as string[])[0]);
   return { hook, invalidated, keys, es: () => MockEventSource.instances.at(-1)! };
 }
 
-describe("useOrgEvents", () => {
+describe("useTeamEvents", () => {
   beforeEach(() => {
     MockEventSource.instances = [];
     vi.stubGlobal("EventSource", MockEventSource);
@@ -52,9 +52,9 @@ describe("useOrgEvents", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("connects per org and goes live on hello with a catch-up invalidation", () => {
+  it("connects per team and goes live on hello with a catch-up invalidation", () => {
     const { hook, es, keys } = setup();
-    expect(es().url).toBe("/api/organizations/or_1/events");
+    expect(es().url).toBe("/api/teams/or_1/events");
     expect(hook.result.current).toBe(false);
 
     act(() => es().emit("hello", { seq: 7 }));
@@ -110,7 +110,7 @@ describe("useOrgEvents", () => {
     expect(es().closed).toBe(true);
   });
 
-  it("opens nothing without an org", () => {
+  it("opens nothing without a team", () => {
     setup(null);
     expect(MockEventSource.instances).toHaveLength(0);
   });

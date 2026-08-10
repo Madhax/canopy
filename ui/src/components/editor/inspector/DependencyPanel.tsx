@@ -1,21 +1,21 @@
-import type { Dependency, OrganizationDoc } from "../../../schema/organization";
+import type { Dependency, TeamDoc } from "../../../schema/team";
 import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
 import { Button } from "../../common";
 
 interface Props {
   dependency: Dependency;
-  org: OrganizationDoc;
+  team: TeamDoc;
 }
 
-export function DependencyPanel({ dependency, org }: Props) {
+export function DependencyPanel({ dependency, team }: Props) {
   const store = useDocumentStore();
   const path = useSelectionStore((s) => s.path);
   const clear = useSelectionStore((s) => s.clear);
 
   const label = (id: string) =>
-    org.agents.find((a) => a.id === id)?.name ??
-    org.childOrganizations.find((c) => c.organization.id === id)?.organization.name ??
+    team.agents.find((a) => a.id === id)?.name ??
+    team.childTeams.find((c) => c.team.id === id)?.team.name ??
     id;
 
   return (
