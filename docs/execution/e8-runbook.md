@@ -1,6 +1,6 @@
 # E8 runbook — the first self-PR
 
-**Status:** operator script (live milestone) · **Reads with:** `mvp.md` §4 E8, `../org-roadmap.md` O2, `../teams.md` §`docs-pod`
+**Status:** operator script (live milestone) · **Reads with:** `mvp.md` §4 E8, `../org-roadmap.md` O2, `../formations.md` §`docs-pod`
 
 E8 is Canopy working on Canopy, one rung early: the MVP pod re-roled as a **docs pod**
 (`tech-writer` / `editor` under an `engineering-lead`), the E4 git executor pointed at a

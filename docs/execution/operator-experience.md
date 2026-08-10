@@ -8,6 +8,8 @@
 
 ## 1. Information architecture
 
+> **Amendment (2026-08-09).** This section's IA is superseded by `../design/organizations/05-ux-portfolio.md` §1: the operator's world now opens on the **portfolio home** (organizations → team cards), routes re-root from `/organizations/:id/…` to `/teams/:id/…` under an organization scope bar, and the org picker retires. Everything below the route level — mission control, inspector, intent console, living plan, inbox, cost explorer — carries over unchanged as team-scoped surfaces, joined by the capacity console (`../design/organizations/06-ux-capacity.md`). This note is an amendment, not a rewrite; read the routes below with that mapping applied.
+
 The app grows an **Operate** mode alongside the editor (the phases are the product's navigation, per `../phases.md`):
 
 | Route | Surface |

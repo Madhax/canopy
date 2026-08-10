@@ -1,6 +1,6 @@
 # 06 · UX — The Capacity Console
 
-> **Status:** Proposal — portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
 > **Reads with:** `02-capacity-model.md` (every number here is defined there), `03-provider-quota-adapters.md` (source tiers), `04-scheduling-and-throttles.md` (every control here is a knob there), `05-ux-portfolio.md`, `../../execution/operator-experience.md` §6 (cost explorer — the sibling money view)
 
 ## 1. Where capacity lives in the UI

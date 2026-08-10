@@ -1,6 +1,6 @@
 # Standing Organizations — UX
 
-**Status:** Design (v1 scope committed) · **Date:** 2026-08-08
+**Status:** Implemented (2026-08-08) · **Date:** 2026-08-08 · *Vocabulary + supersession note: see the banner on [standing-orgs.md](standing-orgs.md) — "org" = Team post-C1; complements, not superseded by, `organizations/`. The surfaces below re-root under the portfolio home at C1 (`organizations/05` §1); source health joins the team card's vitals.*
 **Reads with:** [standing-orgs.md](standing-orgs.md) (the technical design), `execution/engine.md` §4 (cadences, shipped in E7), [builder-connectors-ux.md](builder-connectors-ux.md) (triggers consume connector instances), `org-roadmap.md` §O3 (the bug-close org this enables).
 
 ---

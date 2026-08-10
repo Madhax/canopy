@@ -1,6 +1,6 @@
 # 05 · UX — The Observatory (leaderboard, lineage, trials, verdicts)
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Reads with:** `01`–`04` (this series), `../organizations/06-ux-capacity.md` (the honesty-rule pattern), `../../execution/operator-experience.md` (inspector reuse), `../../actuation/phase3-debts.md` F4/F5/F15 (the attention lessons this doc inherits)
 
 The observatory answers, in order: **who is winning and by how much · what have we tried · what does any single comparison actually look like · what needs me · what did this all cost.** It is a read-and-govern surface: everything renders from the experiment record; the only writes are verdicts, overrides, and governance actions.

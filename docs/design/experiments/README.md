@@ -1,6 +1,6 @@
 # Experiments — A/B Testing for Team Structures — Design Suite
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Sequencing:** post-C-series. This suite speaks the corrected vocabulary of `../organizations/` (Organization / Team / Pod), and leans on its scheduler (`04-scheduling-and-throttles.md`) and org budgets. It does not depend on the connectors series, but composes with it (a variant team's grants resolve exactly like any team's).
 > **Reads with:** `../../domain-model.md` (invariants; §Calibration), `../../org-roadmap.md` §O5 and §5, `../../execution/target-app.md` §10 (the PF-1 benchmark twin), `../../testing.md` (the post-MVP eval row), `../../manager-responsibilities.md` (the ⛔ on self-restructuring), `../organizations/` (vocabulary, scheduler, portfolio UX), `../../risks/problem-fit.md` (PF-1, PF-2)
 > **Supersedes on adoption:** nothing — this series is a pure addition. `phases.md`, `org-roadmap.md`, `target-app.md` §10, and `testing.md` gain pointers (`06-implementation-plan.md` §7).

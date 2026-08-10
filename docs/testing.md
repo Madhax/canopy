@@ -83,7 +83,12 @@ Consolidated from the pre-E2 plan review and `amendments-2026-07-26.md` §3.5. O
 
 ### Post-MVP
 
-- **Role-content evals** (PF-2): golden-task evals per hero role — "given this brief, does the lead produce a sane decomposition?" LLM-judged, spend-capped, nightly-at-most. This is the one genuinely new *kind* of testing Canopy will need; everything above is conventional. Design it when the first transcripts exist to grade against.
+- **Role-content evals** (PF-2): golden-task evals per hero role — "given this brief, does the lead produce a sane decomposition?" LLM-judged, spend-capped, nightly-at-most. This is the one genuinely new *kind* of testing Canopy will need; everything above is conventional. **Designed (2026-08-09): this row is built as product surface, not CI — the experiments series** (`design/experiments/`, the L-series) provides the rubric engine, blinded panel judging, and champion–challenger discipline; O5's roles forge runs the evals as experiments. CI keeps only the deterministic shell (scripted fake judges on the mock spine — `design/experiments/06` §6).
+
+### New vector families registered by the adopted design series (land with their milestones)
+
+- **C-series** (`design/organizations/07` §6): v2 document migration (v1→v2 pairs); capacity-gate transitions (open on exhaustion / timer resolve / restart resume); scheduler admission tables (state × priority × watermark × share → admit/hold + reason). Property tests extend money-path paranoia to capacity: attribution shares sum to the provider delta ± ε, no admission path bypasses both meter and window checks, `extra-usage` never engages without opt-in + cap headroom.
+- **L-series** (`design/experiments/06` §6): scoring tables (factor values → composite → floors → predicate); verdict tier precedence (human > panel > solo); promotion predicates incl. holdout confirmation; mutation/lineage integrity; re-score parallelism. Property tests extend the paranoia to scores: harvested metrics ≡ ledger/engine ground truth; holdout never reachable from proposer-visible queries (adversarial); variant-team charters carry no experiment traces (adversarial).
 
 ## 5. CI topology (current and planned)
 

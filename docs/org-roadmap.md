@@ -23,6 +23,7 @@ Why this ordering beats a market-facing hero-archetype sequence:
 2. **The trust ladder.** Rungs escalate authority slowly: artifact-only work → PR-proposing work → (much later, if ever) consequential external actions. A rung never starts until the previous rung's acceptance rate makes the escalation boring.
 3. **Benchmark discipline.** Every rung publishes its numbers per `target-app.md` §10: cost per closed unit, acceptance rate, rework rounds, human minutes per merged PR. Wins and losses both — the ledger is the product.
 4. **Real code runs in real walls.** Reproducing bugs and running Canopy's own test suite is `execute`-class work on effectively untrusted input; O3 onward requires the docker tier (T2) — which deliberately drags A6 forward, exactly where `cli-runtime.md` §8 already wanted it.
+5. **Capacity governance precedes unattended operation** (adopted 2026-08-09). No standing-intent org runs unattended on a cadence before the C-series' scheduler and capacity gates exist — an ungoverned fleet drawing on a shared subscription is the failure mode the ladder must not normalize. The C-series is a pre-MVP prerequisite: `design/organizations/07-implementation-plan.md` §0.
 
 ## 3. The rungs
 
@@ -35,7 +36,7 @@ Why this ordering beats a market-facing hero-archetype sequence:
 | **O5** | `canopy-catalog` — the roles forge | author/refine role instructions; evals as QA | PF-2 as an org |
 | **O6** | `canopy-voice` — the build log | devlog/content on a weekly cadence, governed publish | `content-machine`, dogfooded |
 | **O7** | `canopy-frontdesk` — community support | triage discussions/questions; KB growth | `support-tier`, dogfooded |
-| **O8** | **Canopy Inc.** — the org of orgs | O2–O7 mounted under one root with the standing intent "grow Canopy" | the aspirational headline |
+| **O8** | **Canopy Inc.** — the org of orgs | O2–O7 grouped, budgeted, and governed as one portfolio | **realized administratively** — `design/organizations/` |
 | **O9+** | the frontier | external customers on the same rungs; physical-world via `human-proxy`; Blueprints/cloning | vision, not promise |
 
 ### O2 — `canopy-docs` (the lowest-risk real work)
@@ -62,9 +63,9 @@ Same skeleton, bigger cognition: feature requests arrive, a **spec stage** prece
 
 ### O5 — `canopy-catalog` (the roles forge)
 
-Roles are data — so improving them is *authoring work an org can do*. Input: transcripts and rejection notes from O2–O4 (the platform already records everything needed); output: proposed catalog PRs refining role instructions, salary defaults, and effort envelopes. QA here is the **golden-task eval** (`testing.md` §4 post-MVP row): a candidate role revision must beat the incumbent on the eval suite before the lead proposes it. This is `risks/problem-fit.md` PF-2's transcript→instruction feedback loop, staffed.
+Roles are data — so improving them is *authoring work an org can do*. Input: transcripts and rejection notes from O2–O4 (the platform already records everything needed); output: proposed catalog PRs refining role instructions, salary defaults, and effort envelopes. QA here is a **rubric-scored experiment** (`design/experiments/`, adopted 2026-08-09): "a candidate role revision must beat the incumbent before the lead proposes it" is exactly a champion–challenger comparison under a versioned rubric with floors — so O5's eval bar is the experiment bench's API (L1 substrate, L2 rubric engine + promotion predicate, L3 judged panel), not a bespoke tool. This is `risks/problem-fit.md` PF-2's transcript→instruction feedback loop, staffed — and it is the named customer that pulls the L-series onto the critical path (`design/experiments/06` §0).
 
-**Pulls:** eval harness as a QA executor · catalog-PR conventions. **Done when:** a role revision authored by this org measurably improves O3's acceptance rate.
+**Pulls:** experiments L1–L3 (the eval harness as product surface) · catalog-PR conventions. **Done when:** a role revision authored by this org measurably improves O3's acceptance rate — proven on the leaderboard before the lead proposes it.
 
 ### O6 — `canopy-voice` and O7 — `canopy-frontdesk`
 
@@ -72,7 +73,9 @@ The original hero archetypes return — as Canopy's own departments. `canopy-voi
 
 ### O8 — Canopy Inc. (the org of orgs)
 
-O2–O7 mounted as child organizations under one root with the standing intent *"grow Canopy"* — nested orgs, sub-org opacity, cross-org escalation, and the operator governing a company rather than a team. The chart on the README stops being an illustration: it is the actual, running structure of the project, inspectable by anyone, its costs public. This is the aspirational headline and the acceptance test of the whole thesis — *the chart is the system*, demonstrated by the system that builds it.
+> **Amendment (2026-08-09): realized administratively by `design/organizations/`.** This rung imagined mounting O2–O7 under one root chart. The adopted organizations series delivers the substance another way: the teams share one **Organization** (`canopy-inc`) with an org budget, capacity shares, and a portfolio home that makes their collective health legible — without manufacturing a coordination chart nobody needs yet. Chart-level mounting remains available for the day inter-team work actually needs an edge (`design/organizations/01` §8.2); the O7→O3 escalation handoff stays the rehearsal for that door. The rungs O2–O7 themselves are unaffected.
+
+The original vision, for the record: O2–O7 mounted as child teams under one root with the standing intent *"grow Canopy"* — the operator governing a company rather than a single team. The chart on the README stops being an illustration: it is the actual, running structure of the project, inspectable by anyone, its costs public. That acceptance test of the whole thesis — *the chart is the system*, demonstrated by the system that builds it — now runs through the portfolio surfaces.
 
 ### O9+ — the frontier (vision, not promise)
 
@@ -88,7 +91,7 @@ External customers running the hardened rungs on their own repos and backlogs; t
 | Docker tier T2, no trusted-local waiver | O3 | A6, promoted ahead of polish (per cli-runtime §8) |
 | Standing intents + derived Milestones | O3 | post-MVP milestone view, now with a customer |
 | X2 scope-divergence calibration | O4 | manager-responsibilities X2, with real data |
-| Eval harness as QA executor | O5 | testing.md's post-MVP row, staffed |
+| Experiment bench L1–L3 (substrate, rubric engine, judged panel) | O5 | `design/experiments/` — the post-MVP series, pulled by this rung |
 | Work pools | O6/O7 (volume-dependent) | roadmap's pools row, pulled only when needed |
 | Org-to-org handoff, nested-org operations | O7/O8 | domain's nesting, exercised for real |
 

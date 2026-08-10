@@ -1,6 +1,6 @@
 # 05 · UX — The Portfolio Home
 
-> **Status:** Proposal — portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
 > **Reads with:** `01-team-and-organization.md`, `06-ux-capacity.md` (the sibling surface), `../../execution/operator-experience.md` (the team-level Operate surface, which survives intact one level down), `../../phases.md`
 
 ## 1. Information architecture, reworked

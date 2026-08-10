@@ -4,8 +4,10 @@
 **Date:** 2026-07-05
 **Scope:** The WYSIWYG org-chart editor and its thin persistence server — the *build* phase of Canopy's build → actuate → execute trajectory. No runtime, no agents executing, no actuation.
 **Supersedes:** the earlier `DESIGN-frontend-org-chart.md` draft (written before the domain docs existed in this repo; its structural-archetype and free-form-dependency model conflicted with `domain-model.md` and is dropped).
-**Reads with:** `domain-model.md` (authoritative for all invariants), `archetypes.md`, `roles.md`, `teams.md`, `use-cases.md`, `docs/README.md` (catalog conventions and serialization path).
+**Reads with:** `domain-model.md` (authoritative for all invariants), `archetypes.md`, `roles.md`, `formations.md`, `use-cases.md`, `docs/README.md` (catalog conventions and serialization path).
 **DX reference:** [Paperclip](https://github.com/paperclipai/paperclip) — one-command dev server, embedded storage, monorepo contract discipline. Reference for ergonomics only; Canopy shares no code with it.
+
+> **Amendment (2026-08-09, vocabulary correction — `design/organizations/01`, lands with milestone C1).** What this spec calls the *Organization document* is now the **Team document**: `kind: "canopy.organization"` → `kind: "canopy.team"` with `schemaVersion: 2`; the `childOrganizations` field renames to **`childTeams`** (nesting semantics untouched); the canonical export filename becomes **`<slug>.team.json`**. v1 documents import indefinitely (the migrator rewrites kind and field names; import is the only path that accepts v1 — export always emits v2). The document still carries no organization membership: which Organization a Team belongs to is server-side state, so exports stay portable. Everything else in this spec — validation rules and codes, golden vectors, canonical ordering, nesting, API shapes (re-rooted to `/api/teams` at C1, `07-implementation-plan.md` §3) — carries over verbatim under the new names. The JSON examples below are kept in v1 form as the golden-vector record; read them with the three renames applied.
 
 ---
 
@@ -38,7 +40,7 @@ These are restatements of `domain-model.md` decisions as editor behavior — the
 | **Roles are data** (inv. 11); RoleTemplates are versioned; archetypes *offer* palettes but roles are catalog-wide (`code-reviewer` "under any lead" — `use-cases.md`). | The palette defaults to the archetype's offered set with a search across the full catalog. Placing an off-palette role is legal and produces no warning. Role bindings serialize as `key` + `version`. |
 | **Salary is a core object**: per-assignment allowance, warn threshold (default 80%), hard-stop policy (default on); RoleTemplates ship defaults, the user overrides per node *in the editor*. | Salary is an editable inspector section on every agent and serializes with the chart. |
 | **Directives are Assignment-scoped; only the user, through the editor, permanently changes an Agent.** | Per-agent `extensions` (instruction overrides, added responsibilities) are editable and serialized — this *is* that permanent-change surface. |
-| **Formations are blueprint fragments**: "dropping one into the editor creates the manager node, its report nodes, and the standing dependency/artifact-routing pattern between them" (`teams.md`). | Formations are draggable palette items that stamp a pre-wired subtree, including its dependency edges. |
+| **Formations are blueprint fragments**: "dropping one into the editor creates the manager node, its report nodes, and the standing dependency/artifact-routing pattern between them" (`formations.md`). | Formations are draggable palette items that stamp a pre-wired subtree, including its dependency edges. |
 | **Projects and pipelines are non-goals.** | No cross-cutting grouping surface of any kind. The only structures are the tree, sibling dependencies, and nesting. |
 
 ---
@@ -47,7 +49,7 @@ These are restatements of `domain-model.md` decisions as editor behavior — the
 
 ### 3.1 Catalog
 
-The catalog is the machine-readable form of `archetypes.md` (26 organization types), `roles.md` (~75 roles), and `teams.md` (16 formations). Per the serialization path in `docs/README.md`, the markdown files are the human-authored source of truth and the eventual pipeline is frontmatter → catalog directory → generated `catalog.json`. **Phase 1 takes a pragmatic first step:** a hand-transcribed `catalog/catalog.json`, faithful to the docs' keys and cross-references, with CI checks for integrity (unique keys, every role/formation reference resolves, every formation's roles exist). When the frontmatter pass lands, generation replaces transcription and the file's schema stays put.
+The catalog is the machine-readable form of `archetypes.md` (26 organization types), `roles.md` (~75 roles), and `formations.md` (16 formations). Per the serialization path in `docs/README.md`, the markdown files are the human-authored source of truth and the eventual pipeline is frontmatter → catalog directory → generated `catalog.json`. **Phase 1 takes a pragmatic first step:** a hand-transcribed `catalog/catalog.json`, faithful to the docs' keys and cross-references, with CI checks for integrity (unique keys, every role/formation reference resolves, every formation's roles exist). When the frontmatter pass lands, generation replaces transcription and the file's schema stays put.
 
 ```jsonc
 {
@@ -195,7 +197,7 @@ One JSON document per top-level organization. Pydantic models (server) and Zod s
 **Deliberate encoding choices:**
 
 - **`managerId` instead of a reporting-edge list.** The tree invariant is structural: a second manager cannot be expressed, only replaced. The canvas *renders* reporting edges from `managerId`; it never stores them separately. A `managerId` chain that loops (a→b→a) is still checkable and is an error (`REPORTS_CYCLE`).
-- **Dependencies are a separate edge list**, because they genuinely are edges — but constrained to siblings (§5). Direction: `from` depends on `to` (`to`'s deliverable feeds `from`'s brief), matching the manager's-eye reading in `teams.md`. Each edge carries `resolveOn` (`accepted` default | `delivered`): whether the dependent starts at the upstream's sign-off (consume) or its submission (verify) — see `domain-model.md` §Dependency. Formations stamp it; the schema enum rejects other values; omitted on import ⇒ `accepted`.
+- **Dependencies are a separate edge list**, because they genuinely are edges — but constrained to siblings (§5). Direction: `from` depends on `to` (`to`'s deliverable feeds `from`'s brief), matching the manager's-eye reading in `formations.md`. Each edge carries `resolveOn` (`accepted` default | `delivered`): whether the dependent starts at the upstream's sign-off (consume) or its submission (verify) — see `domain-model.md` §Dependency. Formations stamp it; the schema enum rejects other values; omitted on import ⇒ `accepted`.
 - **Child orgs nest the full document recursively** under a mount point, mirroring "a nested Organization is a full Organization … attached at a mount point: its root Agent reports to a designated Agent in the parent." The parent document knows only the mount; everything about the child lives inside the child's own subtree of JSON. Timestamps and ids exist at every level; persistence, export, and validation always operate on the **top-level** document as one unit.
 - **Excluded on purpose** (per the structure-layer serialization note in `domain-model.md`): memory, secrets/credentials, and any in-flight work objects. There is nowhere in this schema to put them, which is the point.
 - **Forward-compat:** unknown keys rejected everywhere except `meta` (all levels) — the single escape hatch. `schemaVersion` gates loading; `migrateOrganization()` (identity in v1, hard error above 1) runs before parse on both sides.
@@ -437,7 +439,7 @@ CI gate: `pnpm typecheck && pnpm test && pnpm build` green, golden vectors passi
 
 Each milestone ends green and demoable.
 
-1. **M1 — Catalog + schemas + validators.** Transcribe `catalog/catalog.json` from `archetypes.md`/`roles.md`/`teams.md` (all 26 types, ~75 roles, 16 formations, slot wiring; placeholder salaries). Pydantic + Zod schemas for catalog and organization documents. Both validators + the full golden-vector suite. Catalog integrity tests.
+1. **M1 — Catalog + schemas + validators.** Transcribe `catalog/catalog.json` from `archetypes.md`/`roles.md`/`formations.md` (all 26 types, ~75 roles, 16 formations, slot wiring; placeholder salaries). Pydantic + Zod schemas for catalog and organization documents. Both validators + the full golden-vector suite. Catalog integrity tests.
 2. **M2 — Server.** FastAPI app, JSON store (atomic writes), all §6 routes with seeds, static-UI serving for prod, pytest suite. Root `pnpm dev` orchestration works with a placeholder UI.
 3. **M3 — UI shell.** Routing, API client + React Query, organization list (import/export/duplicate/delete), creation wizard with all three seed modes. Created orgs open a stub editor rendering the raw document.
 4. **M4 — Editor core.** Canvas with agent nodes, reporting via managerId (place, connect, re-parent), dependency edges with sibling enforcement, palette (roles + search + whole-catalog toggle), inspector (agent panel with salary + extensions), autosave with conflict dialog, undo/redo.

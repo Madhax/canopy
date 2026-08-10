@@ -2,6 +2,8 @@
 
 An **Agent Profile** is the answer to "which brain does this node get": provider, model, endpoint, key, parameters. Profiles are deployment configuration, deliberately kept **out of the Organization document** — the chart stays portable structure (roles, salaries, wiring) while profiles carry machine-local, secret-adjacent detail. This honors the phase-1 spec's rule that the document carries no model/adapter/cost fields (`../org-chart-editor.md` §10): bindings live in the control plane as their own records. (Rationale: exporting a chart must never drag provider config or secret refs with it; the same chart actuates with different profiles on different machines.)
 
+> **Amendment (2026-08-09, capacity series — lands at milestone C2).** The provider-identity half of a profile is promoted to an operator-level **ProviderAccount** (`../design/organizations/02-capacity-model.md` §2): the account carries provider, auth mode (`cli` config dir vs api-key secret ref), and the CapacityPool of provider quota windows; the profile slims to model + params + `providerAccountId`. This is what makes one Claude Max login shareable across organizations *as pool truth* — the same 5-hour window, referenced rather than copied — while profiles stay team-scoped. The boot migration splits existing profile rows non-destructively (`../design/organizations/07` §2.3); everything else in this document is unchanged.
+
 ## 1. Data model
 
 ```jsonc

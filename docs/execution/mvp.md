@@ -1,7 +1,8 @@
 # MVP-1 — The Software Team
 
 **Status:** Implementation-ready plan · **Date:** 2026-07-06
-**Upstream:** every doc in this suite; `../roles.md` / `../teams.md` (the pod comes from the catalog, not bespoke); `../use-cases.md` #1/#3/#29 (what this MVP proves).
+**Upstream:** every doc in this suite; `../roles.md` / `../formations.md` (the pod comes from the catalog, not bespoke); `../use-cases.md` #1/#3/#29 (what this MVP proves).
+**Sequencing gate (adopted 2026-08-09):** the full Canopy MVP is **not declared delivered until the C-series lands** — the Team/Organization rename and capacity governance of `../design/organizations/07-implementation-plan.md` §0 (operator decision, 2026-08-08). The C1 rename only gets more expensive with accumulated state, and no standing-intent org may run unattended before capacity governance exists.
 **The ask, verbatim:** a simple software team that can build and test a piece of code; distinct roles with isolated, non-overlapping responsibilities; using the framework's tooling — including salary; full introspection of any agent; the operator aware of costs, state, and anything an owner should be alerted to; agents backed by wrapped Claude CLI sessions (no API key).
 
 ---

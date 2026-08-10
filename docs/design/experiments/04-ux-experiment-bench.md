@@ -1,6 +1,6 @@
 # 04 · UX — The Experiment Bench (authoring and configuration)
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Reads with:** `01`–`03` (this series), `../organizations/05-ux-portfolio.md` (IA rules, ScopeBar, org theming), `../connectors/04-operations.md` (the five-minute-path discipline this doc inherits), `../../execution/operator-experience.md`
 
 ## 1. Where the lab lives

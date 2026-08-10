@@ -1,6 +1,6 @@
 # 01 · The Experiment Model — entities, isolation, and fairness
 
-> **Status:** Proposal — experiments working group, 2026-08-10
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the experiments working group
 > **Reads with:** `README.md` (this series), `../../domain-model.md`, `../organizations/01-team-and-organization.md` (Team/Organization vocabulary, invariant 12), `../organizations/04-scheduling-and-throttles.md` (priority, admission), `../../execution/work-model.md` (the stock objects trials are made of)
 
 ## 1. The entities at a glance
