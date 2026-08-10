@@ -17,7 +17,7 @@ Read in this order:
 | `sandbox.md` | The sandbox abstraction encapsulating everything one agent needs to run; the v1 subprocess provider; future container/microVM providers |
 | `agent-runtime.md` | The agent itself: boot, A2A server, the step loop, how it thinks (via the gateway), how it delegates and delivers |
 | `agent-envelope.md` | Encapsulating one agent across use cases: the tool-grant capability model, runtime kinds (`loop`/`cli`/`actor`), sandbox tiers, and per-role envelope constructions |
-| `workspace.md` | The agent's working directory and the artifact path from local file to addressable `org://` ref |
+| `workspace.md` | The agent's working directory and the artifact path from local file to addressable `team://` ref |
 | `roadmap.md` | Future implementations per abstraction (Docker sandboxes, managed pub/sub, Postgres, packaged microservice agents) and the major actuation-phase milestones |
 
 ## Phase-2 definition of done

@@ -1,12 +1,20 @@
 # Canopy in Plain English — a companion series
 
+> **Vocabulary note (2026-08).** Canopy renamed its two central nouns after this
+> series was first written: the runnable chart you build and actuate is now a
+> **Team** (it used to be called an "Organization"), a manager with their direct
+> reports is now a **Pod** (it used to be called a "team"), and **Organization**
+> now means the umbrella above teams — a named, budgeted group with hard walls
+> between organizations, sharing nothing but you. These pages have been updated;
+> older screenshots and exports may still show the old words.
+
 This series explains how Canopy works, in ordinary language, for a reader with no
 software background. It does not replace the design documents in `docs/`. It sits
 beside them, untouched, and translates them.
 
 ## Who this is for
 
-You — the operator. The person who owns a Canopy organization, gives it work, approves
+You — the operator. The person who owns a Canopy team, gives it work, approves
 its plans, and pays its bills. If you have ever found the design docs precise but
 impenetrable, this series is the readable path through the same material.
 
@@ -30,7 +38,7 @@ Then the series follows the life of a piece of work:
 | Doc | Question it answers |
 |---|---|
 | [01 — What is Canopy?](01-what-is-canopy.md) | The whole system in one story. |
-| [02 — The organization](02-the-organization.md) | Who works here? Orgs, roles, teams, managers, and the chart editor. |
+| [02 — The team](02-the-team.md) | Who works here? Orgs, roles, teams, managers, and the chart editor. |
 | [03 — How work flows](03-how-work-flows.md) | How a request becomes tasks, and how results come back for review. |
 | [04 — How agents run](04-how-agents-run.md) | What an AI worker physically is, and what walls it lives inside. |
 | [05 — Keeping it safe and on track](05-keeping-it-safe-and-on-track.md) | What could go wrong, and what actually stops it. |
@@ -39,7 +47,7 @@ Then the series follows the life of a piece of work:
 
 ## The running example
 
-Documents 02–05 carry one example all the way through: **the operator asks the org to
+Documents 02–05 carry one example all the way through: **the operator asks the team to
 "add CSV export to the report endpoints of target-app; all tests must pass."** In
 ordinary words: add a download-as-CSV option (CSV is a simple spreadsheet-style file)
 to the report endpoints — the part of a small practice web service that serves up
@@ -64,7 +72,7 @@ vision — and they don't always say which is which. This series does. Three rul
    (and in a few places they do), we say what each one says and which is likely
    current. [Doc 06](06-status-and-direction.md) collects these.
 3. **Nothing is invented.** Every claim traces to the design docs, read through three
-   detailed analyses of them (actuation; organization & operator; execution engine &
+   detailed analyses of them (actuation; team & operator; execution engine &
    safety). Each companion doc ends with a "Where this comes from" list.
 
 Two vocabulary choices, made once, used everywhere: the human in charge is the
@@ -77,16 +85,16 @@ with the AI is a **turn** (an older doc says "tick" — we standardize on turn).
 
 | Original document | Explained in |
 |---|---|
-| [README.md](../README.md) — map of the docs, catalog layering rule | [02](02-the-organization.md) §"The catalog" |
-| [domain-model.md](../domain-model.md) — the rulebook of concepts and invariants | [02](02-the-organization.md), [03](03-how-work-flows.md) |
-| [archetypes.md](../archetypes.md) — the 26 ready-made company types | [02](02-the-organization.md) §"Archetypes" |
-| [roles.md](../roles.md) — the job descriptions (about 87 by actual count; several design docs say ~75 — another counting drift) | [02](02-the-organization.md) §"Roles" |
-| [formations.md](../formations.md) — the 17 pre-wired team blueprints ("formations") | [02](02-the-organization.md) §"Teams and formations" |
-| [manager-responsibilities.md](../manager-responsibilities.md) — what managers can and can't do (proposal) | [02](02-the-organization.md) §"Managers", [03](03-how-work-flows.md) §"Steering", [06](06-status-and-direction.md) |
-| [use-cases.md](../use-cases.md) — 31 things you can ask for on day one | [02](02-the-organization.md) §"What you can ask for" |
-| [org-chart-editor.md](../org-chart-editor.md) — the drawing tool (built) | [02](02-the-organization.md) §"The org chart editor" |
+| [README.md](../README.md) — map of the docs, catalog layering rule | [02](02-the-team.md) §"The catalog" |
+| [domain-model.md](../domain-model.md) — the rulebook of concepts and invariants | [02](02-the-team.md), [03](03-how-work-flows.md) |
+| [archetypes.md](../archetypes.md) — the 26 ready-made company types | [02](02-the-team.md) §"Archetypes" |
+| [roles.md](../roles.md) — the job descriptions (about 87 by actual count; several design docs say ~75 — another counting drift) | [02](02-the-team.md) §"Roles" |
+| [formations.md](../formations.md) — the 17 pre-wired team blueprints ("formations") | [02](02-the-team.md) §"Teams and formations" |
+| [manager-responsibilities.md](../manager-responsibilities.md) — what managers can and can't do (proposal) | [02](02-the-team.md) §"Managers", [03](03-how-work-flows.md) §"Steering", [06](06-status-and-direction.md) |
+| [use-cases.md](../use-cases.md) — 31 things you can ask for on day one | [02](02-the-team.md) §"What you can ask for" |
+| [org-chart-editor.md](../org-chart-editor.md) — the drawing tool (built) | [02](02-the-team.md) §"The org chart editor" |
 | [phases.md](../phases.md) — Build → Actuate → Execute | [01](01-what-is-canopy.md), [06](06-status-and-direction.md) |
-| [org-roadmap.md](../org-roadmap.md) — the self-hosting ladder (aspirational) | [06](06-status-and-direction.md) §"Where the roadmap points" |
+| [team-roadmap.md](../team-roadmap.md) — the self-hosting ladder (aspirational) | [06](06-status-and-direction.md) §"Where the roadmap points" |
 | [testing.md](../testing.md) — how the system stays correct without spending money | [05](05-keeping-it-safe-and-on-track.md) §"Tested like money depends on it" |
 
 **Actuation docs (`docs/actuation/`)**
@@ -116,7 +124,7 @@ with the AI is a **turn** (an older doc says "tick" — we standardize on turn).
 | [cli-runtime.md](../execution/cli-runtime.md) — how a chat session becomes a supervised employee | [04](04-how-agents-run.md) §"The `cli` runtime", [05](05-keeping-it-safe-and-on-track.md) |
 | [mvp.md](../execution/mvp.md) — the first full demo (the CSV-export story) | [03](03-how-work-flows.md), [05](05-keeping-it-safe-and-on-track.md) |
 | [target-app.md](../execution/target-app.md) — the practice project ("the driving school's car") | [03](03-how-work-flows.md) §"Review", [05](05-keeping-it-safe-and-on-track.md) |
-| [operator-experience.md](../execution/operator-experience.md) — the operator's cockpit (designed, not built) | [02](02-the-organization.md) §"What the operator sees", [03](03-how-work-flows.md) |
+| [operator-experience.md](../execution/operator-experience.md) — the operator's cockpit (designed, not built) | [02](02-the-team.md) §"What the operator sees", [03](03-how-work-flows.md) |
 | [e8-runbook.md](../execution/e8-runbook.md) — Canopy's first work on itself, by hand | [05](05-keeping-it-safe-and-on-track.md), [06](06-status-and-direction.md) |
 | [amendments-2026-07-26.md](../execution/amendments-2026-07-26.md) — five design fixes found before building | [03](03-how-work-flows.md), [06](06-status-and-direction.md) |
 
@@ -130,6 +138,6 @@ with the AI is a **turn** (an older doc says "tick" — we standardize on turn).
 ---
 
 *This series was produced from three accepted plain-English analyses of the design
-docs (actuation layer; organization & operator layer; execution engine & safety
+docs (actuation layer; team & operator layer; execution engine & safety
 layer), verified against the originals at repo commit `0777e9d` — a fixed snapshot of
 the repository. It adds files only — no existing document was modified.*

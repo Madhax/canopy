@@ -15,7 +15,7 @@ over any document, and the newest document over the oldest.
 design docs number their milestones and debts by suite: **A** = actuation build
 milestones, **E** = execution milestones, **E-D** = execution debts, **D** =
 actuation debts, **X** = manager-proposal items, **O** = the roadmap's
-organizations. So "E-D1" reads "execution debt number one."
+teams. So "E-D1" reads "execution debt number one."
 
 ## Built (per the docs' own statements)
 
@@ -52,13 +52,13 @@ organizations. So "E-D1" reads "execution debt number one."
   manager-initiated interventions; plan-review checkpoints (X3) appear already
   folded into the rulebook, but the proposal doc was never retired, so the two
   sources disagree on paper.
-- **Live chart edits** — editing a running org (debts D7/D8) remains open: tear
+- **Live chart edits** — editing a running team (debts D7/D8) remains open: tear
   down, edit, re-actuate.
 - **Cadences** (scheduled recurring work) — labeled *stretch* (E7).
 - **The O2 GitHub integration** — automated issue ingestion, pushing, PR creation.
-  The E8 capstone run does all of this deliberately by hand: "the org proposed, the
+  The E8 capstone run does all of this deliberately by hand: "the team proposed, the
   human ratifies."
-- **Deferred by design** — Blueprints (clone an org — which also parks use-case #31),
+- **Deferred by design** — Blueprints (clone a team — which also parks use-case #31),
   multi-user login, hosted/network deployment, marketplace distribution, and the
   infrastructure swap list: heavier-duty off-the-shelf messaging and database
   technologies (Redis/NATS buses, Postgres), cloud stores, other AI providers.
@@ -93,18 +93,18 @@ Collected from all three analyses; none is smoothed over in this series:
 
 The long-range direction is an explicitly **aspirational** ladder with one
 principle: *"Canopy grows by Canopy working on Canopy."* Milestones are expressed
-not as features but as organizations that should exist and run:
+not as features but as teams that should exist and run:
 
 - **O1** — a fixture software team proving the machinery;
-- **O2** — `canopy-docs`: a documentation-fixing org, the first to touch a real
+- **O2** — `canopy-docs`: a documentation-fixing team, the first to touch a real
   repository (seeded by the by-hand E8 capstone);
-- **O3–O5** — a bug-closing org, a feature-building org, a role-improving org;
-- **O6–O7** — content and community-support orgs;
-- **O8** — "Canopy Inc.": all of them mounted as child orgs under one root with the
+- **O3–O5** — a bug-closing team, a feature-building team, a role-improving team;
+- **O6–O7** — content and community-support teams;
+- **O8** — "Canopy Inc.": all of them mounted as child teams under one root with the
   standing intent *"grow Canopy"*;
 - **O9+** — explicitly "vision, not promise."
 
-Standing rules for the whole ladder: self-hosted orgs only ever *propose* changes as
+Standing rules for the whole ladder: self-hosted teams only ever *propose* changes as
 branches and pull requests — a human ratifies every merge; authority climbs a "trust
 ladder" slowly; every rung publishes its costs; and a rung only counts as existing
 after running unattended on a schedule for a month with published numbers.
@@ -129,7 +129,7 @@ decisions; E-status statements) ·
 [execution/cli-runtime.md](../execution/cli-runtime.md) (the trusted-local waiver,
 subprocess MVP) ·
 [actuation/roadmap.md](../actuation/roadmap.md) (planned swaps — aspirational) ·
-[org-roadmap.md](../org-roadmap.md) (the self-hosting ladder — aspirational) ·
+[team-roadmap.md](../team-roadmap.md) (the self-hosting ladder — aspirational) ·
 [execution/e8-runbook.md](../execution/e8-runbook.md) (what O2 will automate) ·
 [execution/operator-experience.md](../execution/operator-experience.md) (the
 designed cockpit) · status flags from all three underlying analyses.

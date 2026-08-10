@@ -3,7 +3,7 @@
 // with their teams as read-only cards inside; the only cross-organization act on this page is
 // the operator's own custody transfer (Move…).
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useCatalog, indexCatalog } from "../api/catalog";
 import { useDeleteTeam, useImportTeam } from "../api/teams";
 import { useCreateOrg, useMoveTeam, usePortfolio, type PortfolioOrg } from "../api/orgs";
@@ -143,7 +143,9 @@ export function PortfolioPage() {
                   className="mb-3 flex items-baseline gap-3 border-l-4 pl-3"
                   style={{ borderColor: orgColor(org) }}
                 >
-                  <h2 className="text-sm font-semibold text-ink">{org.name}</h2>
+                  <Link to={`/orgs/${org.id}`} className="text-sm font-semibold text-ink hover:underline">
+                    {org.name}
+                  </Link>
                   <span className="text-xs text-ink-subtle">{org.key}</span>
                   {org.purpose && (
                     <span className="truncate text-xs text-ink-muted">{org.purpose}</span>

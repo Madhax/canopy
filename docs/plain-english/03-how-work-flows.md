@@ -3,7 +3,7 @@
 *From one typed sentence to reviewed, costed results: intents, assignments, plans,
 budgets, gates, and the engine that keeps the whole thing honest.*
 
-Our running example continues. The pod from [doc 02](02-the-organization.md) is now
+Our running example continues. The pod from [doc 02](02-the-team.md) is now
 live (how that happens is [doc 04](04-how-agents-run.md)). The operator types:
 *"Add CSV export to the report endpoints of target-app; all tests must pass."* — that
 is, add a download-as-CSV option to the reporting part of the practice web service.
@@ -26,7 +26,7 @@ An **intent** is the operator's request, addressed to one agent (usually the roo
 It is the anchor of the whole paper trail: every task and every spend event traces
 back to exactly one intent. Intents come in two kinds: **episodic** (a bounded ask,
 like our CSV export — it finishes) and **standing** (an open-ended goal that *is* the
-org's mission, like "keep the docs accurate").
+team's mission, like "keep the docs accurate").
 
 There are also **cadences** — schedules ("every Monday, compile a status report")
 that automatically fire a fresh intent at each occurrence, skipping a beat if the
@@ -57,7 +57,7 @@ delivered — its output is literally not acceptable under its contract.
 The lead receives the root assignment, checks the brief is feasible, and decomposes:
 one child assignment per engineer ("implement CSV export," contract: PullRequest),
 and one for QA ("verify it," contract: TestReport) that *depends on* the engineers'
-work via a verify link ([doc 02](02-the-organization.md)).
+work via a verify link ([doc 02](02-the-team.md)).
 
 The engine checks every delegation against the org chart — a manager may delegate
 only to its own direct reports; anything else is refused.
@@ -203,7 +203,7 @@ work) — and the full chain from the typed sentence to every spend event.
 ## When things crash
 
 State lives in a database, not in anyone's head. Crashed workers are restarted and
-resume their suspended conversations; open work survives shutting the whole org down
+resume their suspended conversations; open work survives shutting the whole team down
 and restarting it; redelivered messages never double-charge the ledger. The paper
 trail is append-only (records can be added, never erased).
 

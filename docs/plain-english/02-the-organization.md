@@ -1,6 +1,6 @@
-# 02 — The organization
+# 02 — The team
 
-*Who works here: orgs, roles, teams, managers — and the tool you draw them with.*
+*Who works here: teams, roles, teams, managers — and the tool you draw them with.*
 
 Throughout this doc we build the company that will handle our running example: the
 operator wants to ask for CSV export on the report endpoints of the practice project
@@ -9,26 +9,26 @@ exists on paper, ready to be brought to life.
 
 ## The operator
 
-The **operator** is the human who owns and supervises a Canopy organization. You
+The **operator** is the human who owns and supervises a Canopy team. You
 create it, give it work, approve its plans, resolve its alarms, and pay its bills.
 You are also the only one who can permanently change its structure — no agent,
 however senior its box on the chart, may reorganize the company. (Some design docs
 call this person "the user." Same person; this series says operator.)
 
-## Organizations and nodes
+## Teams and nodes
 
-An **organization** is one company instance: a named org chart of AI workers — say,
+An **team** is one company instance: a named org chart of AI workers — say,
 "Acme Software." The chart is a tree: every worker has exactly one manager, all the
 way up to a single root box (the "CEO" position, where your requests usually enter).
 
-A box on the chart is called a **node**. When the org is live, each node is occupied
+A box on the chart is called a **node**. When the team is live, each node is occupied
 by an **agent** — one AI worker with a job, a manager, a budget, a private workspace,
 and a durable memory of its past work.
 
-Organizations can nest. A child organization can be mounted inside a parent — like a
+Teams can nest. A child team can be mounted inside a parent — like a
 department, or a franchise location — and the parent sees only the child's top box,
-not its internals. The design calls this "sub-org opacity," and it is the intended
-mechanism for scale: a big company is a parent org with child orgs mounted into its
+not its internals. The design calls this "sub-team opacity," and it is the intended
+mechanism for scale: a big company is a parent team with child teams mounted into its
 chart.
 
 ## Roles: jobs as data, not code
@@ -118,8 +118,8 @@ The design keeps itself honest with a list of 31 concrete requests a user should
 able to make out of the box, each mapped to the formation or archetype that absorbs
 it — from "ship a feature end-to-end" (our example) to "run a hiring pipeline,"
 "close the monthly books," "staff Saturday's service shift." Thirty of the 31 are
-expressible with today's catalog; the last ("clone a working organization") depends
-on a deliberately deferred feature called Blueprints — saving a whole org as a
+expressible with today's catalog; the last ("clone a working team") depends
+on a deliberately deferred feature called Blueprints — saving a whole team as a
 reusable template.
 
 ## Managers and reports
@@ -154,7 +154,7 @@ their status.
 The **org chart editor** is the first shipped piece of Canopy: a drag-and-drop canvas
 where you build all of the above before anything runs. Pick an archetype, drag roles
 and formations from a palette, draw reporting lines and dependencies, mount child
-orgs, set salaries, save.
+teams, set salaries, save.
 
 Its central discipline: **the editor draws only what the rules can run.** Illegal
 structures are unrepresentable or rejected as you draw — a second boss for one worker
@@ -164,11 +164,11 @@ even with errors — you never lose work to validation — but export refuses un
 document is fully legal.
 
 "The editor is the tool; the document is the product": what you actually produce is
-the **organization document** — a saved file capturing chart, role assignments, and
+the **team document** — a saved file capturing chart, role assignments, and
 salaries (deliberately excluding memory, secrets, and in-flight work). That file is
 what actuation ([doc 04](04-how-agents-run.md)) brings to life.
 
-**Our running example:** the operator saves the pod as an organization document. On
+**Our running example:** the operator saves the pod as a team document. On
 paper: one lead, engineer(s), one QA, salaries set, QA's verify link wired. Nothing
 is running yet.
 
@@ -177,7 +177,7 @@ is running yet.
 Day to day, the design gives the operator a cockpit called **Operate mode**, built
 around five questions:
 
-- *What is my organization doing?* — **Mission Control**: the org chart lit up live;
+- *What is my team doing?* — **Mission Control**: the org chart lit up live;
   each box dim when idle, pulsing when working, amber when waiting, red when dead,
   with queue depth (how many tasks are waiting) and a budget arc on every node.
 - *What exactly is one agent up to?* — the **Agent Inspector**: open any worker and
@@ -201,14 +201,14 @@ unless the current build says otherwise. See [doc 06](06-status-and-direction.md
 ---
 
 **Where this comes from:**
-[domain-model.md](../domain-model.md) (organizations, agents, teams, salaries, the
+[domain-model.md](../domain-model.md) (teams, agents, teams, salaries, the
 rulebook) · [README.md](../README.md) (catalog layering, duty → deliverable) ·
 [archetypes.md](../archetypes.md) (the 26 company types) ·
 [roles.md](../roles.md) (the 87 roles) ·
 [formations.md](../formations.md) (formations, verify/consume) ·
 [manager-responsibilities.md](../manager-responsibilities.md) (manager powers and
 gaps — a proposal) · [use-cases.md](../use-cases.md) (the 31 requests) ·
-[org-roadmap.md](../org-roadmap.md) (30-of-31 expressible today) ·
-[org-chart-editor.md](../org-chart-editor.md) (the editor, the organization document) ·
+[team-roadmap.md](../team-roadmap.md) (30-of-31 expressible today) ·
+[org-chart-editor.md](../org-chart-editor.md) (the editor, the team document) ·
 [execution/operator-experience.md](../execution/operator-experience.md) (Operate
 mode — designed, not built).

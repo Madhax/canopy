@@ -41,7 +41,7 @@ What v1 explicitly does **not** defend against:
   next to the database; anyone who can read the disk can decrypt the secrets.
 - **Network exposure.** Traffic is unencrypted and there is no login check — the
   design says flatly: do not expose the control plane to the network.
-- **One org degrading another.** All orgs share one process and one database.
+- **One team degrading another.** All teams share one process and one database.
 - **Untrusted code.** The sandbox is soft (below) — which is exactly why dangerous
   tool grants are withheld until hard sandboxes exist.
 
@@ -78,7 +78,7 @@ design's compensating rule: risky capabilities are simply not granted until wall
 strong enough for them exist, and running risky grants on the soft sandbox requires
 an explicit, logged acknowledgment called the **trusted-local waiver**. Notably,
 Canopy's first real self-hosted run (the E8 documentation task) was deliberately
-configured with the waiver *off* — proving a docs-only org needs no special-risk
+configured with the waiver *off* — proving a docs-only team needs no special-risk
 acknowledgment at all.
 
 ## Budget hard stops
@@ -108,7 +108,7 @@ workflow one:
 
 - **Staged delegation** means an AI manager's plan spends nothing until a human has
   seen the real subtasks, budgets and all. Denial cancels outright.
-- **Approval gates** put a human between the org and anything irreversible. In the
+- **Approval gates** put a human between the team and anything irreversible. In the
   running example, the merge to the protected main line only *opens a gate*; the
   platform executes the merge after consent and records consent plus evidence
   together. An agent cannot perform the governed act itself — the tool it holds
@@ -128,16 +128,16 @@ erased), and attributable:
 
 - every AI exchange → a metered **step** with token counts and a "what changed" label;
 - every cost → a **spend event** in the ledger, idempotent (a redelivered message
-  never double-charges), rolling up step → assignment → intent → org;
+  never double-charges), rolling up step → assignment → intent → team;
 - every tool call through the proxy → a logged event; every message through the
   router → logged; every gate, consent, and denial → recorded;
 - every artifact → fingerprinted, versioned, with provenance (who, which task, when);
-- the whole org → inspectable live: any agent can be opened to show its charter,
+- the whole team → inspectable live: any agent can be opened to show its charter,
   plan, steps, meter, gates, memory, session log, and files.
 
 The designed end product of all this is the **receipt**: a published cost summary of
-a piece of org-authored work — total cost, tokens, and the split of coordination
-overhead versus production work. "Authored by a Canopy org for $X.XX."
+a piece of team-authored work — total cost, tokens, and the split of coordination
+overhead versus production work. "Authored by a Canopy team for $X.XX."
 
 ## Tested like money depends on it
 
@@ -157,7 +157,7 @@ allowance") gets at least one *adversarial* test that actively tries to break it
 
 One disclosure the design makes itself, and this series repeats: at the time the
 docs were written, per-agent permission checks on artifact fetching were **not yet
-implemented** — any agent could fetch any org artifact — and the test plan parks a
+implemented** — any agent could fetch any team artifact — and the test plan parks a
 deliberately failing test on the gap until the fix (scheduled at milestone E3)
 lands. The isolation story elsewhere in the docs describes the *target* state.
 Whether the gap has since closed is a build-status question; see
@@ -169,19 +169,19 @@ Canopy keeps a candid risk register — "what could kill this" — ranked by sev
 The headline entries, in lay terms:
 
 - **The economic null hypothesis** (existential). Maybe one strong AI agent with
-  good context simply beats a simulated org on cost *and* quality for most tasks.
+  good context simply beats a simulated team on cost *and* quality for most tasks.
   The declared counter-move: build the head-to-head benchmark early (the same task,
-  one unsupervised agent vs. the org), publish the numbers honestly either way — and
-  if the org loses on raw cost, the pitch becomes what the ledger already proves:
-  orgs make AI work *governable, auditable, and costed*.
+  one unsupervised agent vs. the team), publish the numbers honestly either way — and
+  if the team loses on raw cost, the pitch becomes what the ledger already proves:
+  teams make AI work *governable, auditable, and costed*.
 - **Value gated behind Phase 3; the second-session problem** (existential/major).
   Early phases demo beautifully but give no reason to return tomorrow; recurring
   cadences and real usefulness are the retention answer.
 - **A crowded market; "SimCity for agents"** (major). Orchestration is a crowded
   field, and the product risks being spectacular to watch but weakly retained —
   bookmarked admiringly, never adopted.
-- **Cold start** (major). You must design an org before any output exists. Planned
-  counter: intent-first onboarding — type the request first, Canopy proposes the org.
+- **Cold start** (major). You must design a team before any output exists. Planned
+  counter: intent-first onboarding — type the request first, Canopy proposes the team.
 - **Coordination cost and manager bottlenecks** (major). Management overhead tokens
   can dwarf production tokens as trees deepen, and every manager is a spot where
   work queues up single-file. The coordination-vs-production split in the ledger
@@ -193,7 +193,7 @@ The headline entries, in lay terms:
 - **Architecture watch-items** (mostly manageable): central mediation as a
   bottleneck, dual-language drift, at-least-once delivery colliding with money
   (hence idempotent charging), the secrets posture versus future hosted ambitions,
-  noisy-neighbor orgs, and operator attention itself as the scarce resource at scale.
+  noisy-neighbor teams, and operator attention itself as the scarce resource at scale.
 
 ---
 
