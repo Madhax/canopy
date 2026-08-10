@@ -3,8 +3,8 @@
   "description": "A dependency carrying resolveOn: delivered (a verify edge) parses and validates clean on both validators; the sibling edge relies on the accepted default.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "org",
     "name": "org",
     "organizationType": "product-engineering",
@@ -112,8 +112,8 @@
       }
     ],
     "customRoles": [],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": []
 }

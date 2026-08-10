@@ -14,7 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 # A Step is coordination (decompose/await/synthesize) or production (the actual work). Tagging it
-# lets the ledger report an "overhead %" — what fraction of spend is the org talking to itself
+# lets the ledger report an "overhead %" — what fraction of spend is the team talking to itself
 # (risk SC-1). The agent's loop knows which it is doing and sets this per call.
 StepKind = Literal["coordination", "production"]
 

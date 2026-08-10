@@ -26,8 +26,9 @@ from .routes import health as health_routes
 from .routes import inspector as inspector_routes
 from .routes import mcp as mcp_routes
 from .routes import operations as operations_routes
-from .routes import organizations as organization_routes
+from .routes import orgs as org_routes
 from .routes import profiles as profiles_routes
+from .routes import teams as team_routes
 from .routes import work as work_routes
 
 
@@ -137,7 +138,7 @@ async def _delivery_loop() -> None:
                             dead, _env = bus.nack(delivery.id, requeue=True)
                             if dead:
                                 activity.log(
-                                    "system", "router.dead_letter", org_id=None,
+                                    "system", "router.dead_letter", team_id=None,
                                     subject_ids=[actuation_id, agent.nodeId, delivery.id],
                                 )
             except Exception:  # noqa: BLE001
@@ -147,6 +148,16 @@ async def _delivery_loop() -> None:
 
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # C1 boot migrations: store construction renames tables / assigns the default
+    # Organization; the filesystem pass then regroups data/work + data/repos under
+    # data/orgs/<orgKey>/teams/<teamId>/ (design/organizations/07 §2.3–2.5).
+    from .config import get_data_dir
+    from .deps import get_db, get_store
+    from .orgs import migrate_c1_filesystem
+
+    get_store()
+    migrate_c1_filesystem(get_data_dir(), get_db())
+
     tasks = [
         asyncio.create_task(_reconciler_loop()),
         asyncio.create_task(_delivery_loop()),
@@ -180,7 +191,8 @@ def create_app() -> FastAPI:
     api = FastAPI(title="Canopy API", version=__version__)
     api.include_router(health_routes.router)
     api.include_router(catalog_routes.router)
-    api.include_router(organization_routes.router)
+    api.include_router(team_routes.router)
+    api.include_router(org_routes.router)  # organizations + portfolio + move (C1)
     api.include_router(profiles_routes.router)  # profiles / bindings / secrets (A1)
     api.include_router(connector_routes.router)  # connector instances (builder-connectors.md)
     api.include_router(operations_routes.router)  # spend rollups + activity feed (A1)

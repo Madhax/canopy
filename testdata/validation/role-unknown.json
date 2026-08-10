@@ -3,8 +3,8 @@
   "description": "Agent bound to an unknown role key.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "org",
     "name": "org",
     "organizationType": "product-engineering",
@@ -111,8 +111,8 @@
       }
     ],
     "customRoles": [],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": [
     {

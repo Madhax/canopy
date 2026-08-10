@@ -151,7 +151,7 @@ def _rotate_if_large(path: Path, cap: int = _STDERR_ROTATE_BYTES) -> None:
 
 def _work_root() -> Path:
     """F13: the assignment tree's stable home. The actuator passes an actuation-independent
-    path (``data/work/<orgId>/<nodeId>``) so the CLI's per-directory conversation key — and
+    path (``data/orgs/<orgKey>/teams/<teamId>/work/<nodeId>``) so the CLI's per-directory conversation key — and
     with it ``--resume`` — survives deactuate → re-actuate. Absent (tests, older actuators),
     the sandbox cwd keeps the legacy per-actuation shape."""
     raw = os.environ.get("CANOPY_WORK_ROOT")
@@ -169,7 +169,7 @@ def _transcript_path(workdir: Path, session_id: str) -> Path:
 
 
 def _archive_transcript(workroot: Path, workdir: Path, session_id: str) -> None:
-    """F16: copy the session transcript into the assignment's own home — the org owns the
+    """F16: copy the session transcript into the assignment's own home — the team owns the
     complete record of what its agent said and did, not the operator's CLI profile."""
     src = _transcript_path(workdir, session_id)
     try:
@@ -274,7 +274,7 @@ def _observe_stream(
                 client.post("/api/dp/assignment/events", json={
                     "assignmentId": assignment_id, "kind": "session-ref",
                     "sessionRef": session_id,
-                    # F16: the org's pointer to the conversation's ground truth.
+                    # F16: the team's pointer to the conversation's ground truth.
                     "transcriptPath": str(_transcript_path(workdir, session_id)),
                 })
                 _log("session_init", assignment=assignment_id, session=session_id)

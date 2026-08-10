@@ -28,14 +28,14 @@ from ..deps import now_iso
 from ..gateway.service import estimate_cost_micros
 from ..ids import new_assignment_id, new_step_id
 from ..ledger import BudgetLedger
-from ..models import Agent, Organization
-from ..sqlite_store import SqliteOrgStore
+from ..models import Agent, Team
+from ..sqlite_store import SqliteTeamStore
 from ..store import JsonFileStore
 from .gates import GateService
 from .models import ASSIGNMENT_TERMINAL_STATES, Assignment, Deliverable, Gate, Intent, Plan
 from .store import WorkStore
 
-OrgStore = SqliteOrgStore | JsonFileStore
+OrgStore = SqliteTeamStore | JsonFileStore
 
 
 class RootAssignmentResult(BaseModel):
@@ -45,7 +45,7 @@ class RootAssignmentResult(BaseModel):
 
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug or "organization"
+    return slug or "team"
 
 
 class WorkError(Exception):
@@ -55,13 +55,13 @@ class WorkError(Exception):
 class ExecutionEngine:
     def __init__(
         self, store: WorkStore, ledger: BudgetLedger, artifacts: ArtifactStore,
-        org_store: OrgStore, *, activity: ActivityLog | None = None, bus=None,
+        team_store: OrgStore, *, activity: ActivityLog | None = None, bus=None,
         executors: dict | None = None, prices: dict | None = None,
     ):
         self.store = store
         self.ledger = ledger
         self.artifacts = artifacts
-        self.orgs = org_store
+        self.teams = team_store
         self.activity = activity
         self.bus = bus  # optional: dispatch/resume wake-ups ride the A3 delivery workers
         # Governed-action executors (envelope §3.4): action name -> callable(payload) -> result.
@@ -98,20 +98,20 @@ class ExecutionEngine:
             pass
 
     # ----------------------------------------------------------- node resolution
-    def _org(self, org_id: str) -> Organization:
-        return self.orgs.read(org_id)
+    def _org(self, team_id: str) -> Team:
+        return self.teams.read(team_id)
 
     @staticmethod
-    def _node(org: Organization, node_id: str | None) -> Agent:
-        if node_id is None:  # default target: the org root (the agent with no manager)
-            roots = [a for a in org.agents if a.managerId is None]
+    def _node(team: Team, node_id: str | None) -> Agent:
+        if node_id is None:  # default target: the team root (the agent with no manager)
+            roots = [a for a in team.agents if a.managerId is None]
             if not roots:
-                raise WorkError(f"org {org.id} has no root node")
+                raise WorkError(f"team {team.id} has no root node")
             return roots[0]
-        for a in org.agents:
+        for a in team.agents:
             if a.id == node_id:
                 return a
-        raise WorkError(f"node {node_id!r} not found in org {org.id}")
+        raise WorkError(f"node {node_id!r} not found in team {team.id}")
 
     @staticmethod
     def _contract_for(agent: Agent) -> tuple[str, str]:
@@ -123,7 +123,7 @@ class ExecutionEngine:
 
     # --------------------------------------------------------------- intent intake
     def submit_intent(
-        self, org_id: str, actuation_id: str, text: str, *, target_node: str | None = None,
+        self, team_id: str, actuation_id: str, text: str, *, target_node: str | None = None,
         kind: str = "episodic", created_by: str = "operator", allowance_override: int | None = None,
         contract_kind: str | None = None, contract_type: str | None = None,
         cadence_id: str | None = None, trigger_id: str | None = None,
@@ -135,8 +135,8 @@ class ExecutionEngine:
         assignment-bound (task_id = the assignment id) — the D1 close. Delivery/wake of the node is
         the runtime's concern (E1 item 4); here we establish the durable work truth.
         """
-        org = self._org(org_id)
-        agent = self._node(org, target_node)
+        team = self._org(team_id)
+        agent = self._node(team, target_node)
         allowance = allowance_override or agent.salary.perAssignmentAllowance
         ckind = contract_kind or self._contract_for(agent)[0]
         ctype = contract_type or self._contract_for(agent)[1]
@@ -146,7 +146,7 @@ class ExecutionEngine:
         issuer = "operator" if created_by in ("cadence", "trigger") else created_by
 
         intent = self.store.create_intent(
-            org_id, actuation_id, agent.id, text, kind=kind, created_by=created_by,
+            team_id, actuation_id, agent.id, text, kind=kind, created_by=created_by,
             cadence_id=cadence_id, trigger_id=trigger_id, external_key=external_key,
         )
         # Pre-mint the assignment id so the meter is bound to it in both directions.
@@ -157,26 +157,26 @@ class ExecutionEngine:
             task_id=aid,
         )
         assignment = self.store.create_assignment(
-            assignment_id=aid, org_id=org_id, actuation_id=actuation_id, intent_id=intent.id,
+            assignment_id=aid, team_id=team_id, actuation_id=actuation_id, intent_id=intent.id,
             node_id=agent.id, issued_by=issuer, contract_kind=ckind, contract_type=ctype,
             meter_id=meter.id, state="briefed",
         )
         self.store.add_brief(aid, text, revised_by=issuer)
         self.store.set_intent_root(intent.id, aid)
-        self._log("intent.submitted", org_id, [intent.id, aid, agent.id],
+        self._log("intent.submitted", team_id, [intent.id, aid, agent.id],
                   {"actuationId": actuation_id, "meterId": meter.id})
         return RootAssignmentResult(intent=self.store.get_intent(intent.id), assignment=assignment)
 
     # ------------------------------------------------------------------ delegation
     @staticmethod
-    def _reports_of(org: Organization, node_id: str) -> list[Agent]:
-        return [a for a in org.agents if a.managerId == node_id]
+    def _reports_of(team: Team, node_id: str) -> list[Agent]:
+        return [a for a in team.agents if a.managerId == node_id]
 
     @staticmethod
-    def _dep_resolve_on(org: Organization, from_node: str, to_node: str) -> str:
+    def _dep_resolve_on(team: Team, from_node: str, to_node: str) -> str:
         """The formation-declared resolution policy for the (dependent → upstream) edge; consume
         (``accepted``) when the chart declares no edge (work-model.md §3)."""
-        for d in org.dependencies:
+        for d in team.dependencies:
             if d.from_ == from_node and d.to == to_node:
                 return d.resolveOn
         return "accepted"
@@ -202,9 +202,9 @@ class ExecutionEngine:
         caller = self._require(caller_assignment_id)
         if caller.state != "executing":
             raise WorkError(f"delegate invalid from state {caller.state!r}")
-        org = self._org(caller.orgId)
+        team = self._org(caller.teamId)
         report = next(
-            (a for a in self._reports_of(org, caller.nodeId) if a.id == report_node_id), None,
+            (a for a in self._reports_of(team, caller.nodeId) if a.id == report_node_id), None,
         )
         if report is None:  # invariant 4: delegation only travels manager → direct report
             raise WorkError(f"node {report_node_id!r} is not a report of {caller.nodeId!r}")
@@ -217,7 +217,7 @@ class ExecutionEngine:
             edges.append({
                 "upstreamId": up.id,
                 "resolveOn": dep.get("resolveOn")
-                or self._dep_resolve_on(org, report.id, up.nodeId),
+                or self._dep_resolve_on(team, report.id, up.nodeId),
             })
 
         ckind = contract_kind or self._contract_for(report)[0]
@@ -227,7 +227,7 @@ class ExecutionEngine:
 
         if staged:
             self.store.create_assignment(
-                assignment_id=aid, org_id=caller.orgId, actuation_id=caller.actuationId,
+                assignment_id=aid, team_id=caller.teamId, actuation_id=caller.actuationId,
                 intent_id=caller.intentId, parent_id=caller.id, node_id=report.id,
                 issued_by=caller.nodeId, contract_kind=ckind, contract_type=ctype,
                 meter_id=None, state="proposed",
@@ -239,7 +239,7 @@ class ExecutionEngine:
                 hard_stop=report.salary.hardStop, task_id=aid,
             )
             self.store.create_assignment(
-                assignment_id=aid, org_id=caller.orgId, actuation_id=caller.actuationId,
+                assignment_id=aid, team_id=caller.teamId, actuation_id=caller.actuationId,
                 intent_id=caller.intentId, parent_id=caller.id, node_id=report.id,
                 issued_by=caller.nodeId, contract_kind=ckind, contract_type=ctype,
                 meter_id=meter.id, state="briefed",
@@ -254,7 +254,7 @@ class ExecutionEngine:
         child = self._require(aid)
         if child.state == "briefed":  # direct dispatch: publish the delivery wake (A3)
             self._publish_wake(child, "assignment")
-        self._log("assignment.delegated", caller.orgId, [caller.id, aid, report.id],
+        self._log("assignment.delegated", caller.teamId, [caller.id, aid, report.id],
                   {"staged": staged, "dependsOn": [e["upstreamId"] for e in edges]})
         return child
 
@@ -277,10 +277,10 @@ class ExecutionEngine:
                 reason="plan-review:" + ",".join(sorted(c.id for c in proposed)),
                 payload={"batch": batch},
             )
-            self._log("gate.plan-review", caller.orgId, [caller.id, gate.id],
+            self._log("gate.plan-review", caller.teamId, [caller.id, gate.id],
                       {"batch": [c.id for c in proposed]})
             self.store.notify(
-                caller.orgId, "attention", "plan-review-waiting",
+                caller.teamId, "attention", "plan-review-waiting",
                 f"{caller.nodeId}'s fan-out ({len(proposed)} delegations) awaits review",
                 subject_ids=[caller.id, gate.id], dedupe_key=gate.id,
             )
@@ -302,8 +302,8 @@ class ExecutionEngine:
 
     def _draft_summary(self, c: Assignment) -> dict:
         brief = self.store.get_brief(c.id)
-        org = self._org(c.orgId)
-        node = self._node(org, c.nodeId)
+        team = self._org(c.teamId)
+        node = self._node(team, c.nodeId)
         dep_gate = self.gates.open_gate_for(c.id, "dependency")
         return {
             "assignmentId": c.id,
@@ -370,7 +370,7 @@ class ExecutionEngine:
             ]
             if outstanding:
                 self.gates.open_await(self._require(manager.id), outstanding)
-            self._log("gate.batch-approved", manager.orgId, [manager.id, gate.id],
+            self._log("gate.batch-approved", manager.teamId, [manager.id, gate.id],
                       {"dispatched": dispatched})
             return self.store.get_gate(gate.id)  # type: ignore[return-value]
 
@@ -388,7 +388,7 @@ class ExecutionEngine:
                                   "cancelled": cancelled},
                 resolved_by=resolved_by,
             )
-            self._log("gate.batch-denied", manager.orgId, [manager.id, gate.id],
+            self._log("gate.batch-denied", manager.teamId, [manager.id, gate.id],
                       {"cancelled": cancelled})
             return self.store.get_gate(gate.id)  # type: ignore[return-value]
 
@@ -440,7 +440,7 @@ class ExecutionEngine:
                                         "gateId": gate.id, "approvedBy": resolved_by}},
             resolved_by=resolved_by,
         )
-        self._log("governed.executed", a.orgId, [a.id, gate.id],
+        self._log("governed.executed", a.teamId, [a.id, gate.id],
                   {"action": name, "result": result})
         return self.store.get_gate(gate.id)  # type: ignore[return-value]
 
@@ -484,7 +484,7 @@ class ExecutionEngine:
             self.ledger.raise_meter(a.meterId, amount)
             resolution["amount"] = amount
             self.gates.resolve(gate, resolution=resolution, resolved_by=resolved_by)
-            self._log("meter.topped-up", a.orgId, [a.id, a.meterId], {"amount": amount})
+            self._log("meter.topped-up", a.teamId, [a.id, a.meterId], {"amount": amount})
 
         elif action == "reassign" and gate.kind == "intervention":
             to_node = body.get("toNodeId")
@@ -559,7 +559,7 @@ class ExecutionEngine:
             return
         if meter.warned and meter.state != "exhausted":
             self.store.notify(
-                a.orgId, "warning", "budget-warn",
+                a.teamId, "warning", "budget-warn",
                 f"{a.nodeId} crossed {int(meter.warnThresholdPct)}% of its allowance",
                 subject_ids=[a.id, meter.id], dedupe_key=f"{a.id}:{meter.allowance}",
             )
@@ -572,7 +572,7 @@ class ExecutionEngine:
                          "allowance": meter.allowance},
             )
             self.store.notify(
-                a.orgId, "attention", "hard-stop",
+                a.teamId, "attention", "hard-stop",
                 f"{a.nodeId} exhausted its meter ({meter.spent}/{meter.allowance} tokens)",
                 subject_ids=[a.id, gate.id], dedupe_key=f"{a.id}:{meter.allowance}",
             )
@@ -610,7 +610,7 @@ class ExecutionEngine:
                         if re.search(r"limit|resets|overloaded|quota", detail, re.I)
                         else "session-error")
                 self.store.notify(
-                    a.orgId, "warning", kind, f"{a.nodeId} session failing: {detail}",
+                    a.teamId, "warning", kind, f"{a.nodeId} session failing: {detail}",
                     subject_ids=[a.id], dedupe_key=f"{kind}:{a.id}:{detail[:80]}",
                 )
                 continue
@@ -639,7 +639,7 @@ class ExecutionEngine:
                 reason=reason, payload={"detail": detail},
             )
             if self.store.notify(
-                a.orgId, "warning", "stall", f"{a.nodeId} stalled: {detail}",
+                a.teamId, "warning", "stall", f"{a.nodeId} stalled: {detail}",
                 subject_ids=[a.id, gate.id], dedupe_key=reason,
             ) is not None:
                 opened.append(gate)
@@ -649,12 +649,12 @@ class ExecutionEngine:
     def _reassign(self, a: Assignment, to_node_id: str, *, by: str) -> Assignment:
         """R2: cancel the assignment and re-issue it to another of the issuer's reports, carrying
         ``reassigned_from`` and the meter's remaining balance."""
-        org = self._org(a.orgId)
+        team = self._org(a.teamId)
         if a.issuedBy != "operator":
-            reports = {r.id for r in self._reports_of(org, a.issuedBy)}
+            reports = {r.id for r in self._reports_of(team, a.issuedBy)}
             if to_node_id not in reports:
                 raise WorkError(f"node {to_node_id!r} is not a report of {a.issuedBy!r}")
-        target = self._node(org, to_node_id)
+        target = self._node(team, to_node_id)
         remaining = 0
         if a.meterId is not None:
             meter = self.ledger.get_meter(a.meterId)
@@ -671,7 +671,7 @@ class ExecutionEngine:
             hard_stop=target.salary.hardStop, task_id=aid,
         )
         replacement = self.store.create_assignment(
-            assignment_id=aid, org_id=a.orgId, actuation_id=a.actuationId,
+            assignment_id=aid, team_id=a.teamId, actuation_id=a.actuationId,
             intent_id=a.intentId, parent_id=a.parentId, node_id=to_node_id,
             issued_by=a.issuedBy, contract_kind=a.contractKind, contract_type=a.contractType,
             meter_id=new_meter.id, state="briefed", reassigned_from=a.id,
@@ -680,7 +680,7 @@ class ExecutionEngine:
             aid, brief.text if brief else "", artifact_refs=brief.artifactRefs if brief else [],
             revised_by=by,
         )
-        self._log("assignment.reassigned", a.orgId, [a.id, aid, to_node_id],
+        self._log("assignment.reassigned", a.teamId, [a.id, aid, to_node_id],
                   {"remaining": remaining})
         return replacement
 
@@ -704,7 +704,7 @@ class ExecutionEngine:
         self.store.set_assignment_state(a.id, "cancelled")
         if a.parentId is None:
             self.store.close_intent(a.intentId, "cancelled")
-        self._log("assignment.cancelled", a.orgId, [a.id], {"by": by, "reason": reason})
+        self._log("assignment.cancelled", a.teamId, [a.id], {"by": by, "reason": reason})
         return self._require(assignment_id)
 
     def set_priority(self, assignment_id: str, priority: int) -> Assignment:
@@ -716,7 +716,7 @@ class ExecutionEngine:
     def _notify_gate_waiting(self, a: Assignment, gate: Gate) -> None:
         severity = "attention" if gate.owner == "operator" else "warning"
         self.store.notify(
-            a.orgId, severity, "gate-waiting",
+            a.teamId, severity, "gate-waiting",
             f"{gate.kind} gate on {a.nodeId} awaits {gate.owner}",
             subject_ids=[a.id, gate.id], dedupe_key=gate.id,
         )
@@ -725,8 +725,8 @@ class ExecutionEngine:
         """Fund and dispatch one approved draft: ``proposed → briefed`` with a fresh meter; a
         child whose dependency gate still has unresolved edges goes straight to ``gated``
         (engine.md §2 step 5 — genuinely idle, consuming nothing)."""
-        org = self._org(child.orgId)
-        node = self._node(org, child.nodeId)
+        team = self._org(child.teamId)
+        node = self._node(team, child.nodeId)
         allowance = allowance_override or node.salary.perAssignmentAllowance
         meter = self.ledger.open_meter(
             child.actuationId, child.nodeId, allowance,
@@ -817,7 +817,7 @@ class ExecutionEngine:
                 cache_read_tokens, cache_creation_tokens,
             )
             self.ledger.record(
-                a.meterId, step_id=step.id, org_id=a.orgId, node_id=a.nodeId,
+                a.meterId, step_id=step.id, team_id=a.teamId, node_id=a.nodeId,
                 actuation_id=a.actuationId, provider="claude-cli", model=model,
                 input_tokens=input_tokens, output_tokens=output_tokens,
                 cache_read_tokens=cache_read_tokens,
@@ -850,12 +850,12 @@ class ExecutionEngine:
         self, assignment_id: str, name: str, type: str, content: bytes, *,
         filename: str | None = None,
     ) -> ArtifactMeta:
-        """Store an output in the Artifact Store under the assignment's org/node (grant checks in
+        """Store an output in the Artifact Store under the assignment's team/node (grant checks in
         E3). The returned ``ref`` is what ``finish`` carries as the deliverable."""
         a = self._require(assignment_id)
-        org = self._org(a.orgId)
+        team = self._org(a.teamId)
         return self.artifacts.put(
-            a.orgId, _slugify(org.name), a.nodeId, name, type, content,
+            a.teamId, _slugify(team.name), a.nodeId, name, type, content,
             task_id=assignment_id, filename=filename,
         )
 
@@ -875,7 +875,7 @@ class ExecutionEngine:
         # First dependency hook (work-model.md §3): resolve 'delivered'-threshold (verify)
         # watchers and wake any manager awaiting this child, refs pinned at the submitted version.
         self.gates.sweep(self._require(assignment_id), "delivered", deliverable.artifactRefs)
-        self._log("assignment.delivering", a.orgId, [assignment_id, deliverable.id],
+        self._log("assignment.delivering", a.teamId, [assignment_id, deliverable.id],
                   {"refs": deliverable.artifactRefs})
         return deliverable
 
@@ -900,9 +900,9 @@ class ExecutionEngine:
         self.gates.sweep(self._require(assignment_id), "accepted", refs)
         if a.parentId is None:
             self.store.close_intent(a.intentId, "completed")
-            self._log("intent.completed", a.orgId, [a.intentId, assignment_id], {})
+            self._log("intent.completed", a.teamId, [a.intentId, assignment_id], {})
             self.store.notify(
-                a.orgId, "info", "intent-completed", "Intent completed — deliverable ready",
+                a.teamId, "info", "intent-completed", "Intent completed — deliverable ready",
                 subject_ids=[a.intentId, assignment_id], dedupe_key=a.intentId,
             )
         return self._require(assignment_id)
@@ -927,10 +927,10 @@ class ExecutionEngine:
             self._fund_rework(a)
         self.store.set_assignment_state(assignment_id, "rejected")
         self.store.set_assignment_state(assignment_id, "planning")
-        self._log("assignment.rejected", a.orgId, [assignment_id],
+        self._log("assignment.rejected", a.teamId, [assignment_id],
                   {"note": note, "revisedBrief": revised_brief is not None})
         self.store.notify(
-            a.orgId, "warning", "deliverable-rejected",
+            a.teamId, "warning", "deliverable-rejected",
             f"{a.nodeId}'s deliverable rejected: {note[:120]}",
             subject_ids=[assignment_id], dedupe_key=f"{assignment_id}:{a.deliverableId}",
         )
@@ -957,7 +957,7 @@ class ExecutionEngine:
         reservation = self.ledger.reserve(parent.meterId, grant)
         try:
             self.ledger.record(
-                parent.meterId, step_id=new_step_id(), org_id=a.orgId, node_id=parent.nodeId,
+                parent.meterId, step_id=new_step_id(), team_id=a.teamId, node_id=parent.nodeId,
                 actuation_id=a.actuationId, provider="canopy", model="meter-transfer",
                 input_tokens=grant, output_tokens=0, est_cost_micros=0,
                 reserved=reservation.amount, task_id=parent.id,
@@ -966,7 +966,7 @@ class ExecutionEngine:
             self.ledger.release(reservation)
             raise
         self.ledger.raise_meter(a.meterId, grant)
-        self._log("meter.transfer", a.orgId, [parent.id, a.id],
+        self._log("meter.transfer", a.teamId, [parent.id, a.id],
                   {"grant": grant, "from": parent.meterId, "to": a.meterId})
 
     # --------------------------------------------------------------------- helpers
@@ -974,7 +974,7 @@ class ExecutionEngine:
         intent = self.store.get_intent(a.intentId)
         meter = self.ledger.get_meter(a.meterId) if a.meterId else None
         deliverable = self.store.get_deliverable(a.deliverableId) if a.deliverableId else None
-        self.store.append_memory(a.orgId, a.nodeId, {
+        self.store.append_memory(a.teamId, a.nodeId, {
             "assignmentId": a.id,
             "intentText": intent.text if intent else "",
             "outcome": outcome,
@@ -982,7 +982,7 @@ class ExecutionEngine:
             "costTokens": meter.spent if meter else 0,
         })
 
-    def _log(self, action: str, org_id: str, subject_ids: list[str], payload: dict) -> None:
+    def _log(self, action: str, team_id: str, subject_ids: list[str], payload: dict) -> None:
         if self.activity is not None:
-            self.activity.log("system", action, org_id=org_id, subject_ids=subject_ids,
+            self.activity.log("system", action, team_id=team_id, subject_ids=subject_ids,
                               payload=payload)

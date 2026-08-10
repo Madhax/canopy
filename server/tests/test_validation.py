@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from canopy_server.catalog import get_catalog
-from canopy_server.models import Organization
-from canopy_server.validation import validate_organization
+from canopy_server.models import Team
+from canopy_server.validation import validate_team
 from canopy_server.validation.codes import ACTUATION_CODES, CODE_MESSAGES
 
 VECTOR_DIR = Path(__file__).resolve().parents[2] / "testdata" / "validation"
@@ -23,8 +23,8 @@ def normalize_issue(issue: dict) -> dict:
         out["agentIds"] = sorted(issue["agentIds"])
     if issue.get("dependencyIds"):
         out["dependencyIds"] = sorted(issue["dependencyIds"])
-    if issue.get("orgPath"):
-        out["orgPath"] = issue["orgPath"]
+    if issue.get("teamPath"):
+        out["teamPath"] = issue["teamPath"]
     return out
 
 
@@ -46,8 +46,8 @@ def test_vectors_present():
 @pytest.mark.parametrize("vector", VECTORS, ids=[v["name"] for v in VECTORS])
 def test_validator_matches_vector(vector):
     catalog = get_catalog()
-    org = Organization.model_validate(vector["document"])
-    issues = validate_organization(org, vector["mode"], catalog)
+    team = Team.model_validate(vector["document"])
+    issues = validate_team(team, vector["mode"], catalog)
     actual = sorted((normalize_issue(i.to_dict()) for i in issues), key=sort_key)
     expected = sorted((normalize_issue(i) for i in vector["expectedIssues"]), key=sort_key)
     assert actual == expected, f"{vector['name']}: validator output diverged from vector"
@@ -63,15 +63,15 @@ def test_every_rule_code_has_a_vector():
 def test_dependency_resolve_on_defaults_and_rejects_unknown():
     """`resolveOn` is schema-enforced: omitted => accepted, unknown values fail parse.
 
-    The TS side asserts the same in ui/src/schema/organization.test.ts — the enum is
+    The TS side asserts the same in ui/src/schema/team.test.ts — the enum is
     part of the cross-language contract (docs/org-chart-editor.md §3.2).
     """
     vector = next(v for v in VECTORS if v["name"] == "dep-resolve-on-delivered")
-    org = Organization.model_validate(vector["document"])
-    assert org.dependencies[0].resolveOn == "delivered"
-    assert org.dependencies[1].resolveOn == "accepted"  # omitted in the fixture
+    team = Team.model_validate(vector["document"])
+    assert team.dependencies[0].resolveOn == "delivered"
+    assert team.dependencies[1].resolveOn == "accepted"  # omitted in the fixture
 
     broken = json.loads(json.dumps(vector["document"]))
     broken["dependencies"][0]["resolveOn"] = "on-a-tuesday"
     with pytest.raises(ValueError):
-        Organization.model_validate(broken)
+        Team.model_validate(broken)

@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 
 
-def _node(org: dict, role_key: str) -> dict:
-    return next(a for a in org["agents"] if a["role"]["key"] == role_key)
+def _node(team: dict, role_key: str) -> dict:
+    return next(a for a in team["agents"] if a["role"]["key"] == role_key)
 
 
 @pytest.fixture()
@@ -21,19 +21,19 @@ def pod(client, make_org, mint_session):
     test_gates.pod; kept local so each vector file reads standalone)."""
     from canopy_server.deps import get_engine
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead = _node(org, "engineering-lead")
-    s = mint_session(org["id"], node_id=lead["id"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead = _node(team, "engineering-lead")
+    s = mint_session(team["id"], node_id=lead["id"])
     eng = get_engine()
     root = eng.submit_intent(
-        org["id"], s["actuationId"], "Add CSV export", target_node=lead["id"],
+        team["id"], s["actuationId"], "Add CSV export", target_node=lead["id"],
     ).assignment
     eng.mark_intake_complete(root.id)
     eng.declare_plan(root.id, [{"title": "decompose"}, {"title": "review"}])
     return {
-        "engine": eng, "org": org, "root": root, "lead": lead,
-        "backend": _node(org, "backend-engineer"), "frontend": _node(org, "frontend-engineer"),
-        "qa": _node(org, "qa-engineer"), "session": s,
+        "engine": eng, "team": team, "root": root, "lead": lead,
+        "backend": _node(team, "backend-engineer"), "frontend": _node(team, "frontend-engineer"),
+        "qa": _node(team, "qa-engineer"), "session": s,
     }
 
 
@@ -66,7 +66,7 @@ def test_root_clarification_owned_by_operator(pod):
     eng, root = pod["engine"], pod["root"]
     # Re-enter intake territory: a fresh root in 'briefed' may raise clarification directly.
     org2_root = eng.submit_intent(
-        root.orgId, root.actuationId, "vague ask", target_node=pod["lead"]["id"],
+        root.teamId, root.actuationId, "vague ask", target_node=pod["lead"]["id"],
     ).assignment
     gate = eng.open_clarification(org2_root.id, "what does done mean?")
     assert gate.owner == "operator"
@@ -79,14 +79,14 @@ def test_escalation_answer_carries_refs_and_resumes(pod):
     eng.declare_plan(child.id, [{"title": "work"}])
 
     gate = eng.open_escalation(child.id, "may I change the schema?",
-                               refs=["org://acme/be/draft@1"])
+                               refs=["team://acme/be/draft@1"])
     assert eng.store.get_assignment(child.id).state == "gated"
 
     eng.resolve_gate(gate.id, action="answer", resolved_by=pod["root"].nodeId,
-                     payload={"answer": "yes, additive only", "refs": ["org://acme/lead/policy@1"]})
+                     payload={"answer": "yes, additive only", "refs": ["team://acme/lead/policy@1"]})
     c = eng.store.get_assignment(child.id)
     assert c.state == "executing"  # resumes where it was
-    assert "org://acme/lead/policy@1" in eng.store.get_brief(child.id).artifactRefs
+    assert "team://acme/lead/policy@1" in eng.store.get_brief(child.id).artifactRefs
     g = eng.store.get_gate(gate.id)
     assert g.resolution["answer"] == "yes, additive only"
 
@@ -128,9 +128,9 @@ def test_intervene_topup_raises_meter(pod):
 
 
 # --------------------------------------------------------------------------------- triggers
-def _exhaust(ledger, meter_id, *, org_id, node_id, actuation_id, step_id, tokens):
+def _exhaust(ledger, meter_id, *, team_id, node_id, actuation_id, step_id, tokens):
     res = ledger.reserve(meter_id, tokens)
-    ledger.record(meter_id, step_id=step_id, org_id=org_id, node_id=node_id,
+    ledger.record(meter_id, step_id=step_id, team_id=team_id, node_id=node_id,
                   actuation_id=actuation_id, provider="mock", model="mock-1",
                   input_tokens=tokens, output_tokens=0, est_cost_micros=0,
                   reserved=res.amount)
@@ -139,23 +139,23 @@ def _exhaust(ledger, meter_id, *, org_id, node_id, actuation_id, step_id, tokens
 def test_hard_stop_opens_intervention_and_topup_resumes(pod, make_org, mint_session):
     from canopy_server.deps import get_engine, get_ledger
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Tight")
-    lead = next(a for a in org["agents"] if a["managerId"] is None)
-    s = mint_session(org["id"], node_id=lead["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Tight")
+    lead = next(a for a in team["agents"] if a["managerId"] is None)
+    s = mint_session(team["id"], node_id=lead["id"])
     eng, ledger = get_engine(), get_ledger()
-    a = eng.submit_intent(org["id"], s["actuationId"], "small budget",
+    a = eng.submit_intent(team["id"], s["actuationId"], "small budget",
                           target_node=lead["id"], allowance_override=100).assignment
     eng.mark_intake_complete(a.id)
     eng.declare_plan(a.id, [{"title": "w"}])
 
-    _exhaust(ledger, a.meterId, org_id=org["id"], node_id=lead["id"],
+    _exhaust(ledger, a.meterId, team_id=team["id"], node_id=lead["id"],
              actuation_id=s["actuationId"], step_id="st_burn1", tokens=100)
     # The next step report evaluates the triggers: hard-stop gate + attention notification.
     eng.record_step(a.id, input_tokens=0, output_tokens=0, duration_ms=10, step_id="st_burn1")
     assert eng.store.get_assignment(a.id).state == "gated"
     gate = next(g for g in eng.store.list_gates(assignment_id=a.id, state="open")
                 if g.openedBy == "trigger:hard-stop")
-    kinds = [n.kind for n in eng.store.list_notifications(org["id"])]
+    kinds = [n.kind for n in eng.store.list_notifications(team["id"])]
     assert "hard-stop" in kinds
 
     # Top-up resolves the InterventionGate; the meter reopens; work resumes.
@@ -164,7 +164,7 @@ def test_hard_stop_opens_intervention_and_topup_resumes(pod, make_org, mint_sess
     assert ledger.get_meter(a.meterId).state == "open"
 
     # A second exhaustion is a NEW fact: a fresh gate opens (allowance is in the reason hash).
-    _exhaust(ledger, a.meterId, org_id=org["id"], node_id=lead["id"],
+    _exhaust(ledger, a.meterId, team_id=team["id"], node_id=lead["id"],
              actuation_id=s["actuationId"], step_id="st_burn2", tokens=200)
     eng.record_step(a.id, input_tokens=0, output_tokens=0, duration_ms=10, step_id="st_burn2")
     assert eng.store.get_assignment(a.id).state == "gated"
@@ -173,20 +173,20 @@ def test_hard_stop_opens_intervention_and_topup_resumes(pod, make_org, mint_sess
 def test_budget_warn_notifies_exactly_once(pod, make_org, mint_session):
     from canopy_server.deps import get_engine, get_ledger
 
-    org = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Warned")
-    lead = next(a for a in org["agents"] if a["managerId"] is None)
-    s = mint_session(org["id"], node_id=lead["id"])
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Warned")
+    lead = next(a for a in team["agents"] if a["managerId"] is None)
+    s = mint_session(team["id"], node_id=lead["id"])
     eng, ledger = get_engine(), get_ledger()
-    a = eng.submit_intent(org["id"], s["actuationId"], "warn me",
+    a = eng.submit_intent(team["id"], s["actuationId"], "warn me",
                           target_node=lead["id"], allowance_override=1000).assignment
     eng.mark_intake_complete(a.id)
     eng.declare_plan(a.id, [{"title": "w"}])
 
-    _exhaust(ledger, a.meterId, org_id=org["id"], node_id=lead["id"],
+    _exhaust(ledger, a.meterId, team_id=team["id"], node_id=lead["id"],
              actuation_id=s["actuationId"], step_id="st_w1", tokens=850)  # crosses 80%
     eng.record_step(a.id, input_tokens=0, output_tokens=0, duration_ms=5, step_id="st_w1")
     eng.record_step(a.id, input_tokens=0, output_tokens=0, duration_ms=5, step_id="st_w2")
-    warns = [n for n in eng.store.list_notifications(org["id"]) if n.kind == "budget-warn"]
+    warns = [n for n in eng.store.list_notifications(team["id"]) if n.kind == "budget-warn"]
     assert len(warns) == 1  # deduped — the amber glow fires once
     assert eng.store.get_assignment(a.id).state == "executing"  # warn never suspends
 
@@ -232,7 +232,7 @@ def test_reassign_carries_provenance_and_remaining_balance(pod):
     eng.mark_intake_complete(child.id)
     eng.declare_plan(child.id, [{"title": "w"}])
     # Burn part of the budget, then reassign to the frontend engineer.
-    _exhaust(get_ledger(), child.meterId, org_id=child.orgId, node_id=child.nodeId,
+    _exhaust(get_ledger(), child.meterId, team_id=child.teamId, node_id=child.nodeId,
              actuation_id=child.actuationId, step_id="st_part", tokens=1000)
     old_meter = get_ledger().get_meter(child.meterId)
     remaining = old_meter.allowance - old_meter.spent
@@ -288,7 +288,7 @@ def test_cancel_cascades_children_meters_and_gates(pod):
 def test_notes_delivered_exactly_once_without_suspending(pod, client):
     eng, root = pod["engine"], pod["root"]
     s = pod["session"]
-    note = eng.store.create_note(root.orgId, root.intentId, "prefer the streaming writer",
+    note = eng.store.create_note(root.teamId, root.intentId, "prefer the streaming writer",
                                  assignment_id=root.id, stage_idx=0)
     assert note.deliveredAt is None
 
@@ -345,15 +345,15 @@ def test_notifications_feed_and_read_cursor(pod, client):
     eng.delegate(root.id, pod["backend"]["id"], "implement")
     eng.finish_turn(root.id)  # -> plan-review-waiting notification
 
-    r = client.get(f"/api/organizations/{root.orgId}/notifications?unread=true").json()
+    r = client.get(f"/api/teams/{root.teamId}/notifications?unread=true").json()
     kinds = [n["kind"] for n in r["notifications"]]
     assert "plan-review-waiting" in kinds
 
-    marked = client.post(f"/api/organizations/{root.orgId}/notifications/read",
+    marked = client.post(f"/api/teams/{root.teamId}/notifications/read",
                          json={}).json()["marked"]
     assert marked == len(r["notifications"])
     assert client.get(
-        f"/api/organizations/{root.orgId}/notifications?unread=true"
+        f"/api/teams/{root.teamId}/notifications?unread=true"
     ).json()["notifications"] == []
 
 
@@ -365,7 +365,7 @@ def test_gate_resolution_auto_reads_its_notifications(pod, client):
     eng.finish_turn(root.id)  # -> plan-review gate + plan-review-waiting notification
 
     unread = client.get(
-        f"/api/organizations/{root.orgId}/notifications?unread=true"
+        f"/api/teams/{root.teamId}/notifications?unread=true"
     ).json()["notifications"]
     assert any(n["kind"] == "plan-review-waiting" for n in unread)
 
@@ -374,7 +374,7 @@ def test_gate_resolution_auto_reads_its_notifications(pod, client):
     eng.resolve_gate(gate.id, action="approve")
 
     unread = client.get(
-        f"/api/organizations/{root.orgId}/notifications?unread=true"
+        f"/api/teams/{root.teamId}/notifications?unread=true"
     ).json()["notifications"]
     assert not any(n["kind"] == "plan-review-waiting" for n in unread)
 
@@ -456,10 +456,10 @@ def test_erroring_session_surfaces_provider_limit_not_stall(pod):
 
     assert eng.sweep_triggers() == []  # no intervention gates opened
     assert eng.store.get_assignment(child.id).state == "executing"  # never suspended
-    notes = eng.store.list_notifications(child.orgId)
+    notes = eng.store.list_notifications(child.teamId)
     limit_notes = [n for n in notes if n.kind == "provider-limit"]
     assert len(limit_notes) == 1 and "resets 12:50am" in limit_notes[0].text
     # Idempotent across sweeps: the same failure never spams the feed.
     eng.sweep_triggers()
-    assert len([n for n in eng.store.list_notifications(child.orgId)
+    assert len([n for n in eng.store.list_notifications(child.teamId)
                 if n.kind == "provider-limit"]) == 1

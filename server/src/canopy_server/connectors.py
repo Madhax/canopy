@@ -1,19 +1,19 @@
-"""Connector instances — an org's bound external systems (docs/design/builder-connectors.md).
+"""Connector instances — an team's bound external systems (docs/design/builder-connectors.md).
 
 A **ConnectorInstance** is the governance series' noun promoted to a store (connectors/02 §2):
-per-org operator data beside profiles and secrets, mutable at runtime, never catalog data and
+per-team operator data beside profiles and secrets, mutable at runtime, never catalog data and
 never chart data. It binds a catalog **pack** (the declaration: grants, config schema, secret
 kinds) to one concrete external system (one repo, one workspace), with:
 
 - ``secretBindings`` — Secret Store *references* per credentialKind; plaintext never lands here.
-- ``enabledGrants`` — the org-level capability mask; unchecked means unusable org-wide.
-- ``nodeLinks`` — scope: ``None`` = linked to the org root (org-wide); a list = only those
+- ``enabledGrants`` — the team-level capability mask; unchecked means unusable team-wide.
+- ``nodeLinks`` — scope: ``None`` = linked to the team root (team-wide); a list = only those
   nodes; ``[]`` = configured but unlinked (inert, dimmed in the builder).
 
 Resolution (``resolve``) answers the only question the rest of the platform asks: *for this
 node, which instance serves this grant key, if any* — walking direct pack-grant keys and the
 ``provides`` aliases (connectors/01 §4), scope links, and the enablement mask. Precedence:
-node-linked outranks org-wide (the pin); ties break to the older instance, deterministically.
+node-linked outranks team-wide (the pin); ties break to the older instance, deterministically.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from .models import Catalog, ConnectorGrant, ConnectorPack
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS connector_instance (
     id              TEXT PRIMARY KEY,
-    organization_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
     pack_key        TEXT NOT NULL,
     name            TEXT NOT NULL,
     config          TEXT NOT NULL,
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS connector_instance (
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_connector_org ON connector_instance (organization_id);
+CREATE INDEX IF NOT EXISTS ix_connector_org ON connector_instance (team_id);
 """
 register_schema(SCHEMA)
 
@@ -56,13 +56,13 @@ def new_instance_id() -> str:
 class ConnectorInstance(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    organizationId: str
+    teamId: str
     packKey: str
     name: str
     config: dict[str, str] = Field(default_factory=dict)
     secretBindings: dict[str, str] = Field(default_factory=dict)  # kind -> secretId, never value
     enabledGrants: list[str] = Field(default_factory=list)
-    nodeLinks: list[str] | None = None  # None = org-wide; [] = unlinked/inert
+    nodeLinks: list[str] | None = None  # None = team-wide; [] = unlinked/inert
     enabled: bool = True
     createdAt: str
     updatedAt: str
@@ -86,7 +86,7 @@ class ConnectorStore:
     def _row(self, row) -> ConnectorInstance:
         links = row["node_links"]
         return ConnectorInstance(
-            id=row["id"], organizationId=row["organization_id"], packKey=row["pack_key"],
+            id=row["id"], teamId=row["team_id"], packKey=row["pack_key"],
             name=row["name"], config=json.loads(row["config"]),
             secretBindings=json.loads(row["secret_bindings"]),
             enabledGrants=json.loads(row["enabled_grants"]),
@@ -96,7 +96,7 @@ class ConnectorStore:
         )
 
     def create(
-        self, org_id: str, pack_key: str, name: str, *,
+        self, team_id: str, pack_key: str, name: str, *,
         config: dict[str, str] | None = None,
         secret_bindings: dict[str, str] | None = None,
         enabled_grants: list[str] | None = None,
@@ -104,17 +104,17 @@ class ConnectorStore:
     ) -> ConnectorInstance:
         ts = now_iso()
         inst = ConnectorInstance(
-            id=new_instance_id(), organizationId=org_id, packKey=pack_key, name=name,
+            id=new_instance_id(), teamId=team_id, packKey=pack_key, name=name,
             config=config or {}, secretBindings=secret_bindings or {},
             enabledGrants=enabled_grants or [], nodeLinks=node_links,
             createdAt=ts, updatedAt=ts,
         )
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO connector_instance (id, organization_id, pack_key, name, config, "
+                "INSERT INTO connector_instance (id, team_id, pack_key, name, config, "
                 "secret_bindings, enabled_grants, node_links, enabled, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (inst.id, org_id, pack_key, name, json.dumps(inst.config),
+                (inst.id, team_id, pack_key, name, json.dumps(inst.config),
                  json.dumps(inst.secretBindings), json.dumps(inst.enabledGrants),
                  json.dumps(inst.nodeLinks) if inst.nodeLinks is not None else None,
                  1, ts, ts),
@@ -150,27 +150,27 @@ class ConnectorStore:
             ).fetchone()
         return self._row(row) if row else None
 
-    def list(self, org_id: str) -> list[ConnectorInstance]:
+    def list(self, team_id: str) -> list[ConnectorInstance]:
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM connector_instance WHERE organization_id=? "
+                "SELECT * FROM connector_instance WHERE team_id=? "
                 "ORDER BY created_at, id",
-                (org_id,),
+                (team_id,),
             ).fetchall()
         return [self._row(r) for r in rows]
 
     # -------------------------------------------------------------- resolution
     def resolve(
-        self, catalog: Catalog, org_id: str, node_id: str | None, grant_key: str,
+        self, catalog: Catalog, team_id: str, node_id: str | None, grant_key: str,
     ) -> Binding | None:
-        """The instance serving ``grant_key`` for ``node_id`` in this org, or None.
+        """The instance serving ``grant_key`` for ``node_id`` in this team, or None.
 
-        ``node_id=None`` asks org-wide ("does anything serve this at all") — used by repo
-        source resolution, where materialization happens per org, not per node.
+        ``node_id=None`` asks team-wide ("does anything serve this at all") — used by repo
+        source resolution, where materialization happens per team, not per node.
         """
         packs = {p.key: p for p in catalog.connectorPacks}
         candidates: list[tuple[int, ConnectorInstance, ConnectorGrant]] = []
-        for inst in self.list(org_id):
+        for inst in self.list(team_id):
             if not inst.enabled:
                 continue
             pack = packs.get(inst.packKey)
@@ -180,11 +180,11 @@ class ConnectorStore:
             if serving is None:
                 continue
             if inst.nodeLinks is None:
-                rank = 0  # org-wide
+                rank = 0  # team-wide
             elif node_id is not None and node_id in inst.nodeLinks:
-                rank = 1  # node pin outranks org-wide (connectors/02 §3)
+                rank = 1  # node pin outranks team-wide (connectors/02 §3)
             elif node_id is None and inst.nodeLinks:
-                rank = 0  # org-level question: any linked instance counts
+                rank = 0  # team-level question: any linked instance counts
             else:
                 continue  # scoped away from this node (or unlinked: [] matches nobody)
             candidates.append((rank, inst, serving))
@@ -200,11 +200,11 @@ class ConnectorStore:
                 params[k] = v
         return Binding(grantKey=grant_key, servingGrant=serving, instance=inst, params=params)
 
-    def reachable(self, catalog: Catalog, org_id: str, node_id: str) -> list[ConnectorInstance]:
-        """Instances this node can reach at all (org-wide or directly linked) — the builder's
+    def reachable(self, catalog: Catalog, team_id: str, node_id: str) -> list[ConnectorInstance]:
+        """Instances this node can reach at all (team-wide or directly linked) — the builder's
         node chips and the MCP surface filter."""
         out = []
-        for inst in self.list(org_id):
+        for inst in self.list(team_id):
             if not inst.enabled:
                 continue
             if inst.nodeLinks is None or node_id in inst.nodeLinks:
@@ -215,7 +215,7 @@ class ConnectorStore:
 def _serving_grant(
     pack: ConnectorPack, inst: ConnectorInstance, grant_key: str,
 ) -> ConnectorGrant | None:
-    """The pack grant that serves ``grant_key`` through this instance, honoring the org mask:
+    """The pack grant that serves ``grant_key`` through this instance, honoring the team mask:
     a direct namespaced match, or a ``provides`` alias (connectors/01 §4)."""
     for g in pack.grants:
         if g.key not in inst.enabledGrants:
@@ -226,7 +226,7 @@ def _serving_grant(
 
 
 def readiness_issues(
-    catalog: Catalog, store: ConnectorStore, org_id: str, node_id: str,
+    catalog: Catalog, store: ConnectorStore, team_id: str, node_id: str,
     effective_grants: list[str],
 ) -> list[tuple[str, str]]:
     """Connector readiness for one node (connectors/02 §5): ``(code, detail)`` tuples.
@@ -235,20 +235,20 @@ def readiness_issues(
       (repo.*) are exempt — they fall back to the F8/toml/fixture chain by design.
     - CONNECTOR_SECRET_UNBOUND: an instance resolves but a required credential is missing.
     - CONNECTOR_GRANT_DISABLED: the role grants a namespaced key an existing instance of the
-      pack carries but the org mask excludes.
+      pack carries but the team mask excludes.
     """
     packs = {p.key: p for p in catalog.connectorPacks}
     issues: list[tuple[str, str]] = []
     for gk in effective_grants:
         if not gk.startswith("connector."):
             continue
-        binding = store.resolve(catalog, org_id, node_id, gk)
+        binding = store.resolve(catalog, team_id, node_id, gk)
         if binding is None:
             pack_key = gk.split(".", 2)[1]
             masked = any(
                 i.packKey == pack_key and _pack_has_grant(packs.get(pack_key), gk)
                 and gk not in i.enabledGrants
-                for i in store.list(org_id)
+                for i in store.list(team_id)
             )
             code = "CONNECTOR_GRANT_DISABLED" if masked else "CONNECTOR_UNBOUND"
             issues.append((code, gk))

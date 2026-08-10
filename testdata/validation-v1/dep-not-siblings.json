@@ -1,0 +1,143 @@
+{
+  "name": "dep-not-siblings",
+  "description": "Dependency across two different teams.",
+  "mode": "export",
+  "document": {
+    "kind": "canopy.organization",
+    "schemaVersion": 1,
+    "id": "xteam",
+    "name": "xteam",
+    "organizationType": "product-engineering",
+    "agents": [
+      {
+        "id": "a_root",
+        "name": "a_root",
+        "role": {
+          "key": "chief-executive",
+          "version": 1
+        },
+        "managerId": null,
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_l1",
+        "name": "a_l1",
+        "role": {
+          "key": "team-lead",
+          "version": 1
+        },
+        "managerId": "a_root",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_l2",
+        "name": "a_l2",
+        "role": {
+          "key": "team-lead",
+          "version": 1
+        },
+        "managerId": "a_root",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_c1",
+        "name": "a_c1",
+        "role": {
+          "key": "backend-engineer",
+          "version": 1
+        },
+        "managerId": "a_l1",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_c2",
+        "name": "a_c2",
+        "role": {
+          "key": "backend-engineer",
+          "version": 1
+        },
+        "managerId": "a_l2",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "d1",
+        "from": "a_c1",
+        "to": "a_c2"
+      }
+    ],
+    "customRoles": [],
+    "childOrganizations": [],
+    "meta": {}
+  },
+  "expectedIssues": [
+    {
+      "severity": "error",
+      "code": "DEP_NOT_SIBLINGS",
+      "dependencyIds": [
+        "d1"
+      ]
+    }
+  ]
+}

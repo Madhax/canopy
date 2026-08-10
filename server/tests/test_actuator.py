@@ -17,12 +17,12 @@ from canopy_server.catalog import get_catalog
 from canopy_server.db import Db
 from canopy_server.directory import AgentDirectory
 from canopy_server.ledger import SqliteLedger
-from canopy_server.models import Agent, Organization, RoleRef, Salary
+from canopy_server.models import Agent, RoleRef, Salary, Team
 from canopy_server.profiles import ProfileStore
 from canopy_server.runtokens import RunTokenStore
 from canopy_server.sandbox.base import SandboxHandle, SandboxProvider, SandboxSpec, SandboxStatus
 from canopy_server.secretstore import LocalEncryptedSecretStore
-from canopy_server.sqlite_store import SqliteOrgStore
+from canopy_server.sqlite_store import SqliteTeamStore
 
 
 class FakeSandbox(SandboxProvider):
@@ -61,9 +61,9 @@ class FakeSandbox(SandboxProvider):
         return ""
 
 
-def _org() -> Organization:
-    return Organization(
-        id="org-act",
+def _org() -> Team:
+    return Team(
+        id="team-act",
         name="ActTest",
         organizationType="product-engineering",
         updatedAt="2026-07-06T00:00:00Z",
@@ -78,7 +78,7 @@ def _org() -> Organization:
 
 def _build(tmp_path):
     db = Db(tmp_path / "canopy.db")
-    store = SqliteOrgStore(db)
+    store = SqliteTeamStore(db)
     profiles = ProfileStore(db)
     secrets = LocalEncryptedSecretStore(db, tmp_path)
     ledger = SqliteLedger(db)
@@ -97,7 +97,7 @@ def test_readiness_blocks_unbound_nodes(tmp_path):
     store, profiles, *_rest, actuator = _build(tmp_path)
     store.write(_org())
     with pytest.raises(ActuationError) as exc:
-        actuator.create_actuation("org-act")
+        actuator.create_actuation("team-act")
     codes = {i.code for i in exc.value.issues}
     assert "BINDING_MISSING" in codes
 
@@ -105,11 +105,11 @@ def test_readiness_blocks_unbound_nodes(tmp_path):
 def test_provision_to_live_then_deactuate(tmp_path):
     store, profiles, directory, runtokens, sandbox, actuator = _build(tmp_path)
     store.write(_org())
-    profile = profiles.create_profile("org-act", name="mock", provider="mock", model="mock-1")
-    profiles.set_binding("org-act", "a_root", profile.id)
-    profiles.set_binding("org-act", "a_be", profile.id)
+    profile = profiles.create_profile("team-act", name="mock", provider="mock", model="mock-1")
+    profiles.set_binding("team-act", "a_root", profile.id)
+    profiles.set_binding("team-act", "a_be", profile.id)
 
-    actuation_id = actuator.create_actuation("org-act")
+    actuation_id = actuator.create_actuation("team-act")
     asyncio.run(actuator.provision(actuation_id))
 
     view = actuator.get_actuation(actuation_id)
@@ -127,10 +127,10 @@ def test_provision_to_live_then_deactuate(tmp_path):
 def test_reconciler_restarts_stale_node(tmp_path):
     store, profiles, directory, runtokens, sandbox, actuator = _build(tmp_path)
     store.write(_org())
-    profile = profiles.create_profile("org-act", name="mock", provider="mock", model="mock-1")
-    profiles.set_binding("org-act", "a_root", profile.id)
-    profiles.set_binding("org-act", "a_be", profile.id)
-    actuation_id = actuator.create_actuation("org-act")
+    profile = profiles.create_profile("team-act", name="mock", provider="mock", model="mock-1")
+    profiles.set_binding("team-act", "a_root", profile.id)
+    profiles.set_binding("team-act", "a_be", profile.id)
+    actuation_id = actuator.create_actuation("team-act")
     asyncio.run(actuator.provision(actuation_id))
 
     # Simulate a node whose heartbeat went silent (crash) by backdating it far into the past.
@@ -153,10 +153,10 @@ def test_reconciler_restarts_stale_node(tmp_path):
 def test_tokens_all_revoked_after_deactuate(tmp_path):
     store, profiles, directory, runtokens, sandbox, actuator = _build(tmp_path)
     store.write(_org())
-    profile = profiles.create_profile("org-act", name="mock", provider="mock", model="mock-1")
-    profiles.set_binding("org-act", "a_root", profile.id)
-    profiles.set_binding("org-act", "a_be", profile.id)
-    actuation_id = actuator.create_actuation("org-act")
+    profile = profiles.create_profile("team-act", name="mock", provider="mock", model="mock-1")
+    profiles.set_binding("team-act", "a_root", profile.id)
+    profiles.set_binding("team-act", "a_be", profile.id)
+    actuation_id = actuator.create_actuation("team-act")
     asyncio.run(actuator.provision(actuation_id))
     asyncio.run(actuator.deactuate(actuation_id))
     with actuator.db.connect() as conn:

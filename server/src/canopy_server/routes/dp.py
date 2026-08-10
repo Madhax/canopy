@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..artifacts import ArtifactTooLarge
+from ..artifacts import ArtifactTooLarge, normalize_ref
 from ..deps import (
     get_actuator,
     get_artifact_store,
@@ -316,9 +316,9 @@ def _owned(work_store, rec, assignment_id: str):
     if a is None:
         return None, JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                                   "message": f"no assignment {assignment_id}"}})
-    # Ownership = the position (org + node), not the actuation instance — a re-actuated node
+    # Ownership = the position (team + node), not the actuation instance — a re-actuated node
     # keeps working its open assignment (E6; provenance stays on the row's actuation_id).
-    if a.orgId != rec.orgId or a.nodeId != rec.nodeId:
+    if a.teamId != rec.teamId or a.nodeId != rec.nodeId:
         return None, JSONResponse(status_code=403, content={"error": {"code": "NOT_YOUR_ASSIGNMENT",
                                   "message": "assignment belongs to another node"}})
     return a, None
@@ -335,7 +335,7 @@ def assignment_current(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
-    a = work_store.current_assignment(rec.orgId, rec.nodeId)
+    a = work_store.current_assignment(rec.teamId, rec.nodeId)
     if a is None:
         return JSONResponse(content=None)  # nothing to do — the runtime idles
     brief = work_store.get_brief(a.id)
@@ -344,7 +344,7 @@ def assignment_current(
         "assignment": a.model_dump(),
         "brief": brief.model_dump() if brief else None,
         "contract": {"kind": a.contractKind, "type": a.contractType},
-        "memory": [m.entry for m in work_store.get_memory(rec.orgId, rec.nodeId)],
+        "memory": [m.entry for m in work_store.get_memory(rec.teamId, rec.nodeId)],
         "meter": meter.model_dump() if meter else None,
         # Undelivered notes, stamped delivered_at by this very read (amendment D-5) — advisory
         # context for the next turn, never a suspension.
@@ -363,7 +363,7 @@ def current_meter(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
-    a = work_store.current_assignment(rec.orgId, rec.nodeId)
+    a = work_store.current_assignment(rec.teamId, rec.nodeId)
     meter = ledger.get_meter(a.meterId) if a else None
     return JSONResponse(content=meter.model_dump() if meter else None)
 
@@ -483,7 +483,7 @@ def _reviewable(work_store, rec, assignment_id: str):
         return None, JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                                   "message": f"no assignment {assignment_id}"}})
     parent = work_store.get_assignment(a.parentId) if a.parentId else None
-    if parent is None or parent.orgId != rec.orgId or parent.nodeId != rec.nodeId:
+    if parent is None or parent.teamId != rec.teamId or parent.nodeId != rec.nodeId:
         return None, JSONResponse(status_code=403, content={"error": {"code": "NOT_YOUR_REPORT",
                                   "message": "assignment is not a report's work under the caller"}})
     return a, None
@@ -560,8 +560,8 @@ def _effective_grants(rec, actuator, engine) -> set[str]:
     try:
         from ..catalog import get_catalog
 
-        org = engine.orgs.read(rec.orgId)
-        agent = next((a for a in org.agents if a.id == rec.nodeId), None)
+        team = engine.teams.read(rec.teamId)
+        agent = next((a for a in team.agents if a.id == rec.nodeId), None)
         role = next((r for r in get_catalog().roles if agent and r.key == agent.role.key), None)
         return set(getattr(role, "toolGrants", []) or [])
     except Exception:  # noqa: BLE001 - no chart => no grants
@@ -576,7 +576,7 @@ _REPO_WRITE_GRANTS = ("code.repo.write", "docs.repo.write")
 
 def _grant_denied(work_store, rec, tool: str, need: str, assignment_id: str | None):
     work_store.record_tool_event(
-        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        team_id=rec.teamId, actuation_id=rec.actuationId, node_id=rec.nodeId,
         assignment_id=assignment_id, tool=tool, outcome="denied",
         detail=f"missing grant {need}",
     )
@@ -609,15 +609,15 @@ def repo_checkout(
         if body.ref is None:
             if not grants.intersection(_REPO_WRITE_GRANTS):
                 return _grant_denied(work_store, rec, "repo_checkout", "code.repo.write", a.id)
-            result = repos.materialize_worktree(a.orgId, a.id)
+            result = repos.materialize_worktree(a.teamId, a.id)
         else:
             if "repo.read" not in grants:
                 return _grant_denied(work_store, rec, "repo_checkout", "repo.read", a.id)
-            result = repos.readonly_checkout(a.orgId, body.ref, tag=a.id)
+            result = repos.readonly_checkout(a.teamId, body.ref, tag=a.id)
     except RepoError as exc:
         return _work_conflict(WorkError(str(exc)))
     work_store.record_tool_event(
-        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        team_id=rec.teamId, actuation_id=rec.actuationId, node_id=rec.nodeId,
         assignment_id=a.id, tool="repo_checkout", outcome="ok",
         detail=body.ref or "rw-worktree",
     )
@@ -646,7 +646,7 @@ def repo_pr(
     if not grants.intersection(_REPO_WRITE_GRANTS):
         return _grant_denied(work_store, rec, "repo_pr", "code.repo.write", a.id)
     try:
-        pr = repos.assemble_pr(a.orgId, a.id, test_output=body.testOutput)
+        pr = repos.assemble_pr(a.teamId, a.id, test_output=body.testOutput)
     except RepoError as exc:
         return _work_conflict(WorkError(str(exc)))
     meta = engine.put_artifact(
@@ -654,7 +654,7 @@ def repo_pr(
         json.dumps(pr, indent=2).encode("utf-8"), filename="pull-request.json",
     )
     work_store.record_tool_event(
-        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        team_id=rec.teamId, actuation_id=rec.actuationId, node_id=rec.nodeId,
         assignment_id=a.id, tool="repo_pr", outcome="ok", detail=pr["headSha"],
     )
     return {"ref": meta.ref, "pr": pr}
@@ -683,12 +683,12 @@ def repo_merge_request(
         return _grant_denied(work_store, rec, "repo_merge_request", "repo.merge", a.id)
     try:
         gate = engine.open_governed_action(
-            a.id, "repo-merge", {"orgId": a.orgId, "branch": body.branch},
+            a.id, "repo-merge", {"teamId": a.teamId, "branch": body.branch},
         )
     except WorkError as exc:
         return _work_conflict(exc)
     work_store.record_tool_event(
-        org_id=rec.orgId, actuation_id=rec.actuationId, node_id=rec.nodeId,
+        team_id=rec.teamId, actuation_id=rec.actuationId, node_id=rec.nodeId,
         assignment_id=a.id, tool="repo_merge_request", outcome="ok", detail=body.branch,
     )
     return gate.model_dump()
@@ -707,7 +707,7 @@ def reports_status(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
-    a = work_store.current_assignment(rec.orgId, rec.nodeId)
+    a = work_store.current_assignment(rec.teamId, rec.nodeId)
     if a is None:
         return {"reports": []}
     out = []
@@ -843,14 +843,15 @@ def fetch_artifact(
     rec = runtokens.resolve(token) if token else None
     if rec is None:
         return _unauthorized()
+    ref = normalize_ref(ref)
     meta = artifacts.resolve(ref)
-    if meta is None or meta.orgId != rec.orgId:
+    if meta is None or meta.teamId != rec.teamId:
         return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND",
                             "message": f"no artifact {ref}"}})
     # Grant check (workspace.md §2, the E3 wall): a node reads its OWN outputs and refs
-    # explicitly granted via its briefs — nothing else, even inside its org.
+    # explicitly granted via its briefs — nothing else, even inside its team.
     if meta.nodeId != rec.nodeId and ref not in work_store.refs_granted_to(
-        rec.orgId, rec.nodeId
+        rec.teamId, rec.nodeId
     ):
         return JSONResponse(status_code=403, content={"error": {"code": "GRANT_DENIED",
                             "message": f"ref {ref} is not in the caller's granted set"}})

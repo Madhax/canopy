@@ -52,24 +52,24 @@ def live_server(client):
     thread.join(timeout=5)
 
 
-def _seed_charter(org: dict, actuation_id: str, node_id: str) -> None:
+def _seed_charter(team: dict, actuation_id: str, node_id: str) -> None:
     """Store a real compiled charter (incl. E3 toolGrants) the way the actuator would."""
     from canopy_server.catalog import get_catalog
     from canopy_server.charter import compile_charter
     from canopy_server.deps import get_db, get_store, now_iso
 
-    top = get_store().read(org["id"])
+    top = get_store().read(team["id"])
     charter = compile_charter(top, [], node_id, catalog=get_catalog(),
                               actuation_id=actuation_id)
     ts = now_iso()
     with get_db().transaction() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO actuation (id, org_id, state, created_at, updated_at) "
+            "INSERT OR IGNORE INTO actuation (id, team_id, state, created_at, updated_at) "
             "VALUES (?,?,?,?,?)",
-            (actuation_id, org["id"], "live", ts, ts),
+            (actuation_id, team["id"], "live", ts, ts),
         )
         conn.execute(
-            "INSERT OR IGNORE INTO actuation_node (actuation_id, node_id, org_path, sub_state, "
+            "INSERT OR IGNORE INTO actuation_node (actuation_id, node_id, team_path, sub_state, "
             "charter, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
             (actuation_id, node_id, "[]", "running",
              json.dumps(charter.model_dump() if charter else {}), ts, ts),
@@ -104,8 +104,8 @@ def _write_script(tmp_path: Path, monkeypatch, script: dict) -> None:
     monkeypatch.setenv("CANOPY_CLI_CMD", json.dumps([sys.executable, str(FAKE_CLI)]))
 
 
-def _node(org: dict, role_key: str) -> dict:
-    return next(a for a in org["agents"] if a["role"]["key"] == role_key)
+def _node(team: dict, role_key: str) -> dict:
+    return next(a for a in team["agents"] if a["role"]["key"] == role_key)
 
 
 def test_cli_adapter_drives_assignment_via_fake_cli(
@@ -116,11 +116,11 @@ def test_cli_adapter_drives_assignment_via_fake_cli(
     from canopy_server.deps import get_engine, get_ledger
 
     monkeypatch.chdir(tmp_path)  # the adapter materializes assignments/<id>/ under cwd
-    org = make_org(seed={"kind": "root", "roleKey": "backend-engineer"})
-    node = _node(org, "backend-engineer")
-    s = mint_session(org["id"], node_id=node["id"])
-    _seed_charter(org, s["actuationId"], node["id"])
-    a = get_engine().submit_intent(org["id"], s["actuationId"], "implement the CSV export",
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"})
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+    _seed_charter(team, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(team["id"], s["actuationId"], "implement the CSV export",
                                    target_node=node["id"], allowance_override=50_000).assignment
 
     _write_script(tmp_path, monkeypatch, {
@@ -171,11 +171,11 @@ def test_cli_adapter_budget_boundary_halt(
     from canopy_server.deps import get_engine
 
     monkeypatch.chdir(tmp_path)
-    org = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Tight")
-    node = _node(org, "backend-engineer")
-    s = mint_session(org["id"], node_id=node["id"])
-    _seed_charter(org, s["actuationId"], node["id"])
-    a = get_engine().submit_intent(org["id"], s["actuationId"], "tiny budget",
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Tight")
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+    _seed_charter(team, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(team["id"], s["actuationId"], "tiny budget",
                                    target_node=node["id"], allowance_override=100).assignment
 
     _write_script(tmp_path, monkeypatch, {
@@ -207,19 +207,19 @@ def test_cli_adapter_budget_boundary_halt(
 def test_two_node_delegate_demo_on_fake_cli(
     client, make_org, mint_session, live_server, tmp_path, monkeypatch,
 ):
-    """The mvp E3 demo: a 2-node org runs delegate → work → finish → accept on the fake CLI,
+    """The mvp E3 demo: a 2-node team runs delegate → work → finish → accept on the fake CLI,
     with the lead's staged fan-out approved by the operator and the resume via --resume."""
     from canopy_server.deps import get_engine, get_work_store
 
     monkeypatch.chdir(tmp_path)
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead, be = _node(org, "engineering-lead"), _node(org, "backend-engineer")
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_be = mint_session(org["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
-    _seed_charter(org, s_lead["actuationId"], lead["id"])
-    _seed_charter(org, s_lead["actuationId"], be["id"])
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead, be = _node(team, "engineering-lead"), _node(team, "backend-engineer")
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_be = mint_session(team["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
+    _seed_charter(team, s_lead["actuationId"], lead["id"])
+    _seed_charter(team, s_lead["actuationId"], be["id"])
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s_lead["actuationId"], "ship CSV; tests must pass",
+    root = eng.submit_intent(team["id"], s_lead["actuationId"], "ship CSV; tests must pass",
                              target_node=lead["id"]).assignment
 
     # Phase 1 — the lead's session decomposes and fans out (staged), then ends its turn.
@@ -248,7 +248,7 @@ def test_two_node_delegate_demo_on_fake_cli(
     assert client.get(f"/api/assignments/{root.id}").json()["assignment"]["state"] == "gated"
 
     # The operator approves the real batch.
-    gates = client.get(f"/api/organizations/{org['id']}/gates?state=open&owner=operator").json()
+    gates = client.get(f"/api/teams/{team['id']}/gates?state=open&owner=operator").json()
     gate = next(g for g in gates["gates"] if g["kind"] == "approval")
     child_id = gate["payload"]["batch"][0]["assignmentId"]
     client.post(f"/api/gates/{gate['id']}/resolve", json={"action": "approve"})
@@ -314,11 +314,11 @@ def test_work_root_is_stable_and_transcript_recorded(
     monkeypatch.setenv("CANOPY_WORK_ROOT", str(stable))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
-    org = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Stable")
-    node = _node(org, "backend-engineer")
-    s = mint_session(org["id"], node_id=node["id"])
-    _seed_charter(org, s["actuationId"], node["id"])
-    a = get_engine().submit_intent(org["id"], s["actuationId"], "stable home",
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Stable")
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+    _seed_charter(team, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(team["id"], s["actuationId"], "stable home",
                                    target_node=node["id"], allowance_override=50_000).assignment
 
     _write_script(tmp_path, monkeypatch, {
@@ -366,11 +366,11 @@ def test_read_only_poll_loop_trips_stall_trigger(
     from canopy_server.deps import get_engine
 
     monkeypatch.chdir(tmp_path)
-    org = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Spin")
-    node = _node(org, "backend-engineer")
-    s = mint_session(org["id"], node_id=node["id"])
-    _seed_charter(org, s["actuationId"], node["id"])
-    a = get_engine().submit_intent(org["id"], s["actuationId"], "spin regression",
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Spin")
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+    _seed_charter(team, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(team["id"], s["actuationId"], "spin regression",
                                    target_node=node["id"], allowance_override=50_000).assignment
 
     poll = {"tools": [{"name": "get_assignment", "arguments": {}}], "usage": [50, 10]}

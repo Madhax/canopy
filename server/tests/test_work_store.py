@@ -13,7 +13,7 @@ def _store(tmp_path) -> WorkStore:
 def _assignment(store: WorkStore, **kw):
     """Create a root assignment with sensible defaults for tests that don't care about the shape."""
     defaults = dict(
-        org_id="o1", actuation_id="act_1", intent_id="in_x", node_id="a_be", issued_by="operator",
+        team_id="o1", actuation_id="act_1", intent_id="in_x", node_id="a_be", issued_by="operator",
         contract_kind="artifact", contract_type="PullRequest", meter_id="mt_1",
     )
     defaults.update(kw)
@@ -30,7 +30,7 @@ def test_pre_e2_meter_not_null_migrates_without_data_loss(tmp_path):
     conn = sqlite3.connect(path)
     conn.execute("""
         CREATE TABLE work_assignment (
-            id TEXT PRIMARY KEY, org_id TEXT NOT NULL, actuation_id TEXT NOT NULL,
+            id TEXT PRIMARY KEY, team_id TEXT NOT NULL, actuation_id TEXT NOT NULL,
             intent_id TEXT NOT NULL, parent_id TEXT, node_id TEXT NOT NULL,
             issued_by TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'created',
             brief_version INTEGER NOT NULL DEFAULT 1, contract_kind TEXT NOT NULL,
@@ -39,7 +39,7 @@ def test_pre_e2_meter_not_null_migrates_without_data_loss(tmp_path):
             session_ref TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, closed_at TEXT
         )""")
     conn.execute(
-        "INSERT INTO work_assignment (id, org_id, actuation_id, intent_id, node_id, issued_by, "
+        "INSERT INTO work_assignment (id, team_id, actuation_id, intent_id, node_id, issued_by, "
         "state, contract_kind, contract_type, meter_id, created_at, updated_at) "
         "VALUES ('as_old', 'o1', 'act_1', 'in_x', 'a_be', 'operator', 'briefed', "
         "'artifact', 'PullRequest', 'mt_old', 't0', 't0')"
@@ -73,7 +73,7 @@ def test_list_intents_newest_first(tmp_path):
     store = _store(tmp_path)
     a = store.create_intent("o1", "act_1", "a_root", "first")
     b = store.create_intent("o1", "act_1", "a_root", "second")
-    store.create_intent("o2", "act_9", "a_root", "other org")
+    store.create_intent("o2", "act_9", "a_root", "other team")
     ids = [i.id for i in store.list_intents("o1")]
     assert ids == [b.id, a.id]  # DESC by created_at
 
@@ -107,7 +107,7 @@ def test_list_assignments_filters(tmp_path):
     store = _store(tmp_path)
     be = _assignment(store, node_id="a_be", state="executing")
     _assignment(store, node_id="a_qa", state="gated", intent_id="in_y")
-    assert len(store.list_assignments(org_id="o1")) == 2
+    assert len(store.list_assignments(team_id="o1")) == 2
     assert [x.id for x in store.list_assignments(node_id="a_be")] == [be.id]
     assert [x.id for x in store.list_assignments(state="gated")][0] != be.id
     assert [x.id for x in store.list_assignments(intent_id="in_x")] == [be.id]
@@ -126,8 +126,8 @@ def test_deliverable_and_session_refs_stick(tmp_path):
 def test_brief_versioning_bumps_assignment(tmp_path):
     store = _store(tmp_path)
     a = _assignment(store)
-    v1 = store.add_brief(a.id, "do the thing", artifact_refs=["org://acme/a_be/spec@1"])
-    assert v1.version == 1 and v1.artifactRefs == ["org://acme/a_be/spec@1"]
+    v1 = store.add_brief(a.id, "do the thing", artifact_refs=["team://acme/a_be/spec@1"])
+    assert v1.version == 1 and v1.artifactRefs == ["team://acme/a_be/spec@1"]
 
     v2 = store.add_brief(a.id, "do it better", revised_by="a_lead")
     assert v2.version == 2 and v2.revisedBy == "a_lead"
@@ -161,7 +161,7 @@ def test_steps_append_and_list(tmp_path):
     store = _store(tmp_path)
     a = _assignment(store)
     store.add_step(a.id, input_tokens=100, output_tokens=50, duration_ms=1200,
-                   delta_kind="artifact", delta_ref="org://acme/a_be/pr@1", stage_idx=1)
+                   delta_kind="artifact", delta_ref="team://acme/a_be/pr@1", stage_idx=1)
     store.add_step(a.id, input_tokens=10, output_tokens=5, duration_ms=300, kind="coordination")
     steps = store.list_steps(a.id)
     assert len(steps) == 2
@@ -173,9 +173,9 @@ def test_steps_append_and_list(tmp_path):
 def test_deliverable_create_and_review(tmp_path):
     store = _store(tmp_path)
     a = _assignment(store)
-    d = store.create_deliverable(a.id, "artifact", artifact_refs=["org://acme/a_be/pr@1"],
+    d = store.create_deliverable(a.id, "artifact", artifact_refs=["team://acme/a_be/pr@1"],
                                  summary="PR ready")
-    assert d.accepted is None and d.artifactRefs == ["org://acme/a_be/pr@1"]
+    assert d.accepted is None and d.artifactRefs == ["team://acme/a_be/pr@1"]
 
     rejected = store.review_deliverable(d.id, False, "one test fails")
     assert rejected.accepted is False and rejected.reviewNote == "one test fails"
@@ -188,7 +188,7 @@ def test_deliverable_create_and_review(tmp_path):
 def test_attestation_deliverable(tmp_path):
     store = _store(tmp_path)
     a = _assignment(store, contract_kind="attestation", contract_type="ActionAttestation")
-    att = {"claim": "emailed the lead", "evidenceRefs": ["org://acme/a_be/log@1"], "at": "now"}
+    att = {"claim": "emailed the lead", "evidenceRefs": ["team://acme/a_be/log@1"], "at": "now"}
     d = store.create_deliverable(a.id, "attestation", attestation=att)
     got = store.get_deliverable(d.id)
     assert got.kind == "attestation" and got.attestation["claim"] == "emailed the lead"

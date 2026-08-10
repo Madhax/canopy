@@ -31,9 +31,9 @@ def check_integrity(catalog: Catalog) -> list[str]:
 
     role_keys = [r.key for r in catalog.roles]
     form_keys = [f.key for f in catalog.formations]
-    org_keys = [o.key for o in catalog.organizationTypes]
+    team_keys = [o.key for o in catalog.organizationTypes]
 
-    key_groups = (("role", role_keys), ("formation", form_keys), ("organizationType", org_keys))
+    key_groups = (("role", role_keys), ("formation", form_keys), ("organizationType", team_keys))
     for label, keys in key_groups:
         seen: set[str] = set()
         for k in keys:

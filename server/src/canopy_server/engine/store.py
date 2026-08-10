@@ -50,7 +50,7 @@ from .models import (
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS work_intent (
     id                 TEXT PRIMARY KEY,
-    org_id             TEXT NOT NULL,
+    team_id             TEXT NOT NULL,
     actuation_id       TEXT NOT NULL,
     target_node        TEXT NOT NULL,
     kind               TEXT NOT NULL DEFAULT 'episodic',
@@ -64,11 +64,11 @@ CREATE TABLE IF NOT EXISTS work_intent (
     trigger_id         TEXT,
     external_key       TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_intent_org ON work_intent (org_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_intent_org ON work_intent (team_id, created_at);
 
 CREATE TABLE IF NOT EXISTS work_assignment (
     id              TEXT PRIMARY KEY,
-    org_id          TEXT NOT NULL,
+    team_id          TEXT NOT NULL,
     actuation_id    TEXT NOT NULL,
     intent_id       TEXT NOT NULL,
     parent_id       TEXT,
@@ -98,8 +98,8 @@ CREATE TABLE IF NOT EXISTS work_assignment (
     transcript_path       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_assignment_node   ON work_assignment (actuation_id, node_id, state);
--- Work belongs to the position (org+node), like agent_memory — the E6 re-actuation lookups.
-CREATE INDEX IF NOT EXISTS ix_assignment_org_node ON work_assignment (org_id, node_id, state);
+-- Work belongs to the position (team+node), like agent_memory — the E6 re-actuation lookups.
+CREATE INDEX IF NOT EXISTS ix_assignment_team_node ON work_assignment (team_id, node_id, state);
 CREATE INDEX IF NOT EXISTS ix_assignment_intent ON work_assignment (intent_id);
 
 CREATE TABLE IF NOT EXISTS work_brief (
@@ -165,17 +165,17 @@ CREATE TABLE IF NOT EXISTS work_deliverable (
 CREATE INDEX IF NOT EXISTS ix_deliverable_assignment ON work_deliverable (assignment_id);
 
 CREATE TABLE IF NOT EXISTS agent_memory (
-    org_id     TEXT NOT NULL,
+    team_id     TEXT NOT NULL,
     node_id    TEXT NOT NULL,
     seq        INTEGER NOT NULL,
     entry      TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    PRIMARY KEY (org_id, node_id, seq)
+    PRIMARY KEY (team_id, node_id, seq)
 );
 
 CREATE TABLE IF NOT EXISTS work_note (
     id            TEXT PRIMARY KEY,
-    org_id        TEXT NOT NULL,
+    team_id        TEXT NOT NULL,
     intent_id     TEXT NOT NULL,
     assignment_id TEXT,
     stage_idx     INTEGER,
@@ -190,7 +190,7 @@ CREATE INDEX IF NOT EXISTS ix_note_undelivered ON work_note (assignment_id)
 
 CREATE TABLE IF NOT EXISTS work_notification (
     id          TEXT PRIMARY KEY,
-    org_id      TEXT NOT NULL,
+    team_id      TEXT NOT NULL,
     severity    TEXT NOT NULL,
     kind        TEXT NOT NULL,
     subject_ids TEXT NOT NULL DEFAULT '[]',
@@ -199,10 +199,10 @@ CREATE TABLE IF NOT EXISTS work_notification (
     created_at  TEXT NOT NULL,
     read_at     TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_notification_org ON work_notification (org_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_notification_org ON work_notification (team_id, created_at);
 -- One live notification per fact (e.g. budget-warn per assignment fires once).
 CREATE UNIQUE INDEX IF NOT EXISTS ux_notification_dedupe
-    ON work_notification (org_id, kind, dedupe_key) WHERE dedupe_key IS NOT NULL;
+    ON work_notification (team_id, kind, dedupe_key) WHERE dedupe_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS work_gate (
     id            TEXT PRIMARY KEY,
@@ -227,8 +227,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_gate_open_dedupe
 
 CREATE TABLE IF NOT EXISTS work_cadence (
     id            TEXT PRIMARY KEY,
-    org_id        TEXT NOT NULL,
-    node_id       TEXT,                        -- NULL ⇒ the org root at fire time
+    team_id        TEXT NOT NULL,
+    node_id       TEXT,                        -- NULL ⇒ the team root at fire time
     name          TEXT NOT NULL,
     cron          TEXT NOT NULL,               -- five UTC fields (engine.md §4)
     intent_text   TEXT NOT NULL,
@@ -236,16 +236,16 @@ CREATE TABLE IF NOT EXISTS work_cadence (
     last_fired_at TEXT,
     created_at    TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_cadence_org ON work_cadence (org_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_cadence_org ON work_cadence (team_id, created_at);
 
--- Event-driven work sources (standing-orgs.md §2): a trigger polls a connector instance and
+-- Event-driven work sources (standing-teams.md §2): a trigger polls a connector instance and
 -- opens one episodic intent per new external event.
 CREATE TABLE IF NOT EXISTS work_trigger (
     id              TEXT PRIMARY KEY,
-    org_id          TEXT NOT NULL,
+    team_id          TEXT NOT NULL,
     name            TEXT NOT NULL,
     kind            TEXT NOT NULL,             -- 'github-issues' (v1)
-    node_id         TEXT,                      -- NULL ⇒ the org root at fire time
+    node_id         TEXT,                      -- NULL ⇒ the team root at fire time
     instance_id     TEXT NOT NULL,             -- the connector instance polled
     config          TEXT NOT NULL,             -- JSON {labels, state, createdAfter}
     intent_template TEXT NOT NULL,
@@ -257,10 +257,10 @@ CREATE TABLE IF NOT EXISTS work_trigger (
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_trigger_org ON work_trigger (org_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_trigger_org ON work_trigger (team_id, created_at);
 
 -- The idempotency ledger: at most one intent per (trigger, external event), ever. The cursor
--- is an optimization; THIS is the guarantee (standing-orgs.md §2).
+-- is an optimization; THIS is the guarantee (standing-teams.md §2).
 CREATE TABLE IF NOT EXISTS work_trigger_fire (
     trigger_id   TEXT NOT NULL,
     external_key TEXT NOT NULL,
@@ -271,7 +271,7 @@ CREATE TABLE IF NOT EXISTS work_trigger_fire (
 
 CREATE TABLE IF NOT EXISTS work_tool_event (
     id            TEXT PRIMARY KEY,
-    org_id        TEXT NOT NULL,
+    team_id        TEXT NOT NULL,
     actuation_id  TEXT NOT NULL,
     node_id       TEXT NOT NULL,
     assignment_id TEXT,
@@ -318,7 +318,7 @@ def _migrate_meter_nullable(db: Db) -> None:
 def _intent(r) -> Intent:
     keys = r.keys()
     return Intent(
-        id=r["id"], orgId=r["org_id"], actuationId=r["actuation_id"], targetNode=r["target_node"],
+        id=r["id"], teamId=r["team_id"], actuationId=r["actuation_id"], targetNode=r["target_node"],
         kind=r["kind"], text=r["text"], state=r["state"],
         rootAssignmentId=r["root_assignment_id"], cadenceId=r["cadence_id"],
         createdBy=r["created_by"], createdAt=r["created_at"], closedAt=r["closed_at"],
@@ -329,7 +329,7 @@ def _intent(r) -> Intent:
 
 def _cadence(r) -> Cadence:
     return Cadence(
-        id=r["id"], orgId=r["org_id"], nodeId=r["node_id"], name=r["name"], cron=r["cron"],
+        id=r["id"], teamId=r["team_id"], nodeId=r["node_id"], name=r["name"], cron=r["cron"],
         intentText=r["intent_text"], enabled=bool(r["enabled"]),
         lastFiredAt=r["last_fired_at"], createdAt=r["created_at"],
     )
@@ -337,7 +337,7 @@ def _cadence(r) -> Cadence:
 
 def _assignment(r) -> Assignment:
     return Assignment(
-        id=r["id"], orgId=r["org_id"], actuationId=r["actuation_id"], intentId=r["intent_id"],
+        id=r["id"], teamId=r["team_id"], actuationId=r["actuation_id"], intentId=r["intent_id"],
         parentId=r["parent_id"], nodeId=r["node_id"], issuedBy=r["issued_by"], state=r["state"],
         briefVersion=r["brief_version"], contractKind=r["contract_kind"],
         contractType=r["contract_type"], meterId=r["meter_id"], priority=r["priority"],
@@ -367,7 +367,7 @@ def _stage(r) -> PlanStage:
 
 def _note(r) -> Note:
     return Note(
-        id=r["id"], orgId=r["org_id"], intentId=r["intent_id"],
+        id=r["id"], teamId=r["team_id"], intentId=r["intent_id"],
         assignmentId=r["assignment_id"], stageIdx=r["stage_idx"], author=r["author"],
         text=r["text"], createdAt=r["created_at"], deliveredAt=r["delivered_at"],
     )
@@ -375,7 +375,7 @@ def _note(r) -> Note:
 
 def _notification(r) -> Notification:
     return Notification(
-        id=r["id"], orgId=r["org_id"], severity=r["severity"], kind=r["kind"],
+        id=r["id"], teamId=r["team_id"], severity=r["severity"], kind=r["kind"],
         subjectIds=json.loads(r["subject_ids"]), text=r["text"], createdAt=r["created_at"],
         readAt=r["read_at"],
     )
@@ -404,7 +404,7 @@ def _deliverable(r) -> Deliverable:
 
 def _memory(r) -> MemoryEntry:
     return MemoryEntry(
-        orgId=r["org_id"], nodeId=r["node_id"], seq=r["seq"], entry=json.loads(r["entry"]),
+        teamId=r["team_id"], nodeId=r["node_id"], seq=r["seq"], entry=json.loads(r["entry"]),
         createdAt=r["created_at"],
     )
 
@@ -444,7 +444,7 @@ def _migrate_transcript_path(db: Db) -> None:
 
 
 def _migrate_intent_trigger(db: Db) -> None:
-    """standing-orgs.md §3: trigger provenance on work_intent. Additive, run once for
+    """standing-teams.md §3: trigger provenance on work_intent. Additive, run once for
     pre-trigger dev DBs."""
     with db.connect() as conn:
         cols = {c["name"] for c in conn.execute("PRAGMA table_info(work_intent)").fetchall()}
@@ -497,7 +497,7 @@ class WorkStore:
 
     # ----------------------------------------------------------------- intents
     def create_intent(
-        self, org_id: str, actuation_id: str, target_node: str, text: str, *,
+        self, team_id: str, actuation_id: str, target_node: str, text: str, *,
         kind: str = "episodic", created_by: str = "operator", cadence_id: str | None = None,
         trigger_id: str | None = None, external_key: str | None = None,
     ) -> Intent:
@@ -505,14 +505,14 @@ class WorkStore:
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO work_intent (id, org_id, actuation_id, target_node, kind, text, "
+                "INSERT INTO work_intent (id, team_id, actuation_id, target_node, kind, text, "
                 "cadence_id, created_by, created_at, trigger_id, external_key) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (iid, org_id, actuation_id, target_node, kind, text, cadence_id, created_by, ts,
+                (iid, team_id, actuation_id, target_node, kind, text, cadence_id, created_by, ts,
                  trigger_id, external_key),
             )
             if trigger_id and external_key:
-                # The fire row rides the SAME transaction as the intent (standing-orgs.md §3):
+                # The fire row rides the SAME transaction as the intent (standing-teams.md §3):
                 # a crash cannot separate them, and the PK makes a concurrent duplicate raise
                 # here — before any funding — instead of double-firing.
                 conn.execute(
@@ -521,7 +521,7 @@ class WorkStore:
                     (trigger_id, external_key, iid, ts),
                 )
         return Intent(
-            id=iid, orgId=org_id, actuationId=actuation_id, targetNode=target_node, kind=kind,
+            id=iid, teamId=team_id, actuationId=actuation_id, targetNode=target_node, kind=kind,
             text=text, state="open", cadenceId=cadence_id, createdBy=created_by, createdAt=ts,
             triggerId=trigger_id, externalKey=external_key,
         )
@@ -531,10 +531,10 @@ class WorkStore:
             r = conn.execute("SELECT * FROM work_intent WHERE id=?", (intent_id,)).fetchone()
         return _intent(r) if r else None
 
-    def list_intents(self, org_id: str) -> list[Intent]:
+    def list_intents(self, team_id: str) -> list[Intent]:
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM work_intent WHERE org_id=? ORDER BY created_at DESC", (org_id,)
+                "SELECT * FROM work_intent WHERE team_id=? ORDER BY created_at DESC", (team_id,)
             ).fetchall()
         return [_intent(r) for r in rows]
 
@@ -555,19 +555,19 @@ class WorkStore:
 
     # ---------------------------------------------------------------- cadences
     def create_cadence(
-        self, org_id: str, name: str, cron: str, intent_text: str, *,
+        self, team_id: str, name: str, cron: str, intent_text: str, *,
         node_id: str | None = None, enabled: bool = True,
     ) -> Cadence:
         cid = new_cadence_id()
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO work_cadence (id, org_id, node_id, name, cron, intent_text, "
+                "INSERT INTO work_cadence (id, team_id, node_id, name, cron, intent_text, "
                 "enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (cid, org_id, node_id, name, cron, intent_text, 1 if enabled else 0, ts),
+                (cid, team_id, node_id, name, cron, intent_text, 1 if enabled else 0, ts),
             )
         return Cadence(
-            id=cid, orgId=org_id, nodeId=node_id, name=name, cron=cron,
+            id=cid, teamId=team_id, nodeId=node_id, name=name, cron=cron,
             intentText=intent_text, enabled=enabled, createdAt=ts,
         )
 
@@ -577,12 +577,12 @@ class WorkStore:
         return _cadence(r) if r else None
 
     def list_cadences(
-        self, org_id: str | None = None, *, enabled_only: bool = False,
+        self, team_id: str | None = None, *, enabled_only: bool = False,
     ) -> list[Cadence]:
         clauses, params = [], []
-        if org_id is not None:
-            clauses.append("org_id=?")
-            params.append(org_id)
+        if team_id is not None:
+            clauses.append("team_id=?")
+            params.append(team_id)
         if enabled_only:
             clauses.append("enabled=1")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
@@ -635,7 +635,7 @@ class WorkStore:
     # ----------------------------------------------------------------- triggers
     def _trigger(self, r) -> Trigger:
         return Trigger(
-            id=r["id"], orgId=r["org_id"], name=r["name"], kind=r["kind"],
+            id=r["id"], teamId=r["team_id"], name=r["name"], kind=r["kind"],
             nodeId=r["node_id"], instanceId=r["instance_id"],
             config=json.loads(r["config"]), intentTemplate=r["intent_template"],
             enabled=bool(r["enabled"]),
@@ -645,21 +645,21 @@ class WorkStore:
         )
 
     def create_trigger(
-        self, org_id: str, name: str, kind: str, instance_id: str, intent_template: str, *,
+        self, team_id: str, name: str, kind: str, instance_id: str, intent_template: str, *,
         node_id: str | None = None, config: dict | None = None, enabled: bool = True,
     ) -> Trigger:
         tid = new_trigger_id()
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO work_trigger (id, org_id, name, kind, node_id, instance_id, "
+                "INSERT INTO work_trigger (id, team_id, name, kind, node_id, instance_id, "
                 "config, intent_template, enabled, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (tid, org_id, name, kind, node_id, instance_id,
+                (tid, team_id, name, kind, node_id, instance_id,
                  json.dumps(config or {}), intent_template, 1 if enabled else 0, ts, ts),
             )
         return Trigger(
-            id=tid, orgId=org_id, name=name, kind=kind, nodeId=node_id,
+            id=tid, teamId=team_id, name=name, kind=kind, nodeId=node_id,
             instanceId=instance_id, config=config or {}, intentTemplate=intent_template,
             enabled=enabled, createdAt=ts, updatedAt=ts,
         )
@@ -684,7 +684,7 @@ class WorkStore:
         self, trigger_id: str, *, cursor: dict | None = None, fired: bool = False,
         error: str | None = None,
     ) -> None:
-        """One poll's outcome. The cursor only moves on success (standing-orgs.md §3):
+        """One poll's outcome. The cursor only moves on success (standing-teams.md §3):
         pass ``cursor`` on clean passes; on failure pass ``error`` and the cursor stays."""
         ts = now_iso()
         sets, params = ["last_checked_at=?"], [ts]
@@ -710,12 +710,12 @@ class WorkStore:
         return self._trigger(r) if r else None
 
     def list_triggers(
-        self, org_id: str | None = None, *, enabled_only: bool = False,
+        self, team_id: str | None = None, *, enabled_only: bool = False,
     ) -> list[Trigger]:
         clauses, params = [], []
-        if org_id is not None:
-            clauses.append("org_id=?")
-            params.append(org_id)
+        if team_id is not None:
+            clauses.append("team_id=?")
+            params.append(team_id)
         if enabled_only:
             clauses.append("enabled=1")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
@@ -729,7 +729,7 @@ class WorkStore:
     def delete_trigger(self, trigger_id: str) -> None:
         """Delete the source AND its fire ledger — intents it fired are ordinary history and
         stay. Re-creating the trigger may therefore re-fire old events; the API's delete
-        confirm says so (standing-orgs.md §6)."""
+        confirm says so (standing-teams.md §6)."""
         with self.db.transaction() as conn:
             conn.execute("DELETE FROM work_trigger WHERE id=?", (trigger_id,))
             conn.execute("DELETE FROM work_trigger_fire WHERE trigger_id=?", (trigger_id,))
@@ -743,7 +743,7 @@ class WorkStore:
 
     # ------------------------------------------------------------- assignments
     def create_assignment(
-        self, *, org_id: str, actuation_id: str, intent_id: str, node_id: str, issued_by: str,
+        self, *, team_id: str, actuation_id: str, intent_id: str, node_id: str, issued_by: str,
         contract_kind: str, contract_type: str, meter_id: str | None,
         parent_id: str | None = None, state: str = "created", priority: int = 0,
         reassigned_from: str | None = None, assignment_id: str | None = None,
@@ -752,15 +752,16 @@ class WorkStore:
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO work_assignment (id, org_id, actuation_id, intent_id, parent_id, "
+                "INSERT INTO work_assignment (id, team_id, actuation_id, intent_id, parent_id, "
                 "node_id, issued_by, state, contract_kind, contract_type, meter_id, priority, "
                 "reassigned_from, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (aid, org_id, actuation_id, intent_id, parent_id, node_id, issued_by, state,
+                (aid, team_id, actuation_id, intent_id, parent_id, node_id, issued_by, state,
                  contract_kind, contract_type, meter_id, priority, reassigned_from, ts, ts),
             )
         return Assignment(
-            id=aid, orgId=org_id, actuationId=actuation_id, intentId=intent_id, parentId=parent_id,
+            id=aid, teamId=team_id, actuationId=actuation_id, intentId=intent_id,
+            parentId=parent_id,
             nodeId=node_id, issuedBy=issued_by, state=state, briefVersion=1,
             contractKind=contract_kind, contractType=contract_type, meterId=meter_id,
             priority=priority, reassignedFrom=reassigned_from, createdAt=ts, updatedAt=ts,
@@ -773,27 +774,27 @@ class WorkStore:
             ).fetchone()
         return _assignment(r) if r else None
 
-    def current_assignment(self, org_id: str, node_id: str) -> Assignment | None:
+    def current_assignment(self, team_id: str, node_id: str) -> Assignment | None:
         """The node's live assignment (most recent non-terminal). One `executing` per node is a
         domain rule, so at most one active row is expected — newest wins if a race leaves two.
         ``proposed`` drafts are excluded: nothing is published to the node until dispatch.
 
-        Keyed by **org + node** (the position), not the actuation instance (E6): open work
+        Keyed by **team + node** (the position), not the actuation instance (E6): open work
         survives deactuate → re-actuate exactly like ``agent_memory`` — a fresh actuation
-        doesn't orphan the org's in-flight assignments. ``actuation_id`` on the row stays as
+        doesn't orphan the team's in-flight assignments. ``actuation_id`` on the row stays as
         provenance (which actuation created it)."""
         hidden = sorted(ASSIGNMENT_TERMINAL_STATES | {"proposed"})
         placeholders = ",".join("?" for _ in hidden)
         with self.db.connect() as conn:
             r = conn.execute(
-                "SELECT * FROM work_assignment WHERE org_id=? AND node_id=? "
+                "SELECT * FROM work_assignment WHERE team_id=? AND node_id=? "
                 f"AND state NOT IN ({placeholders}) "  # noqa: S608 - fixed placeholders only
                 "ORDER BY created_at DESC LIMIT 1",
-                (org_id, node_id, *hidden),
+                (team_id, node_id, *hidden),
             ).fetchone()
         return _assignment(r) if r else None
 
-    def refs_granted_to(self, org_id: str, node_id: str) -> set[str]:
+    def refs_granted_to(self, team_id: str, node_id: str) -> set[str]:
         """Every artifact ref granted to the node via any brief version of any of its
         assignments — the grant set the artifact fetch checks against (workspace.md §2: a
         manager can grant only refs it can itself read, so brief refs are transitively
@@ -803,8 +804,8 @@ class WorkStore:
             rows = conn.execute(
                 "SELECT b.artifact_refs FROM work_brief b "
                 "JOIN work_assignment a ON a.id = b.assignment_id "
-                "WHERE a.org_id=? AND a.node_id=?",
-                (org_id, node_id),
+                "WHERE a.team_id=? AND a.node_id=?",
+                (team_id, node_id),
             ).fetchall()
         refs: set[str] = set()
         for r in rows:
@@ -826,12 +827,12 @@ class WorkStore:
         return [_assignment(r) for r in rows]
 
     def list_assignments(
-        self, *, org_id: str | None = None, actuation_id: str | None = None,
+        self, *, team_id: str | None = None, actuation_id: str | None = None,
         node_id: str | None = None, state: str | None = None, intent_id: str | None = None,
     ) -> list[Assignment]:
         clauses, params = [], []
         for col, val in (
-            ("org_id", org_id), ("actuation_id", actuation_id), ("node_id", node_id),
+            ("team_id", team_id), ("actuation_id", actuation_id), ("node_id", node_id),
             ("state", state), ("intent_id", intent_id),
         ):
             if val is not None:
@@ -1140,37 +1141,37 @@ class WorkStore:
         return _deliverable(r) if r else None
 
     # ------------------------------------------------------------------ memory
-    def append_memory(self, org_id: str, node_id: str, entry: dict) -> MemoryEntry:
+    def append_memory(self, team_id: str, node_id: str, entry: dict) -> MemoryEntry:
         """Append a durable memory entry (engine writes one at assignment close). Keyed by
-        org+node so it survives re-actuation — deactuation doesn't lobotomize the org's people."""
+        team+node so it survives re-actuation — deactuation doesn't lobotomize the team's people."""
         ts = now_iso()
         with self.db.transaction() as conn:
             row = conn.execute(
-                "SELECT MAX(seq) AS s FROM agent_memory WHERE org_id=? AND node_id=?",
-                (org_id, node_id),
+                "SELECT MAX(seq) AS s FROM agent_memory WHERE team_id=? AND node_id=?",
+                (team_id, node_id),
             ).fetchone()
             seq = (row["s"] or 0) + 1
             conn.execute(
-                "INSERT INTO agent_memory (org_id, node_id, seq, entry, created_at) "
+                "INSERT INTO agent_memory (team_id, node_id, seq, entry, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (org_id, node_id, seq, json.dumps(entry), ts),
+                (team_id, node_id, seq, json.dumps(entry), ts),
             )
-        return MemoryEntry(orgId=org_id, nodeId=node_id, seq=seq, entry=entry, createdAt=ts)
+        return MemoryEntry(teamId=team_id, nodeId=node_id, seq=seq, entry=entry, createdAt=ts)
 
-    def get_memory(self, org_id: str, node_id: str, limit: int = 20) -> list[MemoryEntry]:
+    def get_memory(self, team_id: str, node_id: str, limit: int = 20) -> list[MemoryEntry]:
         """The node's most recent entries, oldest → newest (the "your recent work" block)."""
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM agent_memory WHERE org_id=? AND node_id=? "
+                "SELECT * FROM agent_memory WHERE team_id=? AND node_id=? "
                 "ORDER BY seq DESC LIMIT ?",
-                (org_id, node_id, limit),
+                (team_id, node_id, limit),
             ).fetchall()
         return [_memory(r) for r in reversed(rows)]
 
-    def reset_memory(self, org_id: str, node_id: str) -> None:
+    def reset_memory(self, team_id: str, node_id: str) -> None:
         with self.db.transaction() as conn:
             conn.execute(
-                "DELETE FROM agent_memory WHERE org_id=? AND node_id=?", (org_id, node_id)
+                "DELETE FROM agent_memory WHERE team_id=? AND node_id=?", (team_id, node_id)
             )
 
     # ------------------------------------------------------------------- gates
@@ -1209,7 +1210,7 @@ class WorkStore:
 
     def list_gates(
         self, *, assignment_id: str | None = None, kind: str | None = None,
-        state: str | None = None, owner: str | None = None, org_id: str | None = None,
+        state: str | None = None, owner: str | None = None, team_id: str | None = None,
     ) -> list[Gate]:
         clauses, params = [], []
         for col, val in (
@@ -1220,10 +1221,10 @@ class WorkStore:
                 clauses.append(f"{col}=?")
                 params.append(val)
         join = ""
-        if org_id is not None:  # the operator inbox filters by org via the assignment
+        if team_id is not None:  # the operator inbox filters by team via the assignment
             join = "JOIN work_assignment a ON a.id = g.assignment_id"
-            clauses.append("a.org_id=?")
-            params.append(org_id)
+            clauses.append("a.team_id=?")
+            params.append(team_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.db.connect() as conn:
             rows = conn.execute(
@@ -1252,19 +1253,19 @@ class WorkStore:
 
     # ------------------------------------------------------------------- notes
     def create_note(
-        self, org_id: str, intent_id: str, text: str, *, assignment_id: str | None = None,
+        self, team_id: str, intent_id: str, text: str, *, assignment_id: str | None = None,
         stage_idx: int | None = None, author: str = "operator",
     ) -> Note:
         nid = new_note_id()
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO work_note (id, org_id, intent_id, assignment_id, stage_idx, "
+                "INSERT INTO work_note (id, team_id, intent_id, assignment_id, stage_idx, "
                 "author, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (nid, org_id, intent_id, assignment_id, stage_idx, author, text, ts),
+                (nid, team_id, intent_id, assignment_id, stage_idx, author, text, ts),
             )
         return Note(
-            id=nid, orgId=org_id, intentId=intent_id, assignmentId=assignment_id,
+            id=nid, teamId=team_id, intentId=intent_id, assignmentId=assignment_id,
             stageIdx=stage_idx, author=author, text=text, createdAt=ts,
         )
 
@@ -1298,7 +1299,7 @@ class WorkStore:
 
     # ----------------------------------------------------------- notifications
     def notify(
-        self, org_id: str, severity: str, kind: str, text: str, *,
+        self, team_id: str, severity: str, kind: str, text: str, *,
         subject_ids: list[str] | None = None, dedupe_key: str | None = None,
     ) -> Notification | None:
         """Insert a notification. With ``dedupe_key``, a duplicate of a live fact is dropped
@@ -1307,22 +1308,22 @@ class WorkStore:
         ts = now_iso()
         with self.db.transaction() as conn:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO work_notification (id, org_id, severity, kind, "
+                "INSERT OR IGNORE INTO work_notification (id, team_id, severity, kind, "
                 "subject_ids, dedupe_key, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (nid, org_id, severity, kind, json.dumps(subject_ids or []), dedupe_key,
+                (nid, team_id, severity, kind, json.dumps(subject_ids or []), dedupe_key,
                  text, ts),
             )
             if cur.rowcount == 0:
                 return None
         return Notification(
-            id=nid, orgId=org_id, severity=severity, kind=kind, subjectIds=subject_ids or [],
+            id=nid, teamId=team_id, severity=severity, kind=kind, subjectIds=subject_ids or [],
             text=text, createdAt=ts,
         )
 
     def list_notifications(
-        self, org_id: str, *, since: str | None = None, unread_only: bool = False,
+        self, team_id: str, *, since: str | None = None, unread_only: bool = False,
     ) -> list[Notification]:
-        clauses, params = ["org_id=?"], [org_id]
+        clauses, params = ["team_id=?"], [team_id]
         if since is not None:
             clauses.append("created_at > ?")
             params.append(since)
@@ -1336,52 +1337,52 @@ class WorkStore:
             ).fetchall()
         return [_notification(r) for r in rows]
 
-    def mark_notifications_read_for_subject(self, org_id: str, subject_id: str) -> int:
+    def mark_notifications_read_for_subject(self, team_id: str, subject_id: str) -> int:
         """F9: a resolved fact must not keep ringing. Auto-read every unread notification
         whose ``subjectIds`` include the given id (e.g. the gate that just resolved) — stale
         unread rows were indistinguishable from pending operator actions."""
         with self.db.transaction() as conn:
             cur = conn.execute(
-                "UPDATE work_notification SET read_at=? WHERE org_id=? AND read_at IS NULL "
+                "UPDATE work_notification SET read_at=? WHERE team_id=? AND read_at IS NULL "
                 "AND subject_ids LIKE ?",
-                (now_iso(), org_id, f'%"{subject_id}"%'),
+                (now_iso(), team_id, f'%"{subject_id}"%'),
             )
         return cur.rowcount
 
-    def mark_notifications_read(self, org_id: str, ids: list[str] | None = None) -> int:
-        """Mark the given notifications read (or all unread for the org). Returns the count."""
+    def mark_notifications_read(self, team_id: str, ids: list[str] | None = None) -> int:
+        """Mark the given notifications read (or all unread for the team). Returns the count."""
         ts = now_iso()
         with self.db.transaction() as conn:
             if ids:
                 placeholders = ",".join("?" for _ in ids)
                 cur = conn.execute(
-                    f"UPDATE work_notification SET read_at=? WHERE org_id=? "  # noqa: S608
+                    f"UPDATE work_notification SET read_at=? WHERE team_id=? "  # noqa: S608
                     f"AND read_at IS NULL AND id IN ({placeholders})",
-                    (ts, org_id, *ids),
+                    (ts, team_id, *ids),
                 )
             else:
                 cur = conn.execute(
-                    "UPDATE work_notification SET read_at=? WHERE org_id=? AND read_at IS NULL",
-                    (ts, org_id),
+                    "UPDATE work_notification SET read_at=? WHERE team_id=? AND read_at IS NULL",
+                    (ts, team_id),
                 )
         return cur.rowcount
 
-    def list_gates_for_node(self, org_id: str, node_id: str, *, limit: int = 100) -> list[Gate]:
+    def list_gates_for_node(self, team_id: str, node_id: str, *, limit: int = 100) -> list[Gate]:
         """All gates on one node's assignments, newest first — the inspector's Gates tab
         (open + historical in one query; the route partitions)."""
         with self.db.connect() as conn:
             rows = conn.execute(
                 "SELECT g.* FROM work_gate g "
                 "JOIN work_assignment a ON a.id = g.assignment_id "
-                "WHERE a.org_id = ? AND a.node_id = ? "
+                "WHERE a.team_id = ? AND a.node_id = ? "
                 "ORDER BY g.created_at DESC, g.id DESC LIMIT ?",
-                (org_id, node_id, limit),
+                (team_id, node_id, limit),
             ).fetchall()
         return [_gate(r) for r in rows]
 
     # ------------------------------------------------------------ events (SSE)
-    def change_watermark(self, org_id: str) -> dict[str, tuple]:
-        """Cheap per-org change counters for the /events channel (engine.md §6). The SSE tailer
+    def change_watermark(self, team_id: str) -> dict[str, tuple]:
+        """Cheap per-team change counters for the /events channel (engine.md §6). The SSE tailer
         diffs consecutive snapshots and emits one coalesced event per changed family — steps at
         10/s become at most one event per tick, and stage/note/notification *stamps* (updates
         that fill a nullable column) register without any engine-side hooks. Every counter only
@@ -1389,25 +1390,25 @@ class WorkStore:
         with self.db.connect() as conn:
             step = conn.execute(
                 "SELECT COUNT(*) AS n FROM work_step s "
-                "JOIN work_assignment a ON a.id = s.assignment_id WHERE a.org_id = ?",
-                (org_id,),
+                "JOIN work_assignment a ON a.id = s.assignment_id WHERE a.team_id = ?",
+                (team_id,),
             ).fetchone()
             plan = conn.execute(
                 "SELECT COUNT(*) AS n, COUNT(ps.started_at) AS started, "
                 "COUNT(ps.completed_at) AS completed FROM work_plan_stage ps "
                 "JOIN work_plan p ON p.id = ps.plan_id "
-                "JOIN work_assignment a ON a.id = p.assignment_id WHERE a.org_id = ?",
-                (org_id,),
+                "JOIN work_assignment a ON a.id = p.assignment_id WHERE a.team_id = ?",
+                (team_id,),
             ).fetchone()
             note = conn.execute(
                 "SELECT COUNT(*) AS n, COUNT(delivered_at) AS delivered "
-                "FROM work_note WHERE org_id = ?",
-                (org_id,),
+                "FROM work_note WHERE team_id = ?",
+                (team_id,),
             ).fetchone()
             notif = conn.execute(
                 "SELECT COUNT(*) AS n, COUNT(read_at) AS read "
-                "FROM work_notification WHERE org_id = ?",
-                (org_id,),
+                "FROM work_notification WHERE team_id = ?",
+                (team_id,),
             ).fetchone()
         return {
             "steps": (step["n"],),
@@ -1418,7 +1419,7 @@ class WorkStore:
 
     # ------------------------------------------------------------- tool events
     def record_tool_event(
-        self, *, org_id: str, actuation_id: str, node_id: str, tool: str, outcome: str,
+        self, *, team_id: str, actuation_id: str, node_id: str, tool: str, outcome: str,
         assignment_id: str | None = None, params_hash: str = "", detail: str = "",
     ) -> str:
         """The observability record for every MCP/tool invocation (envelope §3.4) — including
@@ -1426,10 +1427,10 @@ class WorkStore:
         tid = new_tool_event_id()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO work_tool_event (id, org_id, actuation_id, node_id, assignment_id, "
+                "INSERT INTO work_tool_event (id, team_id, actuation_id, node_id, assignment_id, "
                 "tool, params_hash, outcome, detail, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (tid, org_id, actuation_id, node_id, assignment_id, tool, params_hash, outcome,
+                (tid, team_id, actuation_id, node_id, assignment_id, tool, params_hash, outcome,
                  detail, now_iso()),
             )
         return tid

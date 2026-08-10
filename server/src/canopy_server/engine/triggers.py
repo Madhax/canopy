@@ -1,7 +1,7 @@
 """Trigger scheduler (docs/design/standing-orgs.md) — "work that arrives".
 
 The event-driven sibling of :mod:`cadence`: a 60 s lifespan loop calls
-:meth:`TriggerScheduler.run_once`; each enabled trigger on a live org polls its connector
+:meth:`TriggerScheduler.run_once`; each enabled trigger on a live team polls its connector
 instance for new external events (v1: GitHub issues) and opens one ordinary **episodic
 intent** per event. Two deliberate divergences from the cadence scheduler, both because
 events are durable upstream while clock ticks are not:
@@ -43,7 +43,7 @@ class TriggerScheduler:
         trigger — bad credential, deleted instance — must not starve the rest."""
         fired = []
         for t in self.store.list_triggers(enabled_only=True):
-            current = self.actuator.get_current(t.orgId)
+            current = self.actuator.get_current(t.teamId)
             if current is None or current.state not in ("live", "degraded"):
                 continue  # events are durable — nothing is consumed while down
             try:
@@ -57,7 +57,7 @@ class TriggerScheduler:
         t = self.store.get_trigger(trigger_id)
         if t is None:
             return {"fired": [], "candidates": 0}
-        current = self.actuator.get_current(t.orgId)
+        current = self.actuator.get_current(t.teamId)
         if current is None or current.state not in ("live", "degraded"):
             return {"fired": [], "candidates": 0, "skipped": "not-actuated"}
         try:
@@ -87,7 +87,7 @@ class TriggerScheduler:
     # ---------------------------------------------------------------- internals
     def _instance(self, t):
         inst = self.connectors.get(t.instanceId)
-        if inst is None or inst.organizationId != t.orgId:
+        if inst is None or inst.teamId != t.teamId:
             raise LookupError(f"connector instance {t.instanceId} is gone")
         if not inst.enabled:
             raise LookupError(f"connector instance {inst.name!r} is disabled")
@@ -125,7 +125,7 @@ class TriggerScheduler:
             text = render_template(t.intentTemplate, issue_template_vars(issue))
             try:
                 res = self.engine.submit_intent(
-                    t.orgId, current.id, text, target_node=t.nodeId,
+                    t.teamId, current.id, text, target_node=t.nodeId,
                     created_by="trigger", trigger_id=t.id, external_key=_key(issue),
                 )
             except sqlite3.IntegrityError:
@@ -135,7 +135,7 @@ class TriggerScheduler:
                 continue
             fired.append(res.intent)
             self.store.notify(
-                t.orgId, "info", "trigger-fired",
+                t.teamId, "info", "trigger-fired",
                 f"Trigger '{t.name}' opened intent for {_key(issue)}",
                 subject_ids=[t.id, res.intent.id], dedupe_key=res.intent.id,
             )
@@ -159,7 +159,7 @@ class TriggerScheduler:
         self.store.mark_trigger_checked(t.id, error=detail)
         # Deduped on the error string: one warning per failure streak, not one per poll.
         self.store.notify(
-            t.orgId, "warning", "trigger-error",
+            t.teamId, "warning", "trigger-error",
             f"Trigger '{t.name}' failed: {detail[:200]}",
             subject_ids=[t.id], dedupe_key=f"{t.id}:{detail[:80]}",
         )
@@ -167,7 +167,7 @@ class TriggerScheduler:
 
     def _log(self, action: str, t, payload: dict) -> None:
         if self.activity is not None:
-            self.activity.log("system", action, org_id=t.orgId,
+            self.activity.log("system", action, team_id=t.teamId,
                               subject_ids=[t.id], payload=payload)
 
 

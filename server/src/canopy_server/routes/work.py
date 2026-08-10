@@ -83,22 +83,22 @@ def _assignment_detail(work_store, ledger, assignment) -> dict[str, Any]:
     }
 
 
-@router.post("/organizations/{org_id}/intents", status_code=201)
+@router.post("/teams/{team_id}/intents", status_code=201)
 def submit_intent(
-    org_id: str,
+    team_id: str,
     body: IntentBody,
     store=Depends(get_store),
     actuator=Depends(get_actuator),
     engine=Depends(get_engine),
 ) -> Any:
-    if not store.exists(org_id):
-        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
-    current = actuator.get_current(org_id)
+    if not store.exists(team_id):
+        return _error(404, "NOT_FOUND", f"No team {team_id!r}")
+    current = actuator.get_current(team_id)
     if current is None or current.state not in ("live", "degraded"):
-        return _error(409, "NOT_ACTUATED", "Actuate the organization before submitting intents.")
+        return _error(409, "NOT_ACTUATED", "Actuate the team before submitting intents.")
     try:
         res = engine.submit_intent(
-            org_id, current.id, body.text, target_node=body.targetNodeId, kind=body.kind,
+            team_id, current.id, body.text, target_node=body.targetNodeId, kind=body.kind,
             allowance_override=body.allowanceOverride,
         )
     except WorkError as exc:
@@ -106,9 +106,9 @@ def submit_intent(
     return {"intent": res.intent.model_dump(), "assignment": res.assignment.model_dump()}
 
 
-@router.get("/organizations/{org_id}/intents")
-def list_intents(org_id: str, work_store=Depends(get_work_store)) -> Any:
-    return {"intents": [i.model_dump() for i in work_store.list_intents(org_id)]}
+@router.get("/teams/{team_id}/intents")
+def list_intents(team_id: str, work_store=Depends(get_work_store)) -> Any:
+    return {"intents": [i.model_dump() for i in work_store.list_intents(team_id)]}
 
 
 @router.get("/intents/{intent_id}")
@@ -125,14 +125,14 @@ def intent_detail(
     }
 
 
-@router.get("/organizations/{org_id}/assignments")
+@router.get("/teams/{team_id}/assignments")
 def list_assignments(
-    org_id: str,
+    team_id: str,
     node: str | None = None,
     state: str | None = None,
     work_store=Depends(get_work_store),
 ) -> Any:
-    rows = work_store.list_assignments(org_id=org_id, node_id=node, state=state)
+    rows = work_store.list_assignments(team_id=team_id, node_id=node, state=state)
     return {"assignments": [a.model_dump() for a in rows]}
 
 
@@ -239,7 +239,7 @@ def leave_note(
         if a is None or a.intentId != intent_id:
             return _error(422, "BAD_ANCHOR", "assignmentId is not part of this intent")
     note = work_store.create_note(
-        intent.orgId, intent_id, body.text, assignment_id=body.assignmentId,
+        intent.teamId, intent_id, body.text, assignment_id=body.assignmentId,
         stage_idx=body.stageIdx, author="operator",
     )
     return note.model_dump()
@@ -288,16 +288,16 @@ def intent_plan(
 
 # The operator's artifact preview (the deliverable viewer): meta + utf-8 content for text
 # artifacts ≤ 256 KB, mirroring the inspector's workspace preview conventions. The data-plane
-# GET (dp.py) stays the grant-checked *agent* path; this one is org-scoped operator API like
+# GET (dp.py) stays the grant-checked *agent* path; this one is team-scoped operator API like
 # everything else here — you can't accept what you can't see.
 _ARTIFACT_PREVIEW_LIMIT = 256 * 1024
 
 
-@router.get("/organizations/{org_id}/artifacts")
-def read_artifact(org_id: str, ref: str, artifacts=Depends(get_artifact_store)) -> Any:
+@router.get("/teams/{team_id}/artifacts")
+def read_artifact(team_id: str, ref: str, artifacts=Depends(get_artifact_store)) -> Any:
     meta = artifacts.resolve(ref)
-    if meta is None or meta.orgId != org_id:
-        return _error(404, "NOT_FOUND", f"No artifact {ref!r} in this organization")
+    if meta is None or meta.teamId != team_id:
+        return _error(404, "NOT_FOUND", f"No artifact {ref!r} in this team")
     out: dict[str, Any] = {"meta": meta.model_dump(), "content": None, "reason": None}
     if meta.size > _ARTIFACT_PREVIEW_LIMIT:
         out["reason"] = "too-large"
@@ -313,20 +313,20 @@ def read_artifact(org_id: str, ref: str, artifacts=Depends(get_artifact_store)) 
     return out
 
 
-@router.get("/organizations/{org_id}/notifications")
+@router.get("/teams/{team_id}/notifications")
 def list_notifications(
-    org_id: str, since: str | None = None, unread: bool = False,
+    team_id: str, since: str | None = None, unread: bool = False,
     work_store=Depends(get_work_store),
 ) -> Any:
-    rows = work_store.list_notifications(org_id, since=since, unread_only=unread)
+    rows = work_store.list_notifications(team_id, since=since, unread_only=unread)
     return {"notifications": [n.model_dump() for n in rows]}
 
 
-@router.post("/organizations/{org_id}/notifications/read")
+@router.post("/teams/{team_id}/notifications/read")
 def mark_notifications_read(
-    org_id: str, body: NotificationsReadBody, work_store=Depends(get_work_store),
+    team_id: str, body: NotificationsReadBody, work_store=Depends(get_work_store),
 ) -> Any:
-    return {"marked": work_store.mark_notifications_read(org_id, body.ids)}
+    return {"marked": work_store.mark_notifications_read(team_id, body.ids)}
 
 
 # --------------------------------------------------------------------------- #
@@ -339,7 +339,7 @@ class CadenceBody(BaseModel):
     name: str
     cron: str  # five UTC fields: minute hour day-of-month month day-of-week
     intentText: str
-    nodeId: str | None = None  # None ⇒ the org root at fire time
+    nodeId: str | None = None  # None ⇒ the team root at fire time
     enabled: bool = True
 
 
@@ -366,78 +366,78 @@ def _cadence_view(c) -> dict[str, Any]:
     return out
 
 
-def _check_cadence_node(store, org_id: str, node_id: str | None) -> JSONResponse | None:
+def _check_cadence_node(store, team_id: str, node_id: str | None) -> JSONResponse | None:
     if node_id is None:
         return None
-    org = store.read(org_id)
-    if not any(a.id == node_id for a in org.agents):
-        return _error(422, "BAD_NODE", f"node {node_id!r} not found in org {org_id!r}")
+    team = store.read(team_id)
+    if not any(a.id == node_id for a in team.agents):
+        return _error(422, "BAD_NODE", f"node {node_id!r} not found in team {team_id!r}")
     return None
 
 
-@router.get("/organizations/{org_id}/cadences")
-def list_cadences(org_id: str, work_store=Depends(get_work_store)) -> Any:
-    return {"cadences": [_cadence_view(c) for c in work_store.list_cadences(org_id)]}
+@router.get("/teams/{team_id}/cadences")
+def list_cadences(team_id: str, work_store=Depends(get_work_store)) -> Any:
+    return {"cadences": [_cadence_view(c) for c in work_store.list_cadences(team_id)]}
 
 
-@router.post("/organizations/{org_id}/cadences", status_code=201)
+@router.post("/teams/{team_id}/cadences", status_code=201)
 def create_cadence(
-    org_id: str, body: CadenceBody, store=Depends(get_store),
+    team_id: str, body: CadenceBody, store=Depends(get_store),
     work_store=Depends(get_work_store), activity=Depends(get_activity),
 ) -> Any:
-    if not store.exists(org_id):
-        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    if not store.exists(team_id):
+        return _error(404, "NOT_FOUND", f"No team {team_id!r}")
     if not body.name.strip() or not body.intentText.strip():
         return _error(422, "BAD_CADENCE", "name and intentText are required")
     try:
         validate_cron(body.cron)
     except CronError as exc:
         return _error(422, "BAD_CRON", str(exc))
-    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+    if (err := _check_cadence_node(store, team_id, body.nodeId)) is not None:
         return err
     cadence = work_store.create_cadence(
-        org_id, body.name.strip(), body.cron, body.intentText.strip(),
+        team_id, body.name.strip(), body.cron, body.intentText.strip(),
         node_id=body.nodeId, enabled=body.enabled,
     )
-    activity.log("operator", "cadence.created", org_id=org_id, subject_ids=[cadence.id],
+    activity.log("operator", "cadence.created", team_id=team_id, subject_ids=[cadence.id],
                  payload={"cron": cadence.cron})
     return _cadence_view(cadence)
 
 
-@router.put("/organizations/{org_id}/cadences/{cadence_id}")
+@router.put("/teams/{team_id}/cadences/{cadence_id}")
 def update_cadence(
-    org_id: str, cadence_id: str, body: CadenceUpdateBody, store=Depends(get_store),
+    team_id: str, cadence_id: str, body: CadenceUpdateBody, store=Depends(get_store),
     work_store=Depends(get_work_store), activity=Depends(get_activity),
 ) -> Any:
     existing = work_store.get_cadence(cadence_id)
-    if existing is None or existing.orgId != org_id:
+    if existing is None or existing.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No cadence {cadence_id!r}")
     if body.cron is not None:
         try:
             validate_cron(body.cron)
         except CronError as exc:
             return _error(422, "BAD_CRON", str(exc))
-    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+    if (err := _check_cadence_node(store, team_id, body.nodeId)) is not None:
         return err
     cadence = work_store.update_cadence(
         cadence_id, name=body.name, cron=body.cron, intent_text=body.intentText,
         node_id=body.nodeId, enabled=body.enabled,
     )
-    activity.log("operator", "cadence.updated", org_id=org_id, subject_ids=[cadence_id],
+    activity.log("operator", "cadence.updated", team_id=team_id, subject_ids=[cadence_id],
                  payload={"enabled": cadence.enabled})
     return _cadence_view(cadence)
 
 
-@router.delete("/organizations/{org_id}/cadences/{cadence_id}", status_code=204)
+@router.delete("/teams/{team_id}/cadences/{cadence_id}", status_code=204)
 def delete_cadence(
-    org_id: str, cadence_id: str, work_store=Depends(get_work_store),
+    team_id: str, cadence_id: str, work_store=Depends(get_work_store),
     activity=Depends(get_activity),
 ):
     existing = work_store.get_cadence(cadence_id)
-    if existing is None or existing.orgId != org_id:
+    if existing is None or existing.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No cadence {cadence_id!r}")
     work_store.delete_cadence(cadence_id)
-    activity.log("operator", "cadence.deleted", org_id=org_id, subject_ids=[cadence_id])
+    activity.log("operator", "cadence.deleted", team_id=team_id, subject_ids=[cadence_id])
     return JSONResponse(status_code=204, content=None)
 
 
@@ -451,7 +451,7 @@ class TriggerBody(BaseModel):
     kind: str = "github-issues"
     instanceId: str
     intentTemplate: str
-    nodeId: str | None = None  # None ⇒ the org root at fire time
+    nodeId: str | None = None  # None ⇒ the team root at fire time
     config: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
 
@@ -479,18 +479,18 @@ def _check_trigger_template(template: str) -> JSONResponse | None:
     return None
 
 
-def _check_trigger_source(org_id: str, instance_id: str) -> JSONResponse | None:
+def _check_trigger_source(team_id: str, instance_id: str) -> JSONResponse | None:
     """The instance must exist, be enabled, and serve issues.read (standing-orgs.md §4)."""
     from ..catalog import get_catalog
     from ..deps import get_connector_store
 
     connectors = get_connector_store()
     inst = connectors.get(instance_id)
-    if inst is None or inst.organizationId != org_id:
+    if inst is None or inst.teamId != team_id:
         return _error(422, "BAD_TRIGGER_SOURCE", f"no connector instance {instance_id!r}")
     if not inst.enabled:
         return _error(422, "BAD_TRIGGER_SOURCE", f"instance {inst.name!r} is disabled")
-    binding = connectors.resolve(get_catalog(), org_id, None, "issues.read")
+    binding = connectors.resolve(get_catalog(), team_id, None, "issues.read")
     if binding is None or binding.instance.id != instance_id:
         # Resolve directly against this instance: it must carry an enabled issues-read grant.
         pack = next((p for p in get_catalog().connectorPacks if p.key == inst.packKey), None)
@@ -505,56 +505,56 @@ def _check_trigger_source(org_id: str, instance_id: str) -> JSONResponse | None:
     return None
 
 
-@router.get("/organizations/{org_id}/triggers")
-def list_triggers(org_id: str, work_store=Depends(get_work_store)) -> Any:
-    return {"triggers": [t.model_dump() for t in work_store.list_triggers(org_id)]}
+@router.get("/teams/{team_id}/triggers")
+def list_triggers(team_id: str, work_store=Depends(get_work_store)) -> Any:
+    return {"triggers": [t.model_dump() for t in work_store.list_triggers(team_id)]}
 
 
-@router.post("/organizations/{org_id}/triggers", status_code=201)
+@router.post("/teams/{team_id}/triggers", status_code=201)
 def create_trigger(
-    org_id: str, body: TriggerBody, store=Depends(get_store),
+    team_id: str, body: TriggerBody, store=Depends(get_store),
     work_store=Depends(get_work_store), activity=Depends(get_activity),
 ) -> Any:
-    if not store.exists(org_id):
-        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    if not store.exists(team_id):
+        return _error(404, "NOT_FOUND", f"No team {team_id!r}")
     if not body.name.strip() or not body.intentTemplate.strip():
         return _error(422, "BAD_TRIGGER", "name and intentTemplate are required")
     if body.kind != "github-issues":
         return _error(422, "BAD_TRIGGER", f"unknown trigger kind {body.kind!r}")
     if (err := _check_trigger_template(body.intentTemplate)) is not None:
         return err
-    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+    if (err := _check_cadence_node(store, team_id, body.nodeId)) is not None:
         return err
-    if (err := _check_trigger_source(org_id, body.instanceId)) is not None:
+    if (err := _check_trigger_source(team_id, body.instanceId)) is not None:
         return err
     config = dict(body.config)
     # A new trigger never replays history unless asked (standing-orgs-ux.md §2.1).
     config.setdefault("createdAfter", now_iso())
     trigger = work_store.create_trigger(
-        org_id, body.name.strip(), body.kind, body.instanceId,
+        team_id, body.name.strip(), body.kind, body.instanceId,
         body.intentTemplate.strip(), node_id=body.nodeId, config=config,
         enabled=body.enabled,
     )
-    activity.log("operator", "trigger.created", org_id=org_id, subject_ids=[trigger.id],
+    activity.log("operator", "trigger.created", team_id=team_id, subject_ids=[trigger.id],
                  payload={"kind": trigger.kind, "instanceId": trigger.instanceId})
     return trigger.model_dump()
 
 
-@router.put("/organizations/{org_id}/triggers/{trigger_id}")
+@router.put("/teams/{team_id}/triggers/{trigger_id}")
 def update_trigger(
-    org_id: str, trigger_id: str, body: TriggerUpdateBody, store=Depends(get_store),
+    team_id: str, trigger_id: str, body: TriggerUpdateBody, store=Depends(get_store),
     work_store=Depends(get_work_store), activity=Depends(get_activity),
 ) -> Any:
     existing = work_store.get_trigger(trigger_id)
-    if existing is None or existing.orgId != org_id:
+    if existing is None or existing.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
     if body.intentTemplate is not None:
         if (err := _check_trigger_template(body.intentTemplate)) is not None:
             return err
-    if (err := _check_cadence_node(store, org_id, body.nodeId)) is not None:
+    if (err := _check_cadence_node(store, team_id, body.nodeId)) is not None:
         return err
     if body.instanceId is not None:
-        if (err := _check_trigger_source(org_id, body.instanceId)) is not None:
+        if (err := _check_trigger_source(team_id, body.instanceId)) is not None:
             return err
     changes: dict[str, Any] = {}
     for field, key in (("name", "name"), ("instanceId", "instanceId"),
@@ -564,47 +564,47 @@ def update_trigger(
         if val is not None:
             changes[key] = val
     trigger = work_store.update_trigger(trigger_id, changes)
-    activity.log("operator", "trigger.updated", org_id=org_id, subject_ids=[trigger_id],
+    activity.log("operator", "trigger.updated", team_id=team_id, subject_ids=[trigger_id],
                  payload={"enabled": trigger.enabled})
     return trigger.model_dump()
 
 
-@router.delete("/organizations/{org_id}/triggers/{trigger_id}", status_code=204)
+@router.delete("/teams/{team_id}/triggers/{trigger_id}", status_code=204)
 def delete_trigger(
-    org_id: str, trigger_id: str, work_store=Depends(get_work_store),
+    team_id: str, trigger_id: str, work_store=Depends(get_work_store),
     activity=Depends(get_activity),
 ):
     existing = work_store.get_trigger(trigger_id)
-    if existing is None or existing.orgId != org_id:
+    if existing is None or existing.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
     work_store.delete_trigger(trigger_id)
-    activity.log("operator", "trigger.deleted", org_id=org_id, subject_ids=[trigger_id])
+    activity.log("operator", "trigger.deleted", team_id=team_id, subject_ids=[trigger_id])
     return JSONResponse(status_code=204, content=None)
 
 
-@router.post("/organizations/{org_id}/triggers/{trigger_id}/check")
+@router.post("/teams/{team_id}/triggers/{trigger_id}/check")
 def check_trigger(
-    org_id: str, trigger_id: str, work_store=Depends(get_work_store),
+    team_id: str, trigger_id: str, work_store=Depends(get_work_store),
 ) -> Any:
     """One synchronous poll for this trigger — the operator's *check now* button."""
     from ..deps import get_trigger_scheduler
 
     existing = work_store.get_trigger(trigger_id)
-    if existing is None or existing.orgId != org_id:
+    if existing is None or existing.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
     return get_trigger_scheduler().check_now(trigger_id)
 
 
-@router.post("/organizations/{org_id}/triggers/{trigger_id}/dry-run")
+@router.post("/teams/{team_id}/triggers/{trigger_id}/dry-run")
 def dry_run_trigger(
-    org_id: str, trigger_id: str, work_store=Depends(get_work_store),
+    team_id: str, trigger_id: str, work_store=Depends(get_work_store),
 ) -> Any:
     """The poll without the firing: what WOULD fire, with the first intent rendered."""
     from ..deps import get_trigger_scheduler
     from ..github_client import GitHubError
 
     existing = work_store.get_trigger(trigger_id)
-    if existing is None or existing.orgId != org_id:
+    if existing is None or existing.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No trigger {trigger_id!r}")
     try:
         return get_trigger_scheduler().dry_run(trigger_id)
@@ -613,7 +613,7 @@ def dry_run_trigger(
 
 
 # --------------------------------------------------------------------------- #
-# The SSE channel (engine.md §6): one live stream per org. Activity transitions ride through
+# The SSE channel (engine.md §6): one live stream per team. Activity transitions ride through
 # individually (id = seq, so Last-Event-ID resume works); step/plan/note/notification changes
 # arrive as coalesced per-family events — at most one per tick, which is the server-side step
 # throttle. The tail is DB-driven: anything that lands in the store surfaces here without
@@ -630,16 +630,16 @@ def _sse(event: str, data: dict, *, event_id: int | None = None) -> str:
     return f"{head}event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-async def _org_event_stream(
-    request: Request, org_id: str, after: int | None, activity, work_store,
+async def _team_event_stream(
+    request: Request, team_id: str, after: int | None, activity, work_store,
 ):
-    last_seq = activity.max_seq(org_id) if after is None else after
-    marks = work_store.change_watermark(org_id)
+    last_seq = activity.max_seq(team_id) if after is None else after
+    marks = work_store.change_watermark(team_id)
     yield _sse("hello", {"seq": last_seq})
     quiet_ticks = 0
     while not await request.is_disconnected():
         wrote = False
-        for row in activity.list(org_id, after_seq=last_seq, limit=200):
+        for row in activity.list(team_id, after_seq=last_seq, limit=200):
             last_seq = row["seq"]
             yield _sse(
                 "activity",
@@ -648,7 +648,7 @@ async def _org_event_stream(
                 event_id=row["seq"],
             )
             wrote = True
-        fresh = work_store.change_watermark(org_id)
+        fresh = work_store.change_watermark(team_id)
         for family in _COALESCED_FAMILIES:
             if fresh[family] != marks[family]:
                 yield _sse(family, {})
@@ -661,33 +661,33 @@ async def _org_event_stream(
         await asyncio.sleep(EVENTS_TICK_SECONDS)
 
 
-@router.get("/organizations/{org_id}/events")
-async def org_events(
-    org_id: str,
+@router.get("/teams/{team_id}/events")
+async def team_events(
+    team_id: str,
     request: Request,
     after: int | None = None,
     store=Depends(get_store),
     work_store=Depends(get_work_store),
     activity=Depends(get_activity),
 ) -> Any:
-    if not store.exists(org_id):
-        return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    if not store.exists(team_id):
+        return _error(404, "NOT_FOUND", f"No team {team_id!r}")
     last_event_id = request.headers.get("last-event-id")
     if after is None and last_event_id and last_event_id.isdigit():
         after = int(last_event_id)
     return StreamingResponse(
-        _org_event_stream(request, org_id, after, activity, work_store),
+        _team_event_stream(request, team_id, after, activity, work_store),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-@router.get("/organizations/{org_id}/gates")
+@router.get("/teams/{team_id}/gates")
 def list_gates(
-    org_id: str, state: str | None = None, owner: str | None = None,
+    team_id: str, state: str | None = None, owner: str | None = None,
     work_store=Depends(get_work_store),
 ) -> Any:
-    rows = work_store.list_gates(org_id=org_id, state=state, owner=owner)
+    rows = work_store.list_gates(team_id=team_id, state=state, owner=owner)
     return {"gates": [g.model_dump() for g in rows]}
 
 

@@ -1,0 +1,71 @@
+{
+  "name": "agent-orphan",
+  "description": "IC under a manager, in no dependency and with no reports.",
+  "mode": "export",
+  "document": {
+    "kind": "canopy.organization",
+    "schemaVersion": 1,
+    "id": "orphan",
+    "name": "orphan",
+    "organizationType": "product-engineering",
+    "agents": [
+      {
+        "id": "a_root",
+        "name": "a_root",
+        "role": {
+          "key": "team-lead",
+          "version": 1
+        },
+        "managerId": null,
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "a_lonely",
+        "name": "a_lonely",
+        "role": {
+          "key": "backend-engineer",
+          "version": 1
+        },
+        "managerId": "a_root",
+        "salary": {
+          "perAssignmentAllowance": 150000,
+          "warnThresholdPct": 80,
+          "hardStop": true
+        },
+        "extensions": {
+          "instructions": "",
+          "responsibilities": []
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "dependencies": [],
+    "customRoles": [],
+    "childOrganizations": [],
+    "meta": {}
+  },
+  "expectedIssues": [
+    {
+      "severity": "warning",
+      "code": "AGENT_ORPHAN",
+      "agentIds": [
+        "a_lonely"
+      ]
+    }
+  ]
+}

@@ -26,7 +26,7 @@ def test_spawn_status_stop(tmp_path):
     spec = SandboxSpec(
         actuation_id="act1",
         node_id="n1",
-        org_id="o1",
+        team_id="o1",
         workspace_root=tmp_path / "ws",
         env=_env(),
         a2a_port=None,
@@ -47,7 +47,7 @@ def test_spawn_status_stop(tmp_path):
 
 def test_stable_log_dir_wins_and_survives_destroy(tmp_path):
     """F16: with ``log_dir`` set, the adapter log lands in the stable home (not the
-    per-actuation shard) and outlives destroy — the org keeps its process record."""
+    per-actuation shard) and outlives destroy — the team keeps its process record."""
     sandbox = SubprocessSandbox(
         argv=[sys.executable, "-c", "print('proof of boot')"]
     )
@@ -55,7 +55,7 @@ def test_stable_log_dir_wins_and_survives_destroy(tmp_path):
     spec = SandboxSpec(
         actuation_id="act1",
         node_id="n3",
-        org_id="o1",
+        team_id="o1",
         workspace_root=tmp_path / "sandboxes" / "act1" / "n3" / "workspace",
         log_dir=stable_logs,
         env=_env(),
@@ -83,7 +83,7 @@ def test_destroy_removes_workspace_when_requested(tmp_path):
     spec = SandboxSpec(
         actuation_id="act1",
         node_id="n2",
-        org_id="o1",
+        team_id="o1",
         workspace_root=tmp_path / "node" / "workspace",
         env=_env(),
         keep_workspace_on_destroy=False,

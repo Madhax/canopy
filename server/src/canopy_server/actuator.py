@@ -1,9 +1,9 @@
-"""Actuator — desired-vs-actual reconciliation for an organization (control-plane.md §2).
+"""Actuator — desired-vs-actual reconciliation for an team (control-plane.md §2).
 
-Owns the provision/teardown state machine and the reconciler. Provisioning walks the org tree and,
+Owns the provision/teardown state machine and the reconciler. Provisioning walks the team tree and,
 per node, mints an identity + run token, opens a meter from the node's salary, compiles the
 charter, creates and starts a sandbox, then waits for the agent to register within a boot timeout.
-An organization is "live" only when its whole tree reports ready; teardown revokes tokens, stops
+An team is "live" only when its whole tree reports ready; teardown revokes tokens, stops
 and destroys sandboxes, and closes meters. Actuation is reversible and idempotent — you can tear
 down and re-actuate from the same document.
 
@@ -37,31 +37,31 @@ from .deps import now_iso
 from .directory import AgentDirectory
 from .ids import new_actuation_id
 from .ledger import BudgetLedger
-from .models import Agent, Catalog, Organization
+from .models import Agent, Catalog, Team
 from .profiles import ProfileStore
 from .router import MessageRouter
 from .runtokens import RunTokenStore
 from .sandbox.base import SandboxHandle, SandboxProvider, SandboxSpec
 from .secretstore import SecretStore
 from .store import StoreError
-from .validation import validate_organization
+from .validation import validate_team
 from .validation.codes import ValidationIssue, issue
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS actuation (
     id         TEXT PRIMARY KEY,
-    org_id     TEXT NOT NULL,
+    team_id     TEXT NOT NULL,
     state      TEXT NOT NULL,
     error      TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_actuation_org ON actuation (org_id);
+CREATE INDEX IF NOT EXISTS ix_actuation_org ON actuation (team_id);
 
 CREATE TABLE IF NOT EXISTS actuation_node (
     actuation_id        TEXT NOT NULL,
     node_id             TEXT NOT NULL,
-    org_path            TEXT NOT NULL DEFAULT '[]',
+    team_path            TEXT NOT NULL DEFAULT '[]',
     sub_state           TEXT NOT NULL DEFAULT 'pending',
     run_token_record_id TEXT,
     meter_id            TEXT,
@@ -92,7 +92,7 @@ class ActuationError(Exception):
 
 class ActuationNodeView(BaseModel):
     nodeId: str
-    orgPath: list[str]
+    teamPath: list[str]
     subState: str
     status: str | None = None
     endpointUrl: str | None = None
@@ -101,7 +101,7 @@ class ActuationNodeView(BaseModel):
 
 class ActuationView(BaseModel):
     id: str
-    orgId: str
+    teamId: str
     state: str
     error: str | None = None
     createdAt: str
@@ -132,15 +132,15 @@ def _cli_available() -> bool:
         return False
 
 
-def enumerate_nodes(top: Organization) -> Iterator[tuple[list[str], Agent]]:
-    """Yield ``(org_path, agent)`` for every agent at every nesting level, roots first per org."""
+def enumerate_nodes(top: Team) -> Iterator[tuple[list[str], Agent]]:
+    """Yield ``(team_path, agent)`` for every agent at every nesting level, roots first per team."""
 
-    def walk(org: Organization, path: list[str]) -> Iterator[tuple[list[str], Agent]]:
-        ordered = sorted(org.agents, key=lambda a: (a.managerId is not None, a.id))
+    def walk(team: Team, path: list[str]) -> Iterator[tuple[list[str], Agent]]:
+        ordered = sorted(team.agents, key=lambda a: (a.managerId is not None, a.id))
         for agent in ordered:
             yield path, agent
-        for child in org.childOrganizations:
-            yield from walk(child.organization, path + [child.organization.id])
+        for child in team.childTeams:
+            yield from walk(child.team, path + [child.team.id])
 
     yield from walk(top, [])
 
@@ -165,6 +165,7 @@ class Actuator:
         sandboxes_root: Path,
         work_root: Path | None = None,
         router: MessageRouter | None = None,
+        home_resolver=None,
     ):
         self.db = db
         self.store = store
@@ -183,35 +184,38 @@ class Actuator:
         # F13/F16: the actuation-INDEPENDENT home for assignment work and logs — the position
         # owns its conversations and audit trail, the way it already owns work/meters/memory.
         self.work_root = work_root if work_root is not None else sandboxes_root.parent / "work"
+        # C1 filesystem regrouping (07 §2.5): when set, a node's work home is
+        # <team-home>/work/<node> instead of <work_root>/<team>/<node>.
+        self.home_resolver = home_resolver
         self.router = router
 
     # -- readiness ---------------------------------------------------------- #
-    def _role_for(self, org: Organization, agent: Agent):
+    def _role_for(self, team: Team, agent: Agent):
         role = None
         if self.catalog:
             role = next((r for r in self.catalog.roles if r.key == agent.role.key), None)
-        return role or next((r for r in org.customRoles if r.key == agent.role.key), None)
+        return role or next((r for r in team.customRoles if r.key == agent.role.key), None)
 
-    def _node_runtime(self, org: Organization, agent: Agent) -> str:
+    def _node_runtime(self, team: Team, agent: Agent) -> str:
         override = get_runtime_override()
         if override:
             return override
-        role = self._role_for(org, agent)
+        role = self._role_for(team, agent)
         return getattr(role, "defaultRuntime", "loop") or "loop"
 
-    def _has_execute_grants(self, org: Organization) -> bool:
+    def _has_execute_grants(self, team: Team) -> bool:
         grants = {g.key: g for g in (self.catalog.toolGrants if self.catalog else [])}
-        for _path, agent in enumerate_nodes(org):
-            role = self._role_for(org, agent)
+        for _path, agent in enumerate_nodes(team):
+            role = self._role_for(team, agent)
             for gk in getattr(role, "toolGrants", []) or []:
                 g = grants.get(gk)
                 if g is not None and g.minSandboxTier >= 2:
                     return True
         return False
 
-    def check_readiness(self, org: Organization) -> list[ValidationIssue]:
+    def check_readiness(self, team: Team) -> list[ValidationIssue]:
         issues = [
-            i for i in validate_organization(org, "export", self.catalog) if i.severity == "error"
+            i for i in validate_team(team, "export", self.catalog) if i.severity == "error"
         ]
         grant_keys = {g.key: g for g in (self.catalog.toolGrants if self.catalog else [])}
         from .connectors import ConnectorStore
@@ -219,58 +223,58 @@ class Actuator:
 
         conn_store = ConnectorStore(self.db)
         needs_cli = False
-        for org_path, agent in enumerate_nodes(org):
-            role = self._role_for(org, agent)
+        for team_path, agent in enumerate_nodes(team):
+            role = self._role_for(team, agent)
             role_grants = list(getattr(role, "toolGrants", []) or [])
             for gk in role_grants:
                 grant = grant_keys.get(gk)
                 if grant is None:
                     issues.append(issue("GRANT_UNKNOWN", "error", agentIds=[agent.id],
-                                        orgPath=org_path))
+                                        teamPath=team_path))
                 elif grant.minSandboxTier >= 2 and not get_allow_trusted_local():
                     # The subprocess provider is the trusted-local tier; execute-class grants
                     # need a hard wall (envelope §3.1) unless the operator waives it loudly
                     # (cli-runtime.md §8).
                     issues.append(issue("TIER_UNSATISFIABLE", "error", agentIds=[agent.id],
-                                        orgPath=org_path))
+                                        teamPath=team_path))
             if self.catalog is not None:
                 # Connector readiness (builder-connectors.md §4): namespaced connector grants
                 # must resolve to an instance in this node's reach, credentials bound.
                 for code, _detail in connector_readiness(
-                    self.catalog, conn_store, org.id, agent.id, role_grants
+                    self.catalog, conn_store, team.id, agent.id, role_grants
                 ):
                     issues.append(issue(code, "error", agentIds=[agent.id],
-                                        orgPath=org_path))
-            if self._node_runtime(org, agent) == "cli-claude":
+                                        teamPath=team_path))
+            if self._node_runtime(team, agent) == "cli-claude":
                 needs_cli = True
-            binding = self.profiles.get_binding_for_node(org.id, agent.id, org_path)
+            binding = self.profiles.get_binding_for_node(team.id, agent.id, team_path)
             if binding is None:
                 issues.append(issue("BINDING_MISSING", "error", agentIds=[agent.id],
-                                    orgPath=org_path))
+                                    teamPath=team_path))
                 continue
             profile = self.profiles.get_profile(binding.profileId)
             if profile is None:
                 issues.append(issue("PROFILE_DANGLING", "error", agentIds=[agent.id],
-                                    orgPath=org_path))
+                                    teamPath=team_path))
                 continue
             if profile.apiKeySecretId and self.secrets.get_meta(profile.apiKeySecretId) is None:
                 issues.append(issue("SECRET_DANGLING", "error", agentIds=[agent.id],
-                                    orgPath=org_path))
+                                    teamPath=team_path))
         if needs_cli and not _cli_available():
             issues.append(issue("CLI_UNAVAILABLE", "error"))
         return issues
 
     # -- lifecycle ---------------------------------------------------------- #
-    def create_actuation(self, org_id: str) -> str:
-        org = self.store.read(org_id)
-        issues = self.check_readiness(org)
+    def create_actuation(self, team_id: str) -> str:
+        team = self.store.read(team_id)
+        issues = self.check_readiness(team)
         if issues:
             raise ActuationError(issues)
         actuation_id = new_actuation_id()
         # The trusted-local waiver is loud, once, logged (cli-runtime.md §8).
-        if get_allow_trusted_local() and self._has_execute_grants(org):
+        if get_allow_trusted_local() and self._has_execute_grants(team):
             self.activity.log(
-                "operator", "execution.trusted-local-waiver", org_id=org_id,
+                "operator", "execution.trusted-local-waiver", team_id=team_id,
                 subject_ids=[actuation_id],
                 payload={"note": "execute-class grants running on the subprocess tier by "
                                  "explicit canopy.toml waiver (execution.allow_trusted_local)"},
@@ -278,15 +282,15 @@ class Actuator:
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO actuation (id, org_id, state, created_at, updated_at) "
+                "INSERT INTO actuation (id, team_id, state, created_at, updated_at) "
                 "VALUES (?, ?, 'provisioning', ?, ?)",
-                (actuation_id, org_id, ts, ts),
+                (actuation_id, team_id, ts, ts),
             )
-        for org_path, agent in enumerate_nodes(org):
-            self._insert_node(actuation_id, agent.id, org_path)
+        for team_path, agent in enumerate_nodes(team):
+            self._insert_node(actuation_id, agent.id, team_path)
         if self.router is not None:
-            self.router.derive_channels(actuation_id, org)  # chart → allowed channels (A3)
-        self.activity.log("operator", "actuation.requested", org_id=org_id,
+            self.router.derive_channels(actuation_id, team)  # chart → allowed channels (A3)
+        self.activity.log("operator", "actuation.requested", team_id=team_id,
                           subject_ids=[actuation_id])
         return actuation_id
 
@@ -296,32 +300,32 @@ class Actuator:
             row = self._actuation_row(actuation_id)
             if row is None:
                 return
-            org = self.store.read(row["org_id"])
-            for org_path, agent in enumerate_nodes(org):
+            team = self.store.read(row["team_id"])
+            for team_path, agent in enumerate_nodes(team):
                 try:
-                    await self._provision_node(actuation_id, org, org_path, agent)
+                    await self._provision_node(actuation_id, team, team_path, agent)
                 except Exception as exc:  # noqa: BLE001 - one node failing must not abort the rest
                     self._set_node(actuation_id, agent.id, sub_state="failed", error=str(exc))
             nodes = self._nodes(actuation_id)
             if nodes and all(n["sub_state"] == "ready" for n in nodes):
                 self._set_state(actuation_id, "live")
-                self.activity.log("system", "actuation.live", org_id=org.id,
+                self.activity.log("system", "actuation.live", team_id=team.id,
                                   subject_ids=[actuation_id])
             else:
                 self._set_state(actuation_id, "degraded")
-                self.activity.log("system", "actuation.degraded", org_id=org.id,
+                self.activity.log("system", "actuation.degraded", team_id=team.id,
                                   subject_ids=[actuation_id])
         except Exception as exc:  # noqa: BLE001 - a background task must never die silently
             self._set_state(actuation_id, "failed", f"provisioning error: {exc}")
 
     async def _provision_node(
-        self, actuation_id: str, top: Organization, org_path: list[str], agent: Agent
+        self, actuation_id: str, top: Team, team_path: list[str], agent: Agent
     ) -> None:
         self.directory.upsert_provisioning(actuation_id, agent.id)
-        binding = self.profiles.get_binding_for_node(top.id, agent.id, org_path)
+        binding = self.profiles.get_binding_for_node(top.id, agent.id, team_path)
         profile = self.profiles.get_profile(binding.profileId) if binding else None
         preamble = profile.systemPreamble if profile else ""
-        charter = compile_charter(top, org_path, agent.id, catalog=self.catalog,
+        charter = compile_charter(top, team_path, agent.id, catalog=self.catalog,
                                   actuation_id=actuation_id, profile_preamble=preamble)
 
         meter = self.ledger.open_meter(
@@ -329,7 +333,7 @@ class Actuator:
             warn_threshold_pct=agent.salary.warnThresholdPct, hard_stop=agent.salary.hardStop,
         )
         token, rec = self.runtokens.issue(
-            actuation_id, agent.id, top.id, org_path=org_path, default_meter_id=meter.id
+            actuation_id, agent.id, top.id, team_path=team_path, default_meter_id=meter.id
         )
         # Store the charter BEFORE spawning, so the agent can GET /charter the instant it boots.
         self._set_node(
@@ -337,13 +341,16 @@ class Actuator:
             meter_id=meter.id, charter=json.dumps(charter.model_dump() if charter else {}),
         )
         workspace_root = self.sandboxes_root / actuation_id / agent.id / "workspace"
-        # F13: the assignment tree lives at an actuation-independent path (org + node), so the
+        # F13: the assignment tree lives at an actuation-independent path (team + node), so the
         # CLI's per-directory conversation key — and with it --resume — survives re-actuation.
-        node_work_root = self.work_root / top.id / agent.id
+        if self.home_resolver is not None:
+            node_work_root = self.home_resolver(top.id) / "work" / agent.id
+        else:
+            node_work_root = self.work_root / top.id / agent.id
         node_work_root.mkdir(parents=True, exist_ok=True)
         runtime_kind = self._node_runtime(top, agent)
         spec = SandboxSpec(
-            actuation_id=actuation_id, node_id=agent.id, org_id=top.id,
+            actuation_id=actuation_id, node_id=agent.id, team_id=top.id,
             workspace_root=workspace_root,
             log_dir=node_work_root / "logs",  # F16: the adapter log outlives the actuation
             env=self._build_env(token, agent.id, actuation_id, runtime_kind=runtime_kind,
@@ -434,7 +441,7 @@ class Actuator:
         self._set_state(actuation_id, "stopped")
         row = self._actuation_row(actuation_id)
         if row:
-            self.activity.log("operator", "actuation.stopped", org_id=row["org_id"],
+            self.activity.log("operator", "actuation.stopped", team_id=row["team_id"],
                               subject_ids=[actuation_id])
 
     # -- reconciler --------------------------------------------------------- #
@@ -446,15 +453,15 @@ class Actuator:
             "+00:00", "Z"
         )
         try:
-            org = self.store.read(row["org_id"])
+            team = self.store.read(row["team_id"])
         except StoreError:
-            # Orphaned actuation (its org was deleted underneath it) — fail it so it stops
+            # Orphaned actuation (its team was deleted underneath it) — fail it so it stops
             # occupying every future reconciler pass (E6: one zombie must not starve the fleet).
             self._set_state(actuation_id, "failed")
-            self.activity.log("system", "actuation.orphaned", org_id=row["org_id"],
+            self.activity.log("system", "actuation.orphaned", team_id=row["team_id"],
                               subject_ids=[actuation_id])
             return
-        agents_by_id = {a.id: (p, a) for p, a in enumerate_nodes(org)}
+        agents_by_id = {a.id: (p, a) for p, a in enumerate_nodes(team)}
         recovered_any = False
         for stale in self.directory.stale(actuation_id, threshold):
             node = self._node(actuation_id, stale.nodeId)
@@ -463,12 +470,12 @@ class Actuator:
             found = agents_by_id.get(stale.nodeId)
             if not found:
                 continue
-            org_path, agent = found
+            team_path, agent = found
             self._bump_attempts(actuation_id, stale.nodeId)
-            self.activity.log("system", "actuation.node_restart", org_id=org.id,
+            self.activity.log("system", "actuation.node_restart", team_id=team.id,
                               subject_ids=[actuation_id, stale.nodeId])
             await self._restart_node(actuation_id, node)
-            await self._provision_node(actuation_id, org, org_path, agent)
+            await self._provision_node(actuation_id, team, team_path, agent)
             recovered_any = True
         if recovered_any:
             nodes = self._nodes(actuation_id)
@@ -494,12 +501,12 @@ class Actuator:
         return [r["id"] for r in rows]
 
     # -- views -------------------------------------------------------------- #
-    def get_current(self, org_id: str) -> ActuationView | None:
+    def get_current(self, team_id: str) -> ActuationView | None:
         with self.db.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM actuation WHERE org_id=? AND state NOT IN ('stopped','failed') "
+                "SELECT * FROM actuation WHERE team_id=? AND state NOT IN ('stopped','failed') "
                 "ORDER BY created_at DESC LIMIT 1",
-                (org_id,),
+                (team_id,),
             ).fetchone()
         if row is None:
             return None
@@ -520,12 +527,12 @@ class Actuator:
         for n in self._nodes(row["id"]):
             d = self.directory.get(row["id"], n["node_id"])
             nodes.append(ActuationNodeView(
-                nodeId=n["node_id"], orgPath=json.loads(n["org_path"]), subState=n["sub_state"],
+                nodeId=n["node_id"], teamPath=json.loads(n["team_path"]), subState=n["sub_state"],
                 status=d.status if d else None, endpointUrl=d.endpointUrl if d else None,
                 error=n["error"],
             ))
         return ActuationView(
-            id=row["id"], orgId=row["org_id"], state=row["state"], error=row["error"],
+            id=row["id"], teamId=row["team_id"], state=row["state"], error=row["error"],
             createdAt=row["created_at"], updatedAt=row["updated_at"], nodes=nodes,
         )
 
@@ -543,13 +550,13 @@ class Actuator:
                 (state, error, now_iso(), actuation_id),
             )
 
-    def _insert_node(self, actuation_id: str, node_id: str, org_path: list[str]) -> None:
+    def _insert_node(self, actuation_id: str, node_id: str, team_path: list[str]) -> None:
         ts = now_iso()
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO actuation_node (actuation_id, node_id, org_path, "
+                "INSERT OR IGNORE INTO actuation_node (actuation_id, node_id, team_path, "
                 "sub_state, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?)",
-                (actuation_id, node_id, json.dumps(org_path), ts, ts),
+                (actuation_id, node_id, json.dumps(team_path), ts, ts),
             )
 
     def _set_node(self, actuation_id: str, node_id: str, **fields) -> None:

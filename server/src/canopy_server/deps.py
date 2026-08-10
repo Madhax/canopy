@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .config import get_data_dir, get_db_backend, get_db_path
 from .db import Db
-from .sqlite_store import SqliteOrgStore
+from .sqlite_store import SqliteTeamStore
 from .store import JsonFileStore
 
 
@@ -28,8 +28,8 @@ def get_db() -> Db:
 
 
 @lru_cache(maxsize=8)
-def _sqlite_store_for(path_str: str, json_dir_str: str) -> SqliteOrgStore:
-    return SqliteOrgStore(_db_for(path_str), migrate_from=Path(json_dir_str))
+def _sqlite_store_for(path_str: str, json_dir_str: str) -> SqliteTeamStore:
+    return SqliteTeamStore(_db_for(path_str), migrate_from=Path(json_dir_str))
 
 
 @lru_cache(maxsize=8)
@@ -37,11 +37,24 @@ def _json_store_for(path_str: str) -> JsonFileStore:
     return JsonFileStore(Path(path_str))
 
 
-def get_store() -> SqliteOrgStore | JsonFileStore:
-    """The organization document store selected by ``[db] backend`` in canopy.toml."""
+def get_store() -> SqliteTeamStore | JsonFileStore:
+    """The team document store selected by ``[db] backend`` in canopy.toml."""
     if get_db_backend() == "sqlite":
+        # migrate_from stays the legacy phase-1 JSON location (kept on disk as backup).
         return _sqlite_store_for(str(get_db_path()), str(get_data_dir() / "organizations"))
     return _json_store_for(str(get_data_dir()))
+
+
+@lru_cache(maxsize=8)
+def _org_store_for(path_str: str):
+    from .orgs import OrgStore
+
+    return OrgStore(_db_for(path_str), now=now_iso)
+
+
+def get_org_store():
+    """The Organization entity store (design/organizations/01; C1)."""
+    return _org_store_for(str(get_db_path()))
 
 
 def now_iso() -> str:
@@ -100,36 +113,36 @@ def get_github_client():
 
 
 def _connector_repo_source(path_str: str, data_dir_str: str):
-    """org_id -> repo source: connector instance serving the repo family (an https URL for
+    """team_id -> repo source: connector instance serving the repo family (an https URL for
     github, a local path for local-git) → F8 binding → None (boot [repo] source / fixture)."""
     from .catalog import get_catalog
 
     connectors = _connector_store_for(path_str)
     profiles = _profile_store_for(path_str)
 
-    def resolve(org_id: str):
-        binding = connectors.resolve(get_catalog(), org_id, None, "repo.read")
+    def resolve(team_id: str):
+        binding = connectors.resolve(get_catalog(), team_id, None, "repo.read")
         if binding is not None:
             if binding.instance.packKey == "github":
                 cfg = binding.instance.config
                 return f"https://github.com/{cfg.get('owner')}/{cfg.get('repo')}.git"
             if binding.instance.packKey == "local-git":
                 return binding.instance.config.get("source")
-        return profiles.get_repo_source(org_id)
+        return profiles.get_repo_source(team_id)
 
     return resolve
 
 
 def _connector_repo_auth(path_str: str, data_dir_str: str):
-    """org_id -> token for URL sources — revealed inside the control-plane process at call
+    """team_id -> token for URL sources — revealed inside the control-plane process at call
     time only (invariant 10); never stored on the RepoManager or on disk."""
     from .catalog import get_catalog
 
     connectors = _connector_store_for(path_str)
     secrets = _secret_store_for(path_str, data_dir_str)
 
-    def resolve(org_id: str):
-        binding = connectors.resolve(get_catalog(), org_id, None, "repo.read")
+    def resolve(team_id: str):
+        binding = connectors.resolve(get_catalog(), team_id, None, "repo.read")
         if binding is None:
             return None
         sid = binding.instance.secretBindings.get("scm-token")
@@ -245,9 +258,9 @@ def _engine_for(path_str: str, data_dir_str: str):
         activity=_activity_for(path_str),
         bus=_bus_for(path_str),  # dispatch/resume wake-ups ride the A3 delivery workers (E3)
         executors={  # governed actions (E4): consented via ApprovalGate, then executed here
-            "repo-merge": lambda p: repos.merge(p["orgId"], p["branch"]),
+            "repo-merge": lambda p: repos.merge(p["teamId"], p["branch"]),
             # The O2 step-1 executor (builder-connectors.md §5): push the work branch to the
-            # org's GitHub instance and open the PR — only ever reached through an approved
+            # team's GitHub instance and open the PR — only ever reached through an approved
             # ApprovalGate; the deny path leaves nothing outside the machine.
             "pr-create": _pr_create_executor(path_str, data_dir_str),
         },
@@ -259,17 +272,17 @@ def _pr_create_executor(path_str: str, data_dir_str: str):
     from .catalog import get_catalog
 
     def execute(p: dict) -> dict:
-        org_id = p["orgId"]
+        team_id = p["teamId"]
         repos = _repos_for(data_dir_str, _repo_source_str(), path_str)
-        pushed = repos.push_branch(org_id, p["branch"])
+        pushed = repos.push_branch(team_id, p["branch"])
         binding = _connector_store_for(path_str).resolve(
-            get_catalog(), org_id, None, "connector.github.pr.create"
+            get_catalog(), team_id, None, "connector.github.pr.create"
         )
         if binding is None:
             # Local-git round: the push IS the deliverable; the PR is the operator's.
             return {**pushed, "prUrl": None}
         cfg = binding.instance.config
-        token = _connector_repo_auth(path_str, data_dir_str)(org_id) or ""
+        token = _connector_repo_auth(path_str, data_dir_str)(team_id) or ""
         pr = _github_client_for(path_str).create_pr(
             token, cfg.get("owner", ""), cfg.get("repo", ""),
             title=p.get("title", pushed["branch"]), body=p.get("body", ""),
@@ -289,11 +302,13 @@ def _repo_source_str() -> str:
 
 @lru_cache(maxsize=8)
 def _repos_for(data_dir_str: str, source_str: str, path_str: str):
+    from .orgs import team_home_resolver
     from .repos import RepoManager
 
     return RepoManager(
         Path(data_dir_str) / "repos",
         source=Path(source_str) if source_str else None,
+        home_resolver=team_home_resolver(Path(data_dir_str), _db_for(path_str)),
         # Connector instance (live DB read) outranks the F8 binding outranks the boot-time
         # [repo] source — all mutable at runtime, no restart (builder-connectors.md §4).
         source_resolver=_connector_repo_source(path_str, data_dir_str),
@@ -416,7 +431,15 @@ def _actuator_for(path_str: str, data_dir_str: str):
         sandboxes_root=Path(data_dir_str) / "sandboxes",
         work_root=Path(data_dir_str) / "work",
         router=_router_for(path_str),
+        home_resolver=_team_home_for(path_str, data_dir_str),
     )
+
+
+@lru_cache(maxsize=8)
+def _team_home_for(path_str: str, data_dir_str: str):
+    from .orgs import team_home_resolver
+
+    return team_home_resolver(Path(data_dir_str), _db_for(path_str))
 
 
 def get_actuator():

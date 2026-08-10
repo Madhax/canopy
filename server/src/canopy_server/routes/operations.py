@@ -19,9 +19,9 @@ from ..deps import get_activity, get_ledger
 router = APIRouter()
 
 
-@router.get("/organizations/{org_id}/spend")
+@router.get("/teams/{team_id}/spend")
 def spend_rollup(
-    org_id: str,
+    team_id: str,
     groupBy: Literal["node", "task", "model", "intent", "assignment"] = "node",
     split: bool = False,
     ledger=Depends(get_ledger),
@@ -51,15 +51,15 @@ def spend_rollup(
                 "FROM ledger_spend_event e "
                 "LEFT JOIN work_assignment a ON a.id = e.task_id "
                 "LEFT JOIN work_step ws ON ws.id = e.step_id "
-                "WHERE e.org_id = ? GROUP BY key ORDER BY est_cost_micros DESC",
-                (org_id,),
+                "WHERE e.team_id = ? GROUP BY key ORDER BY est_cost_micros DESC",
+                (team_id,),
             ).fetchall()
         return {"groupBy": groupBy, "split": split, "costsAreEstimates": True,
                 "rows": [dict(r) for r in rows]}
     return {
         "groupBy": groupBy,
         "costsAreEstimates": True,
-        "rows": ledger.rollup(org_id, groupBy),
+        "rows": ledger.rollup(team_id, groupBy),
     }
 
 
@@ -67,9 +67,9 @@ def spend_rollup(
 _QUEUED_STATES = frozenset({"created", "briefed"})
 
 
-@router.get("/organizations/{org_id}/pulse")
-def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) -> Any:
-    """Mission control's feed (operator-experience.md §2): the org pulse header (actuation
+@router.get("/teams/{team_id}/pulse")
+def team_pulse(team_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) -> Any:
+    """Mission control's feed (operator-experience.md §2): the team pulse header (actuation
     state · open intents · burn rate · open gates by kind · attention count) plus one overlay
     row per node (status, current assignment, queue/WIP, meter, gate kinds, runtime kind).
     One aggregate, so the live chart is a projection with zero client-side joins."""
@@ -79,16 +79,16 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
     from ..engine.models import ASSIGNMENT_ACTIVE_STATES
 
     store, work_store = get_store(), get_work_store()
-    if not store.exists(org_id):
+    if not store.exists(team_id):
         return JSONResponse(
             status_code=404,
-            content={"error": {"code": "NOT_FOUND", "message": f"No organization {org_id!r}"}},
+            content={"error": {"code": "NOT_FOUND", "message": f"No team {team_id!r}"}},
         )
-    org = store.read(org_id)
-    current_view = get_actuator().get_current(org_id)
+    team = store.read(team_id)
+    current_view = get_actuator().get_current(team_id)
 
     # Node status: the live directory wins (idle/engaged/gated/dead moves with heartbeats);
-    # the actuation node row is the fallback while provisioning; else the org isn't actuated.
+    # the actuation node row is the fallback while provisioning; else the team isn't actuated.
     status_by_node: dict[str, str] = {}
     if current_view:
         for n in current_view.nodes:
@@ -97,13 +97,13 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
             for d in get_directory().list(current_view.id):
                 status_by_node[d.nodeId] = d.status
 
-    intents = work_store.list_intents(org_id)
-    assignments = work_store.list_assignments(org_id=org_id)
+    intents = work_store.list_intents(team_id)
+    assignments = work_store.list_assignments(team_id=team_id)
     node_of_assignment = {a.id: a.nodeId for a in assignments}
-    open_gates = work_store.list_gates(org_id=org_id, state="open")
+    open_gates = work_store.list_gates(team_id=team_id, state="open")
     gate_kinds_by_node: dict[str, list[str]] = {}
     # F5: kind alone can't tell operator work from internal wiring (a dependency gate is the
-    # org running normally) — carry the owner so the UI can tone them apart.
+    # team running normally) — carry the owner so the UI can tone them apart.
     gates_by_node: dict[str, list[dict]] = {}
     for g in open_gates:
         node = node_of_assignment.get(g.assignmentId)
@@ -120,8 +120,8 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
         burn_row = conn.execute(
             "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens, "
             "COALESCE(SUM(est_cost_micros), 0) AS micros "
-            "FROM ledger_spend_event WHERE org_id = ? AND created_at >= ?",
-            (org_id, cutoff),
+            "FROM ledger_spend_event WHERE team_id = ? AND created_at >= ?",
+            (team_id, cutoff),
         ).fetchone()
 
     runtime_override = get_runtime_override()
@@ -133,7 +133,7 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
         by_node.setdefault(a.nodeId, []).append(a)
 
     nodes = []
-    for agent in org.agents:
+    for agent in team.agents:
         mine = by_node.get(agent.id, [])
         active = [a for a in mine if a.state in ASSIGNMENT_ACTIVE_STATES]
         current = next((a for a in active if a.state not in _QUEUED_STATES), None)
@@ -194,11 +194,11 @@ def org_pulse(org_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) 
     }
 
 
-@router.get("/organizations/{org_id}/activity")
+@router.get("/teams/{team_id}/activity")
 def activity_feed(
-    org_id: str, after: int = 0, limit: int = 100, activity=Depends(get_activity)
+    team_id: str, after: int = 0, limit: int = 100, activity=Depends(get_activity)
 ) -> Any:
     limit = max(1, min(limit, 500))
-    events = activity.list(org_id, after_seq=after, limit=limit)
+    events = activity.list(team_id, after_seq=after, limit=limit)
     next_cursor = events[-1]["seq"] if events else after
     return JSONResponse(content={"events": events, "nextCursor": next_cursor})

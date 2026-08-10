@@ -3,8 +3,8 @@
   "description": "Dependency across two different teams.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "xteam",
     "name": "xteam",
     "organizationType": "product-engineering",
@@ -128,8 +128,8 @@
       }
     ],
     "customRoles": [],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": [
     {

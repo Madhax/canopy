@@ -3,8 +3,8 @@
   "description": "Child org mounted on a non-existent agent.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "mnt",
     "name": "mnt",
     "organizationType": "product-engineering",
@@ -111,12 +111,13 @@
       }
     ],
     "customRoles": [],
-    "childOrganizations": [
+    "meta": {},
+    "childTeams": [
       {
         "mountAgentId": "ghost",
-        "organization": {
-          "kind": "canopy.organization",
-          "schemaVersion": 1,
+        "team": {
+          "kind": "canopy.team",
+          "schemaVersion": 2,
           "id": "kid",
           "name": "kid",
           "organizationType": "product-engineering",
@@ -223,12 +224,11 @@
             }
           ],
           "customRoles": [],
-          "childOrganizations": [],
-          "meta": {}
+          "meta": {},
+          "childTeams": []
         }
       }
-    ],
-    "meta": {}
+    ]
   },
   "expectedIssues": [
     {

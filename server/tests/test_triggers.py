@@ -45,13 +45,13 @@ class FakeActuator:
     def __init__(self, state="live"):
         self.state = state
 
-    def get_current(self, org_id):
+    def get_current(self, team_id):
         if self.state is None:
             return None
         return SimpleNamespace(id="act_trigtest", state=self.state)
 
 
-def _scheduler(client, org, github, *, actuator=None, max_per_pass=3):
+def _scheduler(client, team, github, *, actuator=None, max_per_pass=3):
     from canopy_server.catalog import get_catalog
     from canopy_server.deps import (
         get_activity,
@@ -70,9 +70,9 @@ def _scheduler(client, org, github, *, actuator=None, max_per_pass=3):
 
 
 def _setup(client, make_org, *, labels=("bug",)):
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    oid = org["id"]
-    r = client.post(f"/api/organizations/{oid}/connectors", json={
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    oid = team["id"]
+    r = client.post(f"/api/teams/{oid}/connectors", json={
         "packKey": "github", "name": "canopy repo",
         "config": {"owner": "acme", "repo": "canopy"},
         "secrets": {"scm-token": "ghp_test"},
@@ -80,23 +80,23 @@ def _setup(client, make_org, *, labels=("bug",)):
     })
     assert r.status_code == 201, r.text
     inst = r.json()
-    r = client.post(f"/api/organizations/{oid}/triggers", json={
+    r = client.post(f"/api/teams/{oid}/triggers", json={
         "name": "bug intake", "instanceId": inst["id"],
         "intentTemplate": "Fix the bug in {{url}}: {{title}}\n\n{{body}}",
         "config": {"labels": list(labels), "createdAfter": "2026-01-01T00:00:00Z"},
     })
     assert r.status_code == 201, r.text
-    return org, inst, r.json()
+    return team, inst, r.json()
 
 
 # ------------------------------------------------------------------ firing
 def test_fires_once_per_issue_with_provenance(client, make_org):
     from canopy_server.deps import get_work_store
 
-    org, _inst, trig = _setup(client, make_org)
+    team, _inst, trig = _setup(client, make_org)
     gh = FakeGitHub([_issue(1, "crash on save", labels=["bug"]),
                      _issue(2, "not a bug", labels=["question"])])
-    sched = _scheduler(client, org, gh)
+    sched = _scheduler(client, team, gh)
 
     fired = sched.run_once()
     assert len(fired) == 1
@@ -114,15 +114,15 @@ def test_fires_once_per_issue_with_provenance(client, make_org):
     assert sched.run_once() == []
 
     # The intent list carries the ⚡ provenance fields.
-    listed = client.get(f"/api/organizations/{org['id']}/intents").json()["intents"]
+    listed = client.get(f"/api/teams/{team['id']}/intents").json()["intents"]
     assert listed[0]["triggerId"] == trig["id"] and listed[0]["externalKey"] == "issue:1"
 
 
 def test_burst_drains_capped_oldest_first(client, make_org):
-    org, _inst, _trig = _setup(client, make_org)
+    team, _inst, _trig = _setup(client, make_org)
     gh = FakeGitHub([_issue(n, f"bug {n}", labels=["bug"],
                             created=f"2026-08-0{n}T00:00:00Z") for n in range(1, 6)])
-    sched = _scheduler(client, org, gh, max_per_pass=2)
+    sched = _scheduler(client, team, gh, max_per_pass=2)
 
     first = sched.run_once()
     assert [i.externalKey for i in first] == ["issue:1", "issue:2"]  # oldest first, capped
@@ -135,90 +135,90 @@ def test_burst_drains_capped_oldest_first(client, make_org):
 def test_failure_freezes_cursor_and_dedupes_the_warning(client, make_org):
     from canopy_server.deps import get_work_store
 
-    org, _inst, trig = _setup(client, make_org)
+    team, _inst, trig = _setup(client, make_org)
     ok = FakeGitHub([_issue(1, "first", labels=["bug"])])
-    sched = _scheduler(client, org, ok)
+    sched = _scheduler(client, team, ok)
     sched.run_once()
     cursor_before = get_work_store().get_trigger(trig["id"]).cursor
 
-    bad = _scheduler(client, org, FakeGitHub(fail=True))
+    bad = _scheduler(client, team, FakeGitHub(fail=True))
     bad.run_once()
     t = get_work_store().get_trigger(trig["id"])
     assert t.lastError and "bad credentials" in t.lastError
     assert t.cursor == cursor_before  # frozen on failure
     bad.run_once()  # the warning dedupes per failure streak
-    notes = client.get(f"/api/organizations/{org['id']}/notifications").json()["notifications"]
+    notes = client.get(f"/api/teams/{team['id']}/notifications").json()["notifications"]
     assert sum(1 for n in notes if n["kind"] == "trigger-error") == 1
 
     # Recovery: a new matching issue fires; the error clears.
     ok2 = FakeGitHub([_issue(1, "first", labels=["bug"]),
                       _issue(2, "second", labels=["bug"],
                              created="2026-08-08T01:00:00Z")])
-    fired = _scheduler(client, org, ok2).run_once()
+    fired = _scheduler(client, team, ok2).run_once()
     assert [i.externalKey for i in fired] == ["issue:2"]
     assert get_work_store().get_trigger(trig["id"]).lastError is None
 
 
 def test_nothing_consumed_while_not_actuated(client, make_org):
-    """Events are durable — unlike cadence occurrences, a down org drops nothing."""
-    org, _inst, _trig = _setup(client, make_org)
+    """Events are durable — unlike cadence occurrences, a down team drops nothing."""
+    team, _inst, _trig = _setup(client, make_org)
     gh = FakeGitHub([_issue(1, "while down", labels=["bug"])])
-    down = _scheduler(client, org, gh, actuator=FakeActuator(state=None))
+    down = _scheduler(client, team, gh, actuator=FakeActuator(state=None))
     assert down.run_once() == []
-    stopped = _scheduler(client, org, gh, actuator=FakeActuator(state="stopped"))
+    stopped = _scheduler(client, team, gh, actuator=FakeActuator(state="stopped"))
     assert stopped.run_once() == []
-    up = _scheduler(client, org, gh)
+    up = _scheduler(client, team, gh)
     assert [i.externalKey for i in up.run_once()] == ["issue:1"]
 
 
 def test_check_now_and_dry_run(client, make_org, monkeypatch):
-    org, _inst, trig = _setup(client, make_org)
+    team, _inst, trig = _setup(client, make_org)
     gh = FakeGitHub([_issue(7, "dry me", labels=["bug"])])
-    sched = _scheduler(client, org, gh)
+    sched = _scheduler(client, team, gh)
     import canopy_server.deps as deps
     monkeypatch.setattr(deps, "get_trigger_scheduler", lambda: sched)
 
-    oid = org["id"]
-    dry = client.post(f"/api/organizations/{oid}/triggers/{trig['id']}/dry-run").json()
+    oid = team["id"]
+    dry = client.post(f"/api/teams/{oid}/triggers/{trig['id']}/dry-run").json()
     assert [c["key"] for c in dry["candidates"]] == ["issue:7"]
     assert "dry me" in dry["renderedFirst"]
     # Dry run fired nothing.
-    assert client.get(f"/api/organizations/{oid}/intents").json()["intents"] == []
+    assert client.get(f"/api/teams/{oid}/intents").json()["intents"] == []
 
-    res = client.post(f"/api/organizations/{oid}/triggers/{trig['id']}/check").json()
+    res = client.post(f"/api/teams/{oid}/triggers/{trig['id']}/check").json()
     assert res["candidates"] == 1 and len(res["fired"]) == 1
 
 
 # ------------------------------------------------------------------ validation
 def test_trigger_route_validations(client, make_org):
-    org = make_org()
-    oid = org["id"]
+    team = make_org()
+    oid = team["id"]
     # An instance WITHOUT issues.read enabled is not a valid source.
-    r = client.post(f"/api/organizations/{oid}/connectors", json={
+    r = client.post(f"/api/teams/{oid}/connectors", json={
         "packKey": "github", "name": "no-issues",
         "config": {"owner": "a", "repo": "b"},
         "enabledGrants": ["connector.github.repo.read"],
     })
     inst = r.json()
     body = {"name": "t", "instanceId": inst["id"], "intentTemplate": "x {{title}}"}
-    r = client.post(f"/api/organizations/{oid}/triggers", json=body)
+    r = client.post(f"/api/teams/{oid}/triggers", json=body)
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "BAD_TRIGGER_SOURCE"
 
-    client.put(f"/api/organizations/{oid}/connectors/{inst['id']}", json={
+    client.put(f"/api/teams/{oid}/connectors/{inst['id']}", json={
         "enabledGrants": ["connector.github.repo.read", "connector.github.issues.read"],
     })
-    assert client.post(f"/api/organizations/{oid}/triggers", json=body).status_code == 201
+    assert client.post(f"/api/teams/{oid}/triggers", json=body).status_code == 201
 
     # Unknown placeholder and unknown kind fail loud.
-    r = client.post(f"/api/organizations/{oid}/triggers",
+    r = client.post(f"/api/teams/{oid}/triggers",
                     json={**body, "intentTemplate": "x {{issueTitle}}"})
     assert r.json()["error"]["code"] == "BAD_TEMPLATE"
-    r = client.post(f"/api/organizations/{oid}/triggers", json={**body, "kind": "rss"})
+    r = client.post(f"/api/teams/{oid}/triggers", json={**body, "kind": "rss"})
     assert r.json()["error"]["code"] == "BAD_TRIGGER"
 
     # Delete removes the source; its intents (none here) would stay.
-    trig = client.get(f"/api/organizations/{oid}/triggers").json()["triggers"][0]
+    trig = client.get(f"/api/teams/{oid}/triggers").json()["triggers"][0]
     assert client.delete(
-        f"/api/organizations/{oid}/triggers/{trig['id']}"
+        f"/api/teams/{oid}/triggers/{trig['id']}"
     ).status_code == 204

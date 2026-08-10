@@ -1,4 +1,4 @@
-"""JSON file store — one file per top-level organization document.
+"""JSON file store — one file per top-level team document.
 
 The only throwaway part of the stack (docs §5): the REST contract is the seam the real control
 plane inherits, but persistence here is just files. Writes are atomic (temp file + ``os.replace``)
@@ -12,7 +12,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from .models import Organization
+from .models import Team
 
 
 class StoreError(Exception):
@@ -25,7 +25,7 @@ class NotFound(StoreError):
 
 class JsonFileStore:
     def __init__(self, data_dir: Path):
-        self.root = data_dir / "organizations"
+        self.root = data_dir / "organizations"  # legacy phase-1 location, kept for migration compat
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, doc_id: str) -> Path:
@@ -45,11 +45,13 @@ class JsonFileStore:
             raise NotFound(doc_id)
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def read(self, doc_id: str) -> Organization:
-        return Organization.model_validate(self.read_raw(doc_id))
+    def read(self, doc_id: str) -> Team:
+        from .migrate import migrate_team  # local import: store is imported by migrate's users
 
-    def read_all(self) -> list[Organization]:
-        out: list[Organization] = []
+        return Team.model_validate(migrate_team(self.read_raw(doc_id)))
+
+    def read_all(self) -> list[Team]:
+        out: list[Team] = []
         for doc_id in self.list_ids():
             try:
                 out.append(self.read(doc_id))
@@ -58,9 +60,9 @@ class JsonFileStore:
                 continue
         return out
 
-    def write(self, org: Organization) -> None:
-        path = self._path(org.id)
-        payload = org.model_dump(by_alias=True, mode="json")
+    def write(self, team: Team) -> None:
+        path = self._path(team.id)
+        payload = team.model_dump(by_alias=True, mode="json")
         text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         # atomic: write to a temp file in the same dir, fsync, then replace.
         fd, tmp = tempfile.mkstemp(dir=self.root, suffix=".tmp")

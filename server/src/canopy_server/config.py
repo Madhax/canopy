@@ -165,9 +165,9 @@ def get_stall_none_steps() -> int:
 
 
 def get_repo_source() -> Path | None:
-    """The work target the repo executors materialize for each org (mvp.md E8): a path to a
+    """The work target the repo executors materialize for each team (mvp.md E8): a path to a
     local git clone. Empty (the default) means the ``examples/target-app`` fixture — the CI
-    spine. Set it to point the org at a real repository (e.g. a dedicated clone of Canopy
+    spine. Set it to point the team at a real repository (e.g. a dedicated clone of Canopy
     itself); the source is only ever read (cloned from), never written."""
     raw = str(_raw_config()["repo"]["source"]).strip()
     return Path(raw).expanduser() if raw else None
@@ -180,3 +180,13 @@ def get_provider_concurrency() -> dict[str, int]:
 def get_prices() -> dict[str, dict[str, dict[str, float]]]:
     """``{provider: {model: {"input": usd_per_mtok, "output": usd_per_mtok}}}`` (estimates)."""
     return _raw_config().get("prices", {})  # type: ignore[return-value]
+
+
+def get_capacity_enabled() -> bool:
+    """[capacity] enabled — the C2 substrate gate (inert at C1, defaults off)."""
+    return bool(_raw_config().get("capacity", {}).get("enabled", False))
+
+
+def get_scheduler_enabled() -> bool:
+    """[scheduler] enabled — the C4 governor gate (inert at C1, defaults off)."""
+    return bool(_raw_config().get("scheduler", {}).get("enabled", False))

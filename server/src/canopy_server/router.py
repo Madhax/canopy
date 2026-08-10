@@ -9,8 +9,8 @@ addresses — only node ids. Channels are derived from the actuated chart:
 - ``team broadcast`` — a manager may fan one message to all its reports (the router does the N
   enqueues, the first place the bus visibly beats point-to-point).
 - everything else is **rejected** (403 CHANNEL_FORBIDDEN, with the domain's own explanation:
-  route via the common manager). Sub-org opacity is enforced here too — no channel crosses into a
-  child org's internals; the child root "looks like any other report" to its mount agent.
+  route via the common manager). Sub-team opacity is enforced here too — no channel crosses into a
+  child team's internals; the child root "looks like any other report" to its mount agent.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from .bus import Bus, Envelope
 from .db import Db, register_schema
 from .deps import now_iso
 from .ids import new_message_id
-from .models import Organization
+from .models import Team
 
 OPERATOR = "operator"
 
@@ -71,10 +71,10 @@ class SentMessage(BaseModel):
     topic: str
 
 
-def _walk(org: Organization, path: list[str]):
-    yield org, path
-    for child in org.childOrganizations:
-        yield from _walk(child.organization, path + [child.organization.id])
+def _walk(team: Team, path: list[str]):
+    yield team, path
+    for child in team.childTeams:
+        yield from _walk(child.team, path + [child.team.id])
 
 
 class MessageRouter:
@@ -83,17 +83,17 @@ class MessageRouter:
         self.bus = bus
 
     # -- channel derivation ------------------------------------------------- #
-    def derive_channels(self, actuation_id: str, top: Organization) -> None:
+    def derive_channels(self, actuation_id: str, top: Team) -> None:
         # (from, to, kind) — "down" is manager→report (delegation), "up" is report→manager
         # (delivery/escalation). The kind lets broadcast fan out to reports only, never upward.
         pairs: list[tuple[str, str, str]] = []
-        for org, _path in _walk(top, []):
-            for agent in org.agents:
+        for team, _path in _walk(top, []):
+            for agent in team.agents:
                 if agent.managerId is not None:
                     pairs.append((agent.managerId, agent.id, "down"))
                     pairs.append((agent.id, agent.managerId, "up"))
-            for child in org.childOrganizations:
-                root_id = child.organization.id  # a mounted child org == its root, as a report
+            for child in team.childTeams:
+                root_id = child.team.id  # a mounted child team == its root, as a report
                 pairs.append((child.mountAgentId, root_id, "down"))
                 pairs.append((root_id, child.mountAgentId, "up"))
         with self.db.transaction() as conn:

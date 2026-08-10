@@ -136,3 +136,8 @@ def new_artifact_id() -> str:
 def new_run_token() -> str:
     """A 256-bit URL-safe run-token secret (stored only as a hash — sandbox.md §2)."""
     return secrets.token_urlsafe(32)
+
+
+def new_org_id() -> str:
+    """Organization (the umbrella entity, design/organizations/01 §3): ``org_`` + nanoid(8)."""
+    return _prefixed("org", 8)

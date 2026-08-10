@@ -20,13 +20,13 @@ CREATE TABLE IF NOT EXISTS activity_event (
     id          TEXT PRIMARY KEY,
     seq         INTEGER,
     ts          TEXT NOT NULL,
-    org_id      TEXT,
+    team_id      TEXT,
     actor       TEXT NOT NULL,
     kind        TEXT NOT NULL,
     subject_ids TEXT NOT NULL DEFAULT '[]',
     payload     TEXT NOT NULL DEFAULT '{}'
 );
-CREATE INDEX IF NOT EXISTS ix_activity_org ON activity_event (org_id, seq);
+CREATE INDEX IF NOT EXISTS ix_activity_org ON activity_event (team_id, seq);
 """
 register_schema(SCHEMA)
 
@@ -40,7 +40,7 @@ class ActivityLog:
         actor: str,
         kind: str,
         *,
-        org_id: str | None = None,
+        team_id: str | None = None,
         subject_ids: list[str] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> None:
@@ -49,49 +49,49 @@ class ActivityLog:
                 "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM activity_event"
             ).fetchone()
             conn.execute(
-                "INSERT INTO activity_event (id, seq, ts, org_id, actor, kind, subject_ids, "
+                "INSERT INTO activity_event (id, seq, ts, team_id, actor, kind, subject_ids, "
                 "payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    new_activity_id(), row["n"], now_iso(), org_id, actor, kind,
+                    new_activity_id(), row["n"], now_iso(), team_id, actor, kind,
                     json.dumps(subject_ids or []), json.dumps(payload or {}),
                 ),
             )
 
-    def max_seq(self, org_id: str | None = None) -> int:
+    def max_seq(self, team_id: str | None = None) -> int:
         """The newest seq (0 if empty) — the SSE channel's starting cursor for 'only new'."""
         with self.db.connect() as conn:
-            if org_id is None:
+            if team_id is None:
                 row = conn.execute(
                     "SELECT COALESCE(MAX(seq), 0) AS n FROM activity_event"
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT COALESCE(MAX(seq), 0) AS n FROM activity_event WHERE org_id = ?",
-                    (org_id,),
+                    "SELECT COALESCE(MAX(seq), 0) AS n FROM activity_event WHERE team_id = ?",
+                    (team_id,),
                 ).fetchone()
         return row["n"]
 
     def list(
-        self, org_id: str | None = None, *, after_seq: int = 0, limit: int = 100
+        self, team_id: str | None = None, *, after_seq: int = 0, limit: int = 100
     ) -> list[dict]:
         with self.db.connect() as conn:
-            if org_id is None:
+            if team_id is None:
                 rows = conn.execute(
                     "SELECT * FROM activity_event WHERE seq > ? ORDER BY seq LIMIT ?",
                     (after_seq, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM activity_event WHERE org_id = ? AND seq > ? ORDER BY seq "
+                    "SELECT * FROM activity_event WHERE team_id = ? AND seq > ? ORDER BY seq "
                     "LIMIT ?",
-                    (org_id, after_seq, limit),
+                    (team_id, after_seq, limit),
                 ).fetchall()
         return [
             {
                 "id": r["id"],
                 "seq": r["seq"],
                 "ts": r["ts"],
-                "orgId": r["org_id"],
+                "teamId": r["team_id"],
                 "actor": r["actor"],
                 "kind": r["kind"],
                 "subjectIds": json.loads(r["subject_ids"]),

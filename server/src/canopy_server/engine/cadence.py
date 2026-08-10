@@ -1,11 +1,11 @@
-"""Cadence scheduler (engine.md §4) — "put this org on a schedule".
+"""Cadence scheduler (engine.md §4) — "put this team on a schedule".
 
-A cadence is ``{cron, intent_text, node}`` on an org. A 30 s lifespan loop (same pattern as the
+A cadence is ``{cron, intent_text, node}`` on an team. A 30 s lifespan loop (same pattern as the
 reconciler) calls :meth:`CadenceScheduler.run_once`: each due cadence creates an ordinary
 **episodic intent** targeted at the cadence's node, tagged ``cadence_id`` — from there it is
 indistinguishable from operator work (same meters, gates, notifications). Misfire policy: an
 occurrence is *consumed* when it comes due, whether or not it fires — so occurrences missed
-while the previous intent is still open (or the server was down, or the org wasn't actuated)
+while the previous intent is still open (or the server was down, or the team wasn't actuated)
 coalesce into at most one fire, and every skip is logged.
 
 Cron is the standard five fields ``minute hour day-of-month month day-of-week`` evaluated in
@@ -166,7 +166,7 @@ class CadenceScheduler:
             # Consume the occurrence up front: whatever happens below, this one is spent.
             # Occurrences missed in bulk (downtime) coalesce into this single pass.
             self.store.mark_cadence_fired(c.id, now.isoformat().replace("+00:00", "Z"))
-            current = self.actuator.get_current(c.orgId)
+            current = self.actuator.get_current(c.teamId)
             if current is None or current.state not in ("live", "degraded"):
                 self._log("cadence.skipped", c, {"reason": "not-actuated"})
                 continue
@@ -178,14 +178,14 @@ class CadenceScheduler:
                 continue
             try:
                 res = self.engine.submit_intent(
-                    c.orgId, current.id, c.intentText, target_node=c.nodeId,
+                    c.teamId, current.id, c.intentText, target_node=c.nodeId,
                     created_by="cadence", cadence_id=c.id,
                 )
             except WorkError as exc:
                 self._log("cadence.skipped", c, {"reason": "error", "detail": str(exc)})
                 continue
             self.store.notify(
-                c.orgId, "info", "cadence-fired", f"Cadence '{c.name}' fired",
+                c.teamId, "info", "cadence-fired", f"Cadence '{c.name}' fired",
                 subject_ids=[c.id, res.intent.id], dedupe_key=res.intent.id,
             )
             self._log("cadence.fired", c, {"intentId": res.intent.id})
@@ -194,5 +194,5 @@ class CadenceScheduler:
 
     def _log(self, action: str, cadence, payload: dict) -> None:
         if self.activity is not None:
-            self.activity.log("system", action, org_id=cadence.orgId,
+            self.activity.log("system", action, team_id=cadence.teamId,
                               subject_ids=[cadence.id], payload=payload)

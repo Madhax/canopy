@@ -52,7 +52,7 @@ Sizing = Literal["small", "medium", "large"]
 # --------------------------------------------------------------------------- #
 class Intent(BaseModel):
     id: str
-    orgId: str
+    teamId: str
     actuationId: str
     targetNode: str
     kind: IntentKind
@@ -63,14 +63,14 @@ class Intent(BaseModel):
     createdBy: str
     createdAt: str
     closedAt: str | None = None
-    # Trigger provenance (standing-orgs.md §3): the ⚡ chip and the dedupe key.
+    # Trigger provenance (standing-teams.md §3): the ⚡ chip and the dedupe key.
     triggerId: str | None = None
     externalKey: str | None = None
 
 
 class Assignment(BaseModel):
     id: str
-    orgId: str
+    teamId: str
     actuationId: str
     intentId: str
     parentId: str | None
@@ -162,7 +162,7 @@ class Note(BaseModel):
     boundary. Opens no gate, revises no brief, constrains nothing."""
 
     id: str
-    orgId: str
+    teamId: str
     intentId: str
     assignmentId: str | None = None  # None ⇒ a note on the intent itself
     stageIdx: int | None = None
@@ -177,7 +177,7 @@ NotificationSeverity = Literal["attention", "warning", "info"]
 
 class Notification(BaseModel):
     id: str
-    orgId: str
+    teamId: str
     severity: NotificationSeverity
     kind: str  # gate-waiting | budget-warn | hard-stop | stall | intent-completed | ...
     subjectIds: list[str]
@@ -202,7 +202,7 @@ class Gate(BaseModel):
 
 
 class MemoryEntry(BaseModel):
-    orgId: str
+    teamId: str
     nodeId: str
     seq: int
     entry: dict[str, Any]
@@ -211,10 +211,10 @@ class MemoryEntry(BaseModel):
 
 class Cadence(BaseModel):
     """A standing schedule (engine.md §4): each due occurrence becomes an ordinary episodic
-    intent on ``nodeId`` (None ⇒ the org root), tagged with this cadence's id."""
+    intent on ``nodeId`` (None ⇒ the team root), tagged with this cadence's id."""
 
     id: str
-    orgId: str
+    teamId: str
     nodeId: str | None = None
     name: str
     cron: str  # five UTC fields: minute hour day-of-month month day-of-week
@@ -225,12 +225,12 @@ class Cadence(BaseModel):
 
 
 class Trigger(BaseModel):
-    """An event-driven work source (standing-orgs.md §2): polls a connector instance and opens
+    """An event-driven work source (standing-teams.md §2): polls a connector instance and opens
     one episodic intent per new external event, deduped by the fire ledger — the cursor is an
     optimization, the ledger is the guarantee."""
 
     id: str
-    orgId: str
+    teamId: str
     name: str
     kind: str  # 'github-issues' (v1's only kind)
     nodeId: str | None = None

@@ -23,7 +23,7 @@ def _ledger(tmp_path: Path) -> SqliteLedger:
 
 def _record(ledger, meter, step_id, tokens, reserved):
     return ledger.record(
-        meter.id, step_id=step_id, org_id="o1", node_id=meter.nodeId,
+        meter.id, step_id=step_id, team_id="o1", node_id=meter.nodeId,
         actuation_id=meter.actuationId, provider="mock", model="mock-1",
         input_tokens=0, output_tokens=tokens, est_cost_micros=0, reserved=reserved,
     )

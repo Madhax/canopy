@@ -3,8 +3,8 @@
   "description": "IC under a manager, in no dependency and with no reports.",
   "mode": "export",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "orphan",
     "name": "orphan",
     "organizationType": "product-engineering",
@@ -56,8 +56,8 @@
     ],
     "dependencies": [],
     "customRoles": [],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": [
     {

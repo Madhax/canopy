@@ -2,9 +2,9 @@
 
 An **Agent Profile** answers "which brain does this node get": provider, model, endpoint, key
 reference, params. A **Binding** attaches a profile to a chart node. Both are deliberately kept
-*out of the Organization document* (org-chart-editor.md §10) — the chart stays portable structure;
+*out of the Team document* (org-chart-editor.md §10) — the chart stays portable structure;
 profiles carry machine-local, secret-adjacent detail — so they live here in the control plane as
-their own records, org-scoped.
+their own records, team-scoped.
 
 ``provider`` is a closed enum. The design named ``anthropic`` and ``gemini``; we add ``mock`` as a
 first-class member because the deterministic mock provider is the testing/demo spine (risk IM-2) —
@@ -27,7 +27,7 @@ Provider = Literal["anthropic", "gemini", "mock"]
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS profiles_profile (
     id                 TEXT PRIMARY KEY,
-    organization_id    TEXT NOT NULL,
+    team_id    TEXT NOT NULL,
     name               TEXT NOT NULL,
     provider           TEXT NOT NULL,
     model              TEXT NOT NULL,
@@ -38,23 +38,23 @@ CREATE TABLE IF NOT EXISTS profiles_profile (
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_profiles_org ON profiles_profile (organization_id);
+CREATE INDEX IF NOT EXISTS ix_profiles_org ON profiles_profile (team_id);
 
 CREATE TABLE IF NOT EXISTS profiles_binding (
     id               TEXT PRIMARY KEY,
-    organization_id  TEXT NOT NULL,
+    team_id  TEXT NOT NULL,
     agent_node_id    TEXT NOT NULL,
-    org_path         TEXT NOT NULL DEFAULT '[]',
+    team_path         TEXT NOT NULL DEFAULT '[]',
     profile_id       TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_binding_node
-    ON profiles_binding (organization_id, agent_node_id, org_path);
-CREATE INDEX IF NOT EXISTS ix_binding_org ON profiles_binding (organization_id);
+    ON profiles_binding (team_id, agent_node_id, team_path);
+CREATE INDEX IF NOT EXISTS ix_binding_org ON profiles_binding (team_id);
 
--- F8: the org's work-target repo binding (operator data, mutable at runtime, no restart).
+-- F8: the team's work-target repo binding (operator data, mutable at runtime, no restart).
 -- NULL/absent falls back to the boot-time [repo] source, then the fixture.
-CREATE TABLE IF NOT EXISTS org_repo_source (
-    organization_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS team_repo_source (
+    team_id TEXT PRIMARY KEY,
     source          TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -72,7 +72,7 @@ class ProfileParams(BaseModel):
 class AgentProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    organizationId: str
+    teamId: str
     name: str
     provider: Provider
     model: str
@@ -87,9 +87,9 @@ class AgentProfile(BaseModel):
 class AgentBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    organizationId: str
+    teamId: str
     agentNodeId: str
-    orgPath: list[str] = Field(default_factory=list)
+    teamPath: list[str] = Field(default_factory=list)
     profileId: str
 
 
@@ -101,7 +101,7 @@ class ProfileStore:
     def _row_to_profile(self, row) -> AgentProfile:
         return AgentProfile(
             id=row["id"],
-            organizationId=row["organization_id"],
+            teamId=row["team_id"],
             name=row["name"],
             provider=row["provider"],
             model=row["model"],
@@ -115,7 +115,7 @@ class ProfileStore:
 
     def create_profile(
         self,
-        org_id: str,
+        team_id: str,
         *,
         name: str,
         provider: Provider,
@@ -129,7 +129,7 @@ class ProfileStore:
         ts = now_iso()
         p = AgentProfile(
             id=pid,
-            organizationId=org_id,
+            teamId=team_id,
             name=name,
             provider=provider,
             model=model,
@@ -142,11 +142,11 @@ class ProfileStore:
         )
         with self.db.transaction() as conn:
             conn.execute(
-                "INSERT INTO profiles_profile (id, organization_id, name, provider, model, "
+                "INSERT INTO profiles_profile (id, team_id, name, provider, model, "
                 "endpoint, api_key_secret_id, params, system_preamble, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    p.id, org_id, p.name, p.provider, p.model, p.endpoint, p.apiKeySecretId,
+                    p.id, team_id, p.name, p.provider, p.model, p.endpoint, p.apiKeySecretId,
                     p.params.model_dump_json(), p.systemPreamble, p.createdAt, p.updatedAt,
                 ),
             )
@@ -182,11 +182,11 @@ class ProfileStore:
             ).fetchone()
         return self._row_to_profile(row) if row else None
 
-    def list_profiles(self, org_id: str) -> list[AgentProfile]:
+    def list_profiles(self, team_id: str) -> list[AgentProfile]:
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM profiles_profile WHERE organization_id = ? ORDER BY created_at",
-                (org_id,),
+                "SELECT * FROM profiles_profile WHERE team_id = ? ORDER BY created_at",
+                (team_id,),
             ).fetchall()
         return [self._row_to_profile(r) for r in rows]
 
@@ -194,22 +194,22 @@ class ProfileStore:
     def _row_to_binding(self, row) -> AgentBinding:
         return AgentBinding(
             id=row["id"],
-            organizationId=row["organization_id"],
+            teamId=row["team_id"],
             agentNodeId=row["agent_node_id"],
-            orgPath=json.loads(row["org_path"]),
+            teamPath=json.loads(row["team_path"]),
             profileId=row["profile_id"],
         )
 
     def set_binding(
-        self, org_id: str, agent_node_id: str, profile_id: str, org_path: list[str] | None = None
+        self, team_id: str, agent_node_id: str, profile_id: str, team_path: list[str] | None = None
     ) -> AgentBinding:
         """Upsert the binding for one node (one profile per node)."""
-        path_json = json.dumps(org_path or [])
+        path_json = json.dumps(team_path or [])
         with self.db.transaction() as conn:
             row = conn.execute(
-                "SELECT id FROM profiles_binding WHERE organization_id=? AND agent_node_id=? "
-                "AND org_path=?",
-                (org_id, agent_node_id, path_json),
+                "SELECT id FROM profiles_binding WHERE team_id=? AND agent_node_id=? "
+                "AND team_path=?",
+                (team_id, agent_node_id, path_json),
             ).fetchone()
             if row:
                 bid = row["id"]
@@ -219,27 +219,27 @@ class ProfileStore:
             else:
                 bid = new_binding_id()
                 conn.execute(
-                    "INSERT INTO profiles_binding (id, organization_id, agent_node_id, org_path, "
+                    "INSERT INTO profiles_binding (id, team_id, agent_node_id, team_path, "
                     "profile_id) VALUES (?, ?, ?, ?, ?)",
-                    (bid, org_id, agent_node_id, path_json, profile_id),
+                    (bid, team_id, agent_node_id, path_json, profile_id),
                 )
         return AgentBinding(
             id=bid,
-            organizationId=org_id,
+            teamId=team_id,
             agentNodeId=agent_node_id,
-            orgPath=org_path or [],
+            teamPath=team_path or [],
             profileId=profile_id,
         )
 
     def delete_binding(
-        self, org_id: str, agent_node_id: str, org_path: list[str] | None = None
+        self, team_id: str, agent_node_id: str, team_path: list[str] | None = None
     ) -> bool:
-        path_json = json.dumps(org_path or [])
+        path_json = json.dumps(team_path or [])
         with self.db.transaction() as conn:
             cur = conn.execute(
-                "DELETE FROM profiles_binding WHERE organization_id=? AND agent_node_id=? "
-                "AND org_path=?",
-                (org_id, agent_node_id, path_json),
+                "DELETE FROM profiles_binding WHERE team_id=? AND agent_node_id=? "
+                "AND team_path=?",
+                (team_id, agent_node_id, path_json),
             )
             return cur.rowcount > 0
 
@@ -251,43 +251,43 @@ class ProfileStore:
         return self._row_to_binding(row) if row else None
 
     def get_binding_for_node(
-        self, org_id: str, agent_node_id: str, org_path: list[str] | None = None
+        self, team_id: str, agent_node_id: str, team_path: list[str] | None = None
     ) -> AgentBinding | None:
-        path_json = json.dumps(org_path or [])
+        path_json = json.dumps(team_path or [])
         with self.db.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM profiles_binding WHERE organization_id=? AND agent_node_id=? "
-                "AND org_path=?",
-                (org_id, agent_node_id, path_json),
+                "SELECT * FROM profiles_binding WHERE team_id=? AND agent_node_id=? "
+                "AND team_path=?",
+                (team_id, agent_node_id, path_json),
             ).fetchone()
         return self._row_to_binding(row) if row else None
 
-    def list_bindings(self, org_id: str) -> list[AgentBinding]:
+    def list_bindings(self, team_id: str) -> list[AgentBinding]:
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM profiles_binding WHERE organization_id = ?", (org_id,)
+                "SELECT * FROM profiles_binding WHERE team_id = ?", (team_id,)
             ).fetchall()
         return [self._row_to_binding(r) for r in rows]
 
     # -- repo source (F8) --------------------------------------------------- #
-    def get_repo_source(self, org_id: str) -> str | None:
-        """The org's work-target repo binding, or None to fall back to config/fixture."""
+    def get_repo_source(self, team_id: str) -> str | None:
+        """The team's work-target repo binding, or None to fall back to config/fixture."""
         with self.db.connect() as conn:
             row = conn.execute(
-                "SELECT source FROM org_repo_source WHERE organization_id = ?", (org_id,)
+                "SELECT source FROM team_repo_source WHERE team_id = ?", (team_id,)
             ).fetchone()
         return row["source"] if row else None
 
-    def set_repo_source(self, org_id: str, source: str | None) -> None:
+    def set_repo_source(self, team_id: str, source: str | None) -> None:
         with self.db.transaction() as conn:
             if source:
                 conn.execute(
-                    "INSERT INTO org_repo_source (organization_id, source, updated_at) "
-                    "VALUES (?, ?, ?) ON CONFLICT(organization_id) "
+                    "INSERT INTO team_repo_source (team_id, source, updated_at) "
+                    "VALUES (?, ?, ?) ON CONFLICT(team_id) "
                     "DO UPDATE SET source=excluded.source, updated_at=excluded.updated_at",
-                    (org_id, source, now_iso()),
+                    (team_id, source, now_iso()),
                 )
             else:
                 conn.execute(
-                    "DELETE FROM org_repo_source WHERE organization_id = ?", (org_id,)
+                    "DELETE FROM team_repo_source WHERE team_id = ?", (team_id,)
                 )

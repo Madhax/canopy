@@ -73,3 +73,13 @@ gemini-2.5-flash = { input = 0.30, output = 2.5 }
 [prices.mock]
 # The mock provider is free by construction.
 mock-1 = { input = 0.0, output = 0.0 }
+
+# --- C2+ (inert at C1; design/organizations/) --------------------------------
+# Capacity governance and the portfolio scheduler land in the C-series. These
+# sections exist so configs written today keep meaning tomorrow; both default
+# off and change nothing while disabled.
+[capacity]
+enabled = false
+
+[scheduler]
+enabled = false

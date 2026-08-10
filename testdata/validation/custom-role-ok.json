@@ -3,8 +3,8 @@
   "description": "A document-local custom role resolves without ROLE_UNKNOWN.",
   "mode": "draft",
   "document": {
-    "kind": "canopy.organization",
-    "schemaVersion": 1,
+    "kind": "canopy.team",
+    "schemaVersion": 2,
     "id": "customok",
     "name": "customok",
     "organizationType": "product-engineering",
@@ -79,8 +79,8 @@
         }
       }
     ],
-    "childOrganizations": [],
-    "meta": {}
+    "meta": {},
+    "childTeams": []
   },
   "expectedIssues": [
     {

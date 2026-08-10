@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 
 
-def _node(org: dict, role_key: str) -> dict:
-    return next(a for a in org["agents"] if a["role"]["key"] == role_key)
+def _node(team: dict, role_key: str) -> dict:
+    return next(a for a in team["agents"] if a["role"]["key"] == role_key)
 
 
 def _h(token: str) -> dict:
@@ -121,16 +121,16 @@ def pod(client, make_org, mint_session):
     from canopy_server.deps import get_engine
     from test_cli_runtime import _seed_charter
 
-    org = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
-    lead, be, qa = (_node(org, k) for k in
+    team = make_org(seed={"kind": "formation", "formationKey": "product-engineering-pod"})
+    lead, be, qa = (_node(team, k) for k in
                     ("engineering-lead", "backend-engineer", "qa-engineer"))
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_be = mint_session(org["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
-    s_qa = mint_session(org["id"], node_id=qa["id"], actuation_id=s_lead["actuationId"])
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_be = mint_session(team["id"], node_id=be["id"], actuation_id=s_lead["actuationId"])
+    s_qa = mint_session(team["id"], node_id=qa["id"], actuation_id=s_lead["actuationId"])
     for node in (lead, be, qa):
-        _seed_charter(org, s_lead["actuationId"], node["id"])
+        _seed_charter(team, s_lead["actuationId"], node["id"])
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s_lead["actuationId"],
+    root = eng.submit_intent(team["id"], s_lead["actuationId"],
                              "Add CSV export; all tests must pass",
                              target_node=lead["id"]).assignment
     eng.mark_intake_complete(root.id)
@@ -140,7 +140,7 @@ def pod(client, make_org, mint_session):
                         depends_on=[{"assignmentId": be_a.id}])
     gate = eng.finish_turn(root.id)
     eng.resolve_gate(gate.id, action="approve")
-    return {"org": org, "engine": eng, "root": root, "be_a": be_a, "qa_a": qa_a,
+    return {"team": team, "engine": eng, "root": root, "be_a": be_a, "qa_a": qa_a,
             "s_lead": s_lead, "s_be": s_be, "s_qa": s_qa}
 
 
@@ -214,7 +214,7 @@ def test_governed_merge_needs_the_gate(client, pod):
     assert r.status_code == 200, r.text
     gate = r.json()
     assert gate["kind"] == "approval" and gate["payload"]["governedAction"] == "repo-merge"
-    repo = get_repos().repo_path(pod["org"]["id"])
+    repo = get_repos().repo_path(pod["team"]["id"])
     assert not (repo / "app" / "export.py").exists()  # main untouched pre-approval
 
     # Operator approves: the executor merges and the attestation links the gate.
@@ -251,7 +251,7 @@ def test_governed_merge_denial_is_a_prohibition(client, pod):
     rr = client.post(f"/api/gates/{gate['id']}/resolve",
                      json={"action": "deny", "note": "not until QA is green"})
     assert rr.status_code == 200
-    repo = get_repos().repo_path(pod["org"]["id"])
+    repo = get_repos().repo_path(pod["team"]["id"])
     assert not (repo / "app" / "export.py").exists()  # nothing merged
     g = eng.store.get_gate(gate["id"])
     assert g.state == "resolved" and g.resolution["action"] == "deny"  # a prohibition
@@ -289,16 +289,16 @@ def test_docs_pod_writer_writes_editor_reviews(client, make_org, mint_session):
     from canopy_server.deps import get_engine
     from test_cli_runtime import _seed_charter
 
-    org = make_org(seed={"kind": "formation", "formationKey": "docs-pod"})
-    lead, writer, editor = (_node(org, k) for k in
+    team = make_org(seed={"kind": "formation", "formationKey": "docs-pod"})
+    lead, writer, editor = (_node(team, k) for k in
                             ("engineering-lead", "tech-writer", "editor"))
-    s_lead = mint_session(org["id"], node_id=lead["id"])
-    s_w = mint_session(org["id"], node_id=writer["id"], actuation_id=s_lead["actuationId"])
-    s_e = mint_session(org["id"], node_id=editor["id"], actuation_id=s_lead["actuationId"])
+    s_lead = mint_session(team["id"], node_id=lead["id"])
+    s_w = mint_session(team["id"], node_id=writer["id"], actuation_id=s_lead["actuationId"])
+    s_e = mint_session(team["id"], node_id=editor["id"], actuation_id=s_lead["actuationId"])
     for node in (lead, writer, editor):
-        _seed_charter(org, s_lead["actuationId"], node["id"])
+        _seed_charter(team, s_lead["actuationId"], node["id"])
     eng = get_engine()
-    root = eng.submit_intent(org["id"], s_lead["actuationId"],
+    root = eng.submit_intent(team["id"], s_lead["actuationId"],
                              "Document the readiness codes",
                              target_node=lead["id"]).assignment
     eng.mark_intake_complete(root.id)
@@ -371,10 +371,10 @@ def test_pr_artifact_content_round_trips(client, pod):
     assert got["meta"]["type"] == "PullRequest"
 
 
-# ------------------------------------------------------------- F8: per-org repo source
-def test_per_org_repo_source_binds_without_restart(client, make_org, tmp_path):
-    """F8: an org bound to its own source repo clones THAT repo as its work target — set at
-    runtime through the operator API, no boot config involved; an unbound org keeps the
+# ------------------------------------------------------------- F8: per-team repo source
+def test_per_team_repo_source_binds_without_restart(client, make_org, tmp_path):
+    """F8: an team bound to its own source repo clones THAT repo as its work target — set at
+    runtime through the operator API, no boot config involved; an unbound team keeps the
     fixture fallback unchanged."""
     import subprocess
 
@@ -396,13 +396,13 @@ def test_per_org_repo_source_binds_without_restart(client, make_org, tmp_path):
     plain = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="Plain")
 
     # Bind through the operator API; a non-repo path fails loud at bind time.
-    bad = client.put(f"/api/organizations/{bound['id']}/repo-source",
+    bad = client.put(f"/api/teams/{bound['id']}/repo-source",
                      json={"source": str(tmp_path / "nope")})
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "BAD_REPO_SOURCE"
-    r = client.put(f"/api/organizations/{bound['id']}/repo-source",
+    r = client.put(f"/api/teams/{bound['id']}/repo-source",
                    json={"source": str(src)})
     assert r.status_code == 200 and r.json()["source"] == str(src)
-    assert client.get(f"/api/organizations/{bound['id']}/repo-source").json()["source"] == str(src)
+    assert client.get(f"/api/teams/{bound['id']}/repo-source").json()["source"] == str(src)
 
     repos = get_repos()
     bound_repo = repos.ensure_repo(bound["id"])
@@ -411,6 +411,6 @@ def test_per_org_repo_source_binds_without_restart(client, make_org, tmp_path):
     assert plain_repo.name == "target-app"  # fixture fallback untouched
 
     # Clearing the binding restores the fallback for FUTURE materialization.
-    r = client.put(f"/api/organizations/{bound['id']}/repo-source", json={"source": None})
+    r = client.put(f"/api/teams/{bound['id']}/repo-source", json={"source": None})
     assert r.status_code == 200 and r.json()["source"] is None
-    assert client.get(f"/api/organizations/{bound['id']}/repo-source").json()["source"] is None
+    assert client.get(f"/api/teams/{bound['id']}/repo-source").json()["source"] is None
