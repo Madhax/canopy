@@ -481,9 +481,14 @@ def _capacity_service_for(path_str: str):
     from .capacity.service import CapacityService
     from .config import get_capacity_enabled
 
+    work_store = _work_store_for(path_str)
+
+    def notify(team_id, severity, kind, text, *, dedupe_key=None):
+        work_store.notify(team_id, severity, kind, text, dedupe_key=dedupe_key)
+
     return CapacityService(
         _provider_accounts_for(path_str), _capacity_ledger_for(path_str),
-        _profile_store_for(path_str), enabled=get_capacity_enabled,
+        _profile_store_for(path_str), enabled=get_capacity_enabled, notify=notify,
     )
 
 

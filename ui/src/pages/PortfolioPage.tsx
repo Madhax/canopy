@@ -7,6 +7,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useCatalog, indexCatalog } from "../api/catalog";
 import { useDeleteTeam, useImportTeam } from "../api/teams";
 import { useCreateOrg, useMoveTeam, usePortfolio, type PortfolioOrg } from "../api/orgs";
+import { useCapacity } from "../api/capacity";
+import { WindowGauge } from "../components/capacity/CapacityConsole";
 import { apiGet, ApiError } from "../api/client";
 import type { OrgSummary } from "../api/types";
 import { LeafMark } from "../components/AppHeader";
@@ -50,6 +52,7 @@ export function PortfolioPage() {
   const [orgKey, setOrgKey] = useState("");
   const [orgPurpose, setOrgPurpose] = useState("");
 
+  const capacity = useCapacity();
   const index = catalog.data ? indexCatalog(catalog.data) : null;
   const orgs = portfolio.data?.organizations ?? [];
   const teamCount = orgs.reduce((n, o) => n + o.teams.length, 0);
@@ -131,6 +134,28 @@ export function PortfolioPage() {
           </Button>
         </div>
       </header>
+
+      {/* The capacity strip (06 §1.1): headline gauges, always visible at home. */}
+      {capacity.data?.enabled && capacity.data.accounts.length > 0 && (
+        <div className="border-b border-border bg-surface-2/40 px-6 py-2">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-1">
+            {capacity.data.accounts.map((acct) => {
+              const headline = acct.windows.find((w) => w.key === acct.headlineWindow)
+                ?? acct.windows.find((w) => w.source != null);
+              if (!headline) return null;
+              return (
+                <div key={acct.id} className="flex items-center gap-2">
+                  <span className="text-[11px] text-ink-muted">{acct.label}</span>
+                  <WindowGauge w={headline} />
+                </div>
+              );
+            })}
+            <a href="/capacity" className="ml-auto text-[11px] text-ink-muted hover:text-ink hover:underline">
+              capacity console →
+            </a>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         {portfolio.isLoading ? (
