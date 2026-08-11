@@ -1,8 +1,8 @@
 // The capacity console's single source (design/organizations/06 §8): one aggregate,
 // GET /api/capacity — every number arrives computed (source tier, age, burn, runway).
 // Zero capacity math lives in the UI; the console and the scheduler can never disagree.
-import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "./client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiSend } from "./client";
 
 export interface CapacityWindow {
   key: string;
@@ -60,5 +60,56 @@ export function useCapacity() {
     queryKey: ["capacity"],
     queryFn: () => apiGet<CapacityAggregate>("/capacity"),
     refetchInterval: 5000,
+  });
+}
+
+// --- Team schedule: the K1–K6 knobs (design/organizations/04 §3; C4) ---------
+export interface TeamSchedule {
+  teamId: string;
+  runState: "running" | "paused" | "drain";
+  maxConcurrentSessions: number | null;
+  paceChunkTurns: number | null;
+  paceDelayS: number | null;
+  modelTierCap: string | null;
+  priority: "interactive" | "batch";
+  activeHours: string | null;
+  fallbackPolicy: string[];
+  updatedAt: string | null;
+}
+
+export interface SchedulePredictions {
+  windowKey: string | null;
+  basis: string;
+  pauseFreesPpHr: number;
+  sessionCapFreesPpHr?: number;
+  paceFreesPpHr?: number;
+  paceBasis?: string;
+}
+
+export function useSchedule(teamId: string | undefined) {
+  return useQuery({
+    queryKey: ["team-schedule", teamId],
+    queryFn: () =>
+      apiGet<{ schedule: TeamSchedule; predictions: SchedulePredictions }>(
+        `/teams/${teamId}/schedule`,
+      ),
+    enabled: !!teamId,
+  });
+}
+
+export function useUpdateSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ teamId, ...patch }: { teamId: string } & Partial<TeamSchedule>) =>
+      apiSend<{ schedule: TeamSchedule; predictions: SchedulePredictions }>(
+        "PUT",
+        `/teams/${teamId}/schedule`,
+        patch,
+      ),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["team-schedule", vars.teamId] });
+      qc.invalidateQueries({ queryKey: ["capacity"] });
+      qc.invalidateQueries({ queryKey: ["portfolio"] });
+    },
   });
 }

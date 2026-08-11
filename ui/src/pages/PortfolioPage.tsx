@@ -7,7 +7,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useCatalog, indexCatalog } from "../api/catalog";
 import { useDeleteTeam, useImportTeam } from "../api/teams";
 import { useCreateOrg, useMoveTeam, usePortfolio, type PortfolioOrg } from "../api/orgs";
-import { useCapacity } from "../api/capacity";
+import { useCapacity, useUpdateSchedule } from "../api/capacity";
 import { WindowGauge } from "../components/capacity/CapacityConsole";
 import { apiGet, ApiError } from "../api/client";
 import type { OrgSummary } from "../api/types";
@@ -44,6 +44,7 @@ export function PortfolioPage() {
   const importTeam = useImportTeam();
   const createOrg = useCreateOrg();
   const moveTeam = useMoveTeam();
+  const updateSchedule = useUpdateSchedule();
 
   const [toDelete, setToDelete] = useState<OrgSummary | null>(null);
   const [toMove, setToMove] = useState<OrgSummary | null>(null);
@@ -194,6 +195,16 @@ export function PortfolioPage() {
                           onDuplicate={() => handleDuplicate(s)}
                           onDelete={() => setToDelete(s)}
                           onMove={orgs.length > 1 ? () => setToMove(s) : undefined}
+                          runState={s.runState}
+                          onTogglePause={
+                            capacity.data?.enabled
+                              ? () =>
+                                  updateSchedule.mutate({
+                                    teamId: s.id,
+                                    runState: s.runState === "paused" ? "running" : "paused",
+                                  })
+                              : undefined
+                          }
                         />
                       );
                     })}

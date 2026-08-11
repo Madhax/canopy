@@ -459,6 +459,11 @@ def _start_session(
         extra = []
 
     max_turns = int(os.environ.get("CANOPY_MAX_TURNS", str(MAX_TURNS_DEFAULT)))
+    # K3 (04 §3): pacing = chunking. A chunk is --max-turns turns; the cool-down between
+    # chunks rides the resume path below. Costs no new machinery — only policy.
+    pace = cur.get("pace") or {}
+    if pace.get("chunkTurns"):
+        max_turns = min(max_turns, int(pace["chunkTurns"]))
     # The prompt goes over STDIN, never argv: on Windows the npm shim (claude.cmd) runs
     # through cmd.exe, which treats embedded newlines as command separators — a multi-line
     # brief silently strips every flag after it (the session answers in plain text and the
@@ -470,7 +475,9 @@ def _start_session(
     ]
     # The profile's model is the session's model (cli-runtime.md §2: profile.model → --model);
     # without it the CLI silently runs on the operator's personal default.
-    model = os.environ.get("CANOPY_CLI_MODEL")
+    model = cur.get("modelOverride") or os.environ.get("CANOPY_CLI_MODEL")
+    if cur.get("modelOverride"):
+        _log("degrade_model", assignment=a["id"], model=model)
     if model:
         cmd += ["--model", model]
     # CLI stderr goes to a per-assignment file, not DEVNULL: when a session dies at
@@ -553,6 +560,11 @@ def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
     if r.status_code != 200 or r.json() is None:
         return "idle"
     cur = r.json()
+    if "hold" in cur:
+        # The governor says not now (C4): the hold is scheduled waiting — a paused team,
+        # a spent window, active-hours. Do nothing; auto-resume is the server's job.
+        _log("capacity_hold", reason=(cur.get("hold") or {}).get("reason"))
+        return "idle"
     a = cur["assignment"]
     aid, state = a["id"], a["state"]
 
@@ -577,6 +589,18 @@ def cli_tick(client: httpx.Client, cfg: AgentConfig) -> str:
             _RESUME_FALLBACK.discard(aid)
             resuming = False
             _log("resume_fallback_fresh", assignment=aid)
+        pace = cur.get("pace") or {}
+        if resuming and pace.get("delayS"):
+            st = _RESUME_BACKOFF.setdefault(aid, {"count": 0, "until": 0.0})
+            prev = _SESSIONS.get(aid)
+            # One cool-down per finished chunk: the session object identity marks
+            # whether this chunk's delay was already served.
+            if prev is not None and prev.progress and st.get("pacedFor") != id(prev):
+                st["until"] = max(st["until"], time.monotonic() + float(pace["delayS"]))
+                st["pacedFor"] = id(prev)
+                _log("pace_cooldown", assignment=aid, seconds=pace["delayS"])
+            if time.monotonic() < st["until"]:
+                return "engaged"
         if resuming:
             # A resume that follows a no-progress session backs off exponentially:
             # without this, a session that keeps ending with only status polls gets

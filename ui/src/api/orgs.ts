@@ -20,6 +20,8 @@ export interface Organization {
 export interface PortfolioTeam extends OrgSummary {
   /** Actuation state for the read-only card (null = not actuated). */
   actuation: string | null;
+  /** Scheduler run state (C4): running | paused | drain. */
+  runState?: "running" | "paused" | "drain";
 }
 
 export interface PortfolioOrg extends Organization {

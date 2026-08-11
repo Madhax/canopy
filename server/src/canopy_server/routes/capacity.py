@@ -251,3 +251,78 @@ def statusline_tap(
         ))
         n += 1
     return {"readings": n}
+
+
+# --------------------------------------------------------------------------- #
+# Team schedule — the K1–K6 knobs (04 §3; C4). Operational state, audited.
+# --------------------------------------------------------------------------- #
+class ScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    runState: str | None = None
+    maxConcurrentSessions: int | None = None
+    paceChunkTurns: int | None = None
+    paceDelayS: int | None = None
+    modelTierCap: str | None = None
+    priority: str | None = None
+    activeHours: str | None = None
+    fallbackPolicy: list[str] | None = None
+
+
+@router.get("/teams/{team_id}/schedule")
+def get_team_schedule(team_id: str):
+    from ..deps import get_scheduler
+
+    sched = get_scheduler()
+    return {"schedule": sched.get(team_id).to_json(),
+            "predictions": sched.predictions(team_id)}
+
+
+@router.put("/teams/{team_id}/schedule")
+def put_team_schedule(team_id: str, req: ScheduleRequest):
+    from ..deps import get_activity, get_capacity_ledger, get_scheduler
+    from ..scheduler import FALLBACK_RUNGS, PRIORITIES, RUN_STATES
+
+    sched = get_scheduler()
+    row = sched.get(team_id)
+    if req.runState is not None:
+        if req.runState not in RUN_STATES:
+            return _error(400, "BAD_RUN_STATE", f"runState must be one of {RUN_STATES}")
+        row.runState = req.runState
+    if req.priority is not None:
+        if req.priority not in PRIORITIES:
+            return _error(400, "BAD_PRIORITY", f"priority must be one of {PRIORITIES}")
+        row.priority = req.priority
+    if req.fallbackPolicy is not None:
+        bad = [r for r in req.fallbackPolicy if r not in FALLBACK_RUNGS]
+        if bad:
+            return _error(400, "BAD_FALLBACK", f"unknown rungs: {bad}")
+        row.fallbackPolicy = req.fallbackPolicy
+    if req.maxConcurrentSessions is not None:
+        # 0 is a real cap ("no new sessions"); negative clears the knob.
+        row.maxConcurrentSessions = (req.maxConcurrentSessions
+                                     if req.maxConcurrentSessions >= 0 else None)
+    if req.paceChunkTurns is not None:
+        row.paceChunkTurns = req.paceChunkTurns or None
+    if req.paceDelayS is not None:
+        row.paceDelayS = req.paceDelayS or None
+    if req.modelTierCap is not None:
+        row.modelTierCap = req.modelTierCap or None
+    if req.activeHours is not None:
+        row.activeHours = req.activeHours or None
+
+    predicted = sched.predictions(team_id)
+    sched.put(row)
+    # Audited like every operator action; the prediction rides the commit so the
+    # console can close the loop (predicted vs observed, 06 §3).
+    get_activity().log("operator", "schedule.updated", team_id=team_id,
+                       payload={"schedule": row.to_json(), "predicted": predicted})
+    try:
+        node = sched._any_node(team_id)
+        account = sched.capacity.account_for_session(team_id, node) if node else None
+        if account is not None:
+            get_capacity_ledger().record_event(
+                account.id, "knob-commit", team_id=team_id,
+                payload={"schedule": row.to_json(), "predicted": predicted})
+    except Exception:  # noqa: BLE001 - the feed is decoration; the commit is the fact
+        pass
+    return {"schedule": row.to_json(), "predictions": predicted}

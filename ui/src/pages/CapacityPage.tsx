@@ -2,11 +2,14 @@
 // (design/organizations/06 §1). Operator-level and cross-org by necessity: this is the
 // one deliberately mixed surface, so every team-tagged element carries its org chip.
 import { useCapacity } from "../api/capacity";
+import { usePortfolio } from "../api/orgs";
+import { KnobRow } from "../components/capacity/KnobPanel";
 import { CapacityFeed, PoolCard } from "../components/capacity/CapacityConsole";
 import { CenteredSpinner } from "../components/common";
 
 export function CapacityPage() {
   const capacity = useCapacity();
+  const portfolio = usePortfolio();
 
   return (
     <div className="min-h-full">
@@ -40,6 +43,16 @@ export function CapacityPage() {
               ))}
             </div>
             <aside>
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                Knobs
+              </h2>
+              <div className="mb-6 flex flex-col gap-2">
+                {(portfolio.data?.organizations ?? []).flatMap((org) =>
+                  org.teams.map((t) => (
+                    <KnobRow key={t.id} teamId={t.id} teamName={t.name} orgKey={org.key} />
+                  )),
+                )}
+              </div>
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Event feed
               </h2>

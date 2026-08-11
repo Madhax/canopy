@@ -61,9 +61,10 @@ async def _trigger_sweep_loop() -> None:
     Budget warn/hard-stop ride each step report; this loop catches the quiet failures."""
     while True:
         try:
-            from .deps import get_engine
+            from .deps import get_engine, get_scheduler
 
             get_engine().sweep_triggers()
+            get_scheduler().sweep()  # capacity-gate timer resolution (04 §4; C4)
         except Exception:  # noqa: BLE001 - the sweep must survive any single bad pass
             pass
         await asyncio.sleep(30)
