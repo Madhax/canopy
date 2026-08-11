@@ -290,3 +290,37 @@ export const useDocumentStore = create<DocStore>()(
 
 /** Access the zundo temporal control store (undo/redo/pause). */
 export const useTemporalStore = useDocumentStore.temporal;
+
+// --------------------------------------------------------------------------- //
+// Safe undo/redo — the concurrency token is not part of edit history.
+//
+// Incident (2026-08-10): undo restored a pre-save snapshot INCLUDING its stale
+// `updatedAt`; the next autosave then 409'd into the conflict dialog, whose every
+// option loses one side. The token names which server version this client last saw —
+// undoing your edits never changes that fact, so undo/redo re-applies the last
+// server-issued token after time-travelling the content.
+// --------------------------------------------------------------------------- //
+let lastServerUpdatedAt: string | null | undefined;
+
+/** Record the server-issued updatedAt (on load, after every save, after conflict). */
+export function noteServerUpdatedAt(ts: string | null | undefined): void {
+  lastServerUpdatedAt = ts ?? null;
+}
+
+function reapplyServerToken(): void {
+  if (lastServerUpdatedAt === undefined) return;
+  const t = useTemporalStore.getState();
+  t.pause();
+  useDocumentStore.getState().setUpdatedAt(lastServerUpdatedAt);
+  t.resume();
+}
+
+export function safeUndo(): void {
+  useTemporalStore.getState().undo();
+  reapplyServerToken();
+}
+
+export function safeRedo(): void {
+  useTemporalStore.getState().redo();
+  reapplyServerToken();
+}

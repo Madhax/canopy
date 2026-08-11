@@ -9,7 +9,6 @@ interface Props {
   catalog: Catalog;
   orgType: OrgType | undefined;
   onPlaceRole: (roleKey: string) => void;
-  onStampFormation: (formationKey: string) => void;
   onAddCustomRole: () => void;
   onAddChildOrg: () => void;
   connectorPacks?: ConnectorPack[];
@@ -28,7 +27,6 @@ export function Palette({
   catalog,
   orgType,
   onPlaceRole,
-  onStampFormation,
   onAddCustomRole,
   onAddChildOrg,
   connectorPacks,
@@ -113,7 +111,7 @@ export function Palette({
             Formations
           </h3>
           {formations.suggested.map((f) => (
-            <FormationRow key={f.key} formation={f} catalog={catalog} onStamp={() => onStampFormation(f.key)} />
+            <FormationRow key={f.key} formation={f} catalog={catalog} />
           ))}
           {formations.rest.length > 0 && (
             <details className="mt-1">
@@ -121,7 +119,7 @@ export function Palette({
                 All formations ({formations.rest.length})
               </summary>
               {formations.rest.map((f) => (
-                <FormationRow key={f.key} formation={f} catalog={catalog} onStamp={() => onStampFormation(f.key)} />
+                <FormationRow key={f.key} formation={f} catalog={catalog} />
               ))}
             </details>
           )}

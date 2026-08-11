@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from .. import revisions
 from ..catalog import get_catalog
-from ..deps import get_actuator, get_store, now_iso
+from ..deps import get_actuator, get_db, get_store, now_iso
 from ..ids import new_document_id
 from ..migrate import UnsupportedSchemaVersion, migrate_team
 from ..models import Team
@@ -72,6 +73,13 @@ def _summary(team: Team) -> dict:
         except Exception:
             out["organizationId"] = None
     return out
+
+
+def _content_changed(stored: Team, incoming: Team) -> bool:
+    strip = {"updatedAt"}
+    a = {k: v for k, v in stored.model_dump(by_alias=True, mode="json").items() if k not in strip}
+    b = {k: v for k, v in incoming.model_dump(by_alias=True, mode="json").items() if k not in strip}
+    return a != b
 
 
 def _slugify(name: str) -> str:
@@ -183,6 +191,11 @@ def save_organization(
             409, "ACTUATION_LIVE", "Deactuate this team before editing its chart."
         )
 
+    # The safety net: the version being replaced is one restore away, always.
+    if _content_changed(stored, incoming):
+        revisions.snapshot(get_db(), doc_id, stored.model_dump(by_alias=True, mode="json"),
+                           reason="save", now=now_iso())
+
     # Re-impose server-owned immutable fields, then bump updatedAt.
     incoming.id = stored.id
     incoming.createdAt = stored.createdAt
@@ -200,7 +213,14 @@ def save_organization(
 
 
 @router.delete("/teams/{doc_id}", status_code=204)
-def delete_organization(doc_id: str, store: JsonFileStore = Depends(get_store)) -> Response:
+def delete_team(doc_id: str, store: JsonFileStore = Depends(get_store)) -> Response:
+    try:
+        stored = store.read(doc_id)
+        # A deleted team is recoverable: the last version rides the revision log.
+        revisions.snapshot(get_db(), doc_id, stored.model_dump(by_alias=True, mode="json"),
+                           reason="delete", now=now_iso())
+    except NotFound:
+        pass
     store.delete(doc_id)
     return Response(status_code=204)
 
@@ -262,4 +282,41 @@ def import_organization(body: dict, store: JsonFileStore = Depends(get_store)) -
             "document": fresh.model_dump(by_alias=True, mode="json"),
             "issues": _issues_json(fresh, "draft"),
         },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Revisions — every overwrite is one restore away (revisions.py)
+# --------------------------------------------------------------------------- #
+@router.get("/teams/{doc_id}/revisions")
+def list_team_revisions(doc_id: str) -> dict:
+    return {"revisions": revisions.list_revisions(get_db(), doc_id)}
+
+
+@router.post("/teams/{doc_id}/revisions/{revision_id}/restore")
+def restore_team_revision(
+    doc_id: str, revision_id: str, store: JsonFileStore = Depends(get_store)
+) -> Response:
+    doc = revisions.get_revision(get_db(), doc_id, revision_id)
+    if doc is None:
+        return _error(404, "NOT_FOUND", f"No revision {revision_id!r} for team {doc_id!r}")
+    if get_actuator().get_current(doc_id) is not None:
+        return _error(409, "ACTUATION_LIVE", "Deactuate this team before restoring a revision.")
+    try:
+        current = store.read(doc_id)
+        # Restoring is itself an overwrite — snapshot the current version first, so a
+        # restore is also undoable.
+        revisions.snapshot(get_db(), doc_id, current.model_dump(by_alias=True, mode="json"),
+                           reason="restore", now=now_iso())
+    except NotFound:
+        pass  # restoring a deleted team resurrects it
+    restored = Team.model_validate(migrate_team(doc))
+    restored.id = doc_id
+    restored.updatedAt = now_iso()
+    store.write(restored)
+    return JSONResponse(
+        content={
+            "document": restored.model_dump(by_alias=True, mode="json"),
+            "issues": _issues_json(restored, "draft"),
+        }
     )
