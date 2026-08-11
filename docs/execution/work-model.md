@@ -27,7 +27,7 @@ CREATE TABLE work_intent (
 );
 ```
 
-An **episodic** intent closes when its root Assignment closes. A **standing** intent stays `open` indefinitely; successive episodic intents (from the operator or from Cadences) reference it via `meta.standingIntentId` — the standing intent is the org's goal, never "done." Phase-2's informal intent submission (`POST /organizations/{id}/intents`) is subsumed: the same endpoint now creates a `work_intent` plus its root Assignment.
+An **episodic** intent closes when its root Assignment closes. A **standing** intent stays `open` indefinitely; successive episodic intents (from the operator or from Cadences) reference it via `meta.standingIntentId` — the standing intent is the org's goal, never "done." Phase-2's informal intent submission (`POST /teams/{id}/intents`) is subsumed: the same endpoint now creates a `work_intent` plus its root Assignment.
 
 ## 2. Assignment
 
@@ -60,7 +60,7 @@ CREATE TABLE work_brief (               -- versioned briefs drive rework funding
     assignment_id TEXT NOT NULL,
     version       INTEGER NOT NULL,
     text          TEXT NOT NULL,
-    artifact_refs TEXT NOT NULL DEFAULT '[]',   -- JSON array of org:// refs granted with the brief
+    artifact_refs TEXT NOT NULL DEFAULT '[]',   -- JSON array of team:// refs granted with the brief
     revised_by    TEXT,                          -- who issued this version (manager/operator)
     created_at    TEXT NOT NULL,
     PRIMARY KEY (assignment_id, version)
@@ -178,7 +178,7 @@ CREATE INDEX ix_step_assignment ON work_step (assignment_id, created_at);
 
 | `delta_kind` | Meaning | `delta_ref` |
 |---|---|---|
-| `artifact` | produced or revised an artifact | the `org://` ref |
+| `artifact` | produced or revised an artifact | the `team://` ref |
 | `tool-effect` | a granted tool changed external/workspace state | tool/grant key |
 | `progress` | plan stage advanced or plan revised | stage idx / plan version |
 | `message` | communicated (delegation, escalation, reply) | message id |

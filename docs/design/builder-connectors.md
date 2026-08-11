@@ -78,9 +78,9 @@ CREATE TABLE connector_instance (
 
 **Routes** (`routes/connectors.py`, operator API):
 
-- `GET /organizations/{id}/connector-packs` — catalog packs, for the palette.
-- `GET|POST /organizations/{id}/connectors`, `PUT|DELETE /organizations/{id}/connectors/{cid}` — CRUD. POST/PUT validate: pack exists, required config present, `enabledGrants ⊆ pack grants`, node links exist in the chart. Secret values arrive in a write-only `secrets: {kind: value}` field, are stored, and are replaced by ids in the response.
-- `POST /organizations/{id}/connectors/{cid}/verify` — credential presence + a `GET /repos/{owner}/{repo}` probe through the executor; returns pass/fail + reason. Activity-logged.
+- `GET /teams/{id}/connector-packs` — catalog packs, for the palette.
+- `GET|POST /teams/{id}/connectors`, `PUT|DELETE /teams/{id}/connectors/{cid}` — CRUD. POST/PUT validate: pack exists, required config present, `enabledGrants ⊆ pack grants`, node links exist in the chart. Secret values arrive in a write-only `secrets: {kind: value}` field, are stored, and are replaced by ids in the response.
+- `POST /teams/{id}/connectors/{cid}/verify` — credential presence + a `GET /repos/{owner}/{repo}` probe through the executor; returns pass/fail + reason. Activity-logged.
 
 All mutations log to the activity feed (`connector.created|updated|deleted|verify`) and take effect at **next assignment intake** (`connectors/02` §7) — running sessions keep their compiled surface; the per-call check below is what fails closed immediately on disable.
 

@@ -24,7 +24,7 @@ agent writes workspace/out/report.md
        └─ runtime: sha256, POST /api/dp/artifacts (multipart, run token)
             └─ control plane: dedupe by hash, assign version (name exists ⇒ @n+1, linked to @n),
                               record provenance {nodeId, taskId, actuationId},
-                              return ref  org://acme-software/a_qa01/q3-report@1
+                              return ref  team://acme-software/a_qa01/q3-report@1
                  └─ agent finishes task citing the ref; A2A artifact parts carry refs, never blobs
 ```
 

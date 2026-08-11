@@ -57,7 +57,7 @@ deciding acceptance tests — the final pass/fail checks that decide whether the
 feature is done; the lead has no coding tools at all. An agent never holds a
 password or an account key — those live encrypted at head office and are attached to
 requests on the agent's behalf, out of its sight. And agents cannot chat freely:
-every message passes through a central router that only allows conversations the org
+every message passes through a central router that only allows conversations the team
 chart draws — managers with their own reports, and you with anyone.
 
 The point of all this is a phrase from the design: safety **"by construction, not by

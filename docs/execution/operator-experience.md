@@ -8,19 +8,19 @@
 
 ## 1. Information architecture
 
-> **Amendment (2026-08-09).** This section's IA is superseded by `../design/organizations/05-ux-portfolio.md` §1: the operator's world now opens on the **portfolio home** (organizations → team cards), routes re-root from `/organizations/:id/…` to `/teams/:id/…` under an organization scope bar, and the org picker retires. Everything below the route level — mission control, inspector, intent console, living plan, inbox, cost explorer — carries over unchanged as team-scoped surfaces, joined by the capacity console (`../design/organizations/06-ux-capacity.md`). This note is an amendment, not a rewrite; read the routes below with that mapping applied.
+> **Amendment (2026-08-09).** This section's IA is superseded by `../design/teams/05-ux-portfolio.md` §1: the operator's world now opens on the **portfolio home** (organizations → team cards), routes re-root from `/teams/:id/…` to `/teams/:id/…` under an organization scope bar, and the org picker retires. Everything below the route level — mission control, inspector, intent console, living plan, inbox, cost explorer — carries over unchanged as team-scoped surfaces, joined by the capacity console (`../design/teams/06-ux-capacity.md`). This note is an amendment, not a rewrite; read the routes below with that mapping applied.
 
 The app grows an **Operate** mode alongside the editor (the phases are the product's navigation, per `../phases.md`):
 
 | Route | Surface |
 |---|---|
-| `/organizations/:id/operate` | **Mission control** — the live chart + org pulse |
-| `/organizations/:id/operate/agents/:nodeId` | **Agent inspector** — full introspection of one node |
-| `/organizations/:id/operate/intents` · `/intents/:intentId` | **Intent console** — submit, review plans, track trees, collect deliverables |
-| `/organizations/:id/operate/inbox` | **Inbox** — gates awaiting resolution + notifications + digest |
-| `/organizations/:id/operate/costs` | **Cost explorer** — rollups, burn, coordination share |
+| `/teams/:id/operate` | **Mission control** — the live chart + org pulse |
+| `/teams/:id/operate/agents/:nodeId` | **Agent inspector** — full introspection of one node |
+| `/teams/:id/operate/intents` · `/intents/:intentId` | **Intent console** — submit, review plans, track trees, collect deliverables |
+| `/teams/:id/operate/inbox` | **Inbox** — gates awaiting resolution + notifications + digest |
+| `/teams/:id/operate/costs` | **Cost explorer** — rollups, burn, coordination share |
 
-Editor ↔ Operate switching preserves the org; the editor stays read-only while actuated (unchanged v1 policy). All live data arrives over one SSE channel (`GET /organizations/{id}/events`) with polling fallback; every surface is a projection of engine state — the UI stores nothing.
+Editor ↔ Operate switching preserves the org; the editor stays read-only while actuated (unchanged v1 policy). All live data arrives over one SSE channel (`GET /teams/{id}/events`) with polling fallback; every surface is a projection of engine state — the UI stores nothing.
 
 ## 2. Mission control — "what is my organization doing?"
 

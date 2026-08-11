@@ -10,9 +10,9 @@ interface Props {
   typeTitle?: string;
   /** Actuation state chip for portfolio cards (null/undefined = not actuated). */
   actuation?: string | null;
-  onExport: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
+  onExport?: () => void;
+  onDuplicate?: () => void;
+  onDelete?: () => void;
   /** Custody transfer to another Organization (design/organizations/01 §3). */
   onMove?: () => void;
 }
@@ -65,25 +65,33 @@ export function TeamCard({
         <div className="text-[11px] text-ink-subtle">{SECTION_LABELS[section] ?? section}</div>
       )}
 
-      <div
-        className="flex gap-3 border-t border-border pt-2 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button className="text-ink-muted hover:text-ink" onClick={onExport}>
-          Export
-        </button>
-        <button className="text-ink-muted hover:text-ink" onClick={onDuplicate}>
-          Duplicate
-        </button>
-        {onMove && (
-          <button className="text-ink-muted hover:text-ink" onClick={onMove}>
-            Move…
-          </button>
-        )}
-        <button className="ml-auto text-ink-muted hover:text-danger" onClick={onDelete}>
-          Delete
-        </button>
-      </div>
+      {(onExport || onDuplicate || onMove || onDelete) && (
+        <div
+          className="flex gap-3 border-t border-border pt-2 text-xs opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onExport && (
+            <button className="text-ink-muted hover:text-ink" onClick={onExport}>
+              Export
+            </button>
+          )}
+          {onDuplicate && (
+            <button className="text-ink-muted hover:text-ink" onClick={onDuplicate}>
+              Duplicate
+            </button>
+          )}
+          {onMove && (
+            <button className="text-ink-muted hover:text-ink" onClick={onMove}>
+              Move…
+            </button>
+          )}
+          {onDelete && (
+            <button className="ml-auto text-ink-muted hover:text-danger" onClick={onDelete}>
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

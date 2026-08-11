@@ -1,6 +1,6 @@
 # Glossary — every Canopy term, in plain English
 
-*Merged from the three analyst glossaries (actuation; organization & operator;
+*Merged from the three analyst glossaries (actuation; team & operator;
 execution & safety), deduplicated and alphabetized. One or two lay sentences each.
 Cross-references in italics.*
 
@@ -22,7 +22,7 @@ Cross-references in italics.*
   journal of everything that happens in the system.
 
 - **Actuation** — bringing a drawn org chart to life: provisioning one running agent
-  per box, budgeted and readiness-checked, until the org is live. **Deactuate** is
+  per box, budgeted and readiness-checked, until the team is live. **Deactuate** is
   the clean teardown: drain mail, revoke tokens, stop agents, destroy sandboxes.
 
 - **Actuator** — the head-office service that performs actuation and teardown, and
@@ -60,7 +60,7 @@ Cross-references in italics.*
   code, contact a customer, spend extra). Denial is a prohibition to plan around,
   never a request to redo.
 
-- **Archetype (organization type)** — a ready-made kind of company (software
+- **Archetype (team type)** — a ready-made kind of company (software
   company, newsroom, medical clinic) that determines which roles and formations you
   build with. The catalog ships 26.
 
@@ -77,7 +77,7 @@ Cross-references in italics.*
 - **Assignment** — one unit of delegated work binding a worker, a brief, a
   definition of done, and a budget. Assignments form a family tree under the intent.
 
-- **Blueprint** — a deferred future feature: saving a whole organization as a
+- **Blueprint** — a deferred future feature: saving a whole team as a
   reusable template for cloning.
 
 - **Branch** — in *git*, a worker's separate line of changes to a shared codebase,
@@ -104,7 +104,7 @@ Cross-references in italics.*
 
 - **Charter** — an agent's compiled briefing pack: identity, role instructions,
   manager and reports, salary — and, in the current model, its resolved grants and
-  runtime kind. Fetched at boot; the agent never reads the org document itself.
+  runtime kind. Fetched at boot; the agent never reads the team document itself.
 
 - **Clarification gate** — "these instructions are defective." Raised by the worker
   at intake instead of guessing; resolved by a revised brief or cancellation.
@@ -215,9 +215,9 @@ Cross-references in italics.*
 
 - **Intent** — what the operator actually asked for, addressed to one agent (usually
   the root); the record every task and every cent traces back to. **Episodic**
-  intents finish; a **standing** intent is open-ended and *is* the org's goal.
+  intents finish; a **standing** intent is open-ended and *is* the team's goal.
 
-- **Intent Console** — the designed screen where you give the org work: type a
+- **Intent Console** — the designed screen where you give the team work: type a
   request, see a projected-cost hint, approve the proposed breakdown before money
   moves, then watch the living outline of the engagement. Part of the not-yet-built
   Operate cockpit.
@@ -232,7 +232,7 @@ Cross-references in italics.*
 
 - **Ledger** — the append-only money book: every step lands exactly one spend
   record — a duplicate delivery never charges twice — and costs roll up
-  step → assignment → intent → org.
+  step → assignment → intent → team.
 
 - **Living plan view** — the designed single evolving outline of a whole engagement
   (every assignment, plan, cursor, budget, gate), where each line can receive a
@@ -291,37 +291,45 @@ Cross-references in italics.*
   (Today's wrapped CLI sessions are the honest exception: they reach the provider
   via the subscription login — see [doc 04](04-how-agents-run.md).)
 
-- **Mount point (child organization)** — where a nested org attaches: its root agent
+- **Mount point (child team)** — where a nested team attaches: its root agent
   reports to a designated agent in the parent, and the parent sees only that root
-  ("sub-org opacity").
+  ("sub-team opacity").
 
 - **MVP (minimum viable product)** — the first working version of a product: the
   smallest build that does the whole job end to end, shipped before the polish.
   Design items marked "post-MVP" are deferred until after that first version.
 
 - **Node** — a box on the org chart; an agent's position in the tree. A mounted
-  child organization also appears as a single node.
+  child team also appears as a single node.
 
 - **Note** — anchored, non-blocking advice on in-flight work ("consider the
   streaming writer"), injected at the worker's next turn. Opens no gate, changes no
   instructions; the worker may act on it or explain why not.
 
 - **Notification severities** — the discipline for alerts: *attention* means "the
-  org is blocked on you," *warning* means "degrading but running," *info* is the
+  team is blocked on you," *warning* means "degrading but running," *info* is the
   normal pulse.
 
-- **Operator** — the human who owns and supervises a Canopy organization: creates
+- **Operator** — the human who owns and supervises a Canopy team: creates
   it, gives it work, approves plans, resolves alarms, pays the bills, and is the
   only one who can change its structure. (Called "the user" in some docs.)
 
-- **`org://` ref** — an artifact's permanent address, like
-  `org://acme/a_qa01/q3-report@1`. Agents exchange these short references instead
-  of files.
+- **`team://` ref** — an artifact's permanent address, like
+  `team://acme/a_qa01/q3-report@1`. Agents exchange these short references instead
+  of files. (Addresses written before the 2026-08 rename start with `org://`;
+  those keep working forever.)
 
-- **Organization** — one company instance: a named org chart of AI workers with a
-  type. Organizations can nest inside each other as departments or franchises.
+- **Organization** — the umbrella above teams: a named, budgeted group of teams
+  with hard walls between organizations — your company's fleet next to your
+  personal fleet, nothing shared but you. Never runs anything itself; work always
+  goes to a team. (Before the 2026-08 rename, "Organization" meant what is now
+  called a Team.)
 
-- **Organization document** — the saved file the chart editor produces: chart, role
+- **Team** — one runnable chart: a named org chart of AI workers with a type.
+  Teams can nest inside each other as departments or franchises, and every team
+  belongs to exactly one Organization.
+
+- **Team document** — the saved file the chart editor produces: chart, role
   bindings, and salaries — deliberately excluding memory, secrets, and in-flight
   work. The input to actuation; "the editor is the tool; the document is the
   product."
@@ -334,8 +342,8 @@ Cross-references in italics.*
   *branch*, bundled up so a reviewer can examine exactly what would change and
   accept or reject it before it merges into the *main line*.
 
-- **Receipt** — the published cost summary of a piece of org-authored work: total
-  cost, tokens, and the coordination-vs-production split ("authored by a Canopy org
+- **Receipt** — the published cost summary of a piece of team-authored work: total
+  cost, tokens, and the coordination-vs-production split ("authored by a Canopy team
   for $X.XX").
 
 - **Reconciler** — the actuator's repair loop: every fifteen seconds, compare
@@ -359,7 +367,7 @@ Cross-references in italics.*
 
 - **Role (RoleTemplate)** — a prebuilt job description: instructions, duties,
   permitted tools, expected outputs, and a default salary. Pure data, never code;
-  versioned, so catalog changes don't silently alter existing orgs.
+  versioned, so catalog changes don't silently alter existing teams.
 
 - **Run token** — an agent's unique, revocable identity pass, minted at
   provisioning and presented on every call to the control plane; stored server-side
@@ -398,7 +406,7 @@ Cross-references in italics.*
   resumable, context intact — rather than losing it.
 
 - **SpendEvent** — one accounting entry attributing the cost of one step to its
-  org, node, and assignment; the atomic record in the ledger.
+  team, node, and assignment; the atomic record in the ledger.
 
 - **Staged delegation ("proposed")** — with a plan-review checkpoint on, a
   manager's delegations buffer as unfunded drafts; the operator reviews the real
@@ -416,9 +424,10 @@ Cross-references in italics.*
 - **Step loop** — the `loop` runtime's work cycle: intake the brief, then a bounded
   think-and-act loop (about 20 rounds), then discharge the outputs.
 
-- **Team** — a manager plus its direct reports, derived from the chart (never drawn
-  separately). Also the communication boundary: teammates may talk; strangers'
-  messages route up through managers.
+- **Pod** — a manager plus its direct reports, derived from the chart (never drawn
+  separately). Also the communication boundary: podmates may talk; strangers'
+  messages route up through managers. (Called a "team" before the 2026-08 rename
+  freed that word for the chart itself.)
 
 - **Threat model** — the document stating plainly what attacks the system defends
   against, what it deliberately does not, and what must change before those

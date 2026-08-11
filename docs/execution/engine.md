@@ -126,22 +126,22 @@ The engine's agent-facing surface. The MCP server (`cli-runtime.md` §4) is a th
 
 | Method & path | Purpose |
 |---|---|
-| `POST /organizations/{id}/intents` | now creates work_intent + root assignment; body gains `kind` (episodic default), `targetNodeId?`, `allowanceOverride?` |
-| `GET  /organizations/{id}/intents` · `GET /intents/{intentId}` | list / detail: assignment tree, states, spend rollup, deliverable card |
-| `GET  /organizations/{id}/assignments?node=&state=` | filterable assignment list |
+| `POST /teams/{id}/intents` | now creates work_intent + root assignment; body gains `kind` (episodic default), `targetNodeId?`, `allowanceOverride?` |
+| `GET  /teams/{id}/intents` · `GET /intents/{intentId}` | list / detail: assignment tree, states, spend rollup, deliverable card |
+| `GET  /teams/{id}/assignments?node=&state=` | filterable assignment list |
 | `GET  /assignments/{id}` | full drill-down: brief versions, plan (stages + cursor), steps (with deltas), meter, gates, deliverable, directives |
 | `GET  /intents/{intentId}/plan` | the living-plan aggregate: assignment tree + per-node plans (stages, cursors, timestamps), brief versions, gates, meters, notes — one payload, three UI projections (`operator-experience.md` §4a) |
 | `POST /intents/{intentId}/notes` | leave an anchored, non-blocking note `{assignmentId?, stageIdx?, text}` — injected at the target's next turn boundary; never suspends |
 | `POST /assignments/{id}/intervene` | X1: open judgment intervention `{note}` |
 | `POST /gates/{id}/resolve` | the one resolution endpoint: `{action: resume|revise-brief|approve|deny|answer|constrain|reassign|top-up|cancel, ...payload}` |
-| `GET  /organizations/{id}/gates?state=open&owner=operator` | the approvals/attention inbox feed |
-| `GET  /organizations/{id}/agents/{nodeId}/state` | the inspector aggregate (`operator-experience.md` §3) |
-| `GET/DELETE /organizations/{id}/agents/{nodeId}/memory` | inspect / reset durable memory |
-| `GET/POST/PUT/DELETE /organizations/{id}/cadences` | cadence CRUD |
-| `GET  /organizations/{id}/notifications?since=` · `POST /notifications/read` | notification center feed + read cursor |
-| `GET  /organizations/{id}/events` (SSE) | live stream: status changes, steps (throttled), gates, notifications — the UI's push channel |
+| `GET  /teams/{id}/gates?state=open&owner=operator` | the approvals/attention inbox feed |
+| `GET  /teams/{id}/agents/{nodeId}/state` | the inspector aggregate (`operator-experience.md` §3) |
+| `GET/DELETE /teams/{id}/agents/{nodeId}/memory` | inspect / reset durable memory |
+| `GET/POST/PUT/DELETE /teams/{id}/cadences` | cadence CRUD |
+| `GET  /teams/{id}/notifications?since=` · `POST /notifications/read` | notification center feed + read cursor |
+| `GET  /teams/{id}/events` (SSE) | live stream: status changes, steps (throttled), gates, notifications — the UI's push channel |
 
-Spend rollups extend, not mutate (D-rule): `GET /organizations/{id}/spend` gains `groupBy=intent|assignment|stage` and `split=coordination|production`.
+Spend rollups extend, not mutate (D-rule): `GET /teams/{id}/spend` gains `groupBy=intent|assignment|stage` and `split=coordination|production`.
 
 ## 7. Notification service
 

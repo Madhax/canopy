@@ -45,15 +45,15 @@ Streaming is deliberately deferred (agents are non-interactive; buffered respons
 
 ## 5. Budget Ledger
 
-Phase-2 simplification of the economics layer, forward-compatible with phase 3: at actuation, each node gets **one standing meter** funded from its chart salary `perAssignmentAllowance` **per received task** (a fresh meter per task delivered by the router — approximating "per-assignment allowance" without full Assignment objects). Warn threshold and hard-stop come from the chart's salary block. All mutations are single SQLite transactions (reserve → spend → settle), so hard-stops are race-free. Rollups (`GET /api/organizations/{id}/spend?groupBy=node|task|model`) power the UI's burn view. Phase 3 replaces "meter per routed task" with real Assignment-bound meters — the ledger interface (`open_meter`, `reserve`, `record`, `close_meter`) already matches.
+Phase-2 simplification of the economics layer, forward-compatible with phase 3: at actuation, each node gets **one standing meter** funded from its chart salary `perAssignmentAllowance` **per received task** (a fresh meter per task delivered by the router — approximating "per-assignment allowance" without full Assignment objects). Warn threshold and hard-stop come from the chart's salary block. All mutations are single SQLite transactions (reserve → spend → settle), so hard-stops are race-free. Rollups (`GET /api/teams/{id}/spend?groupBy=node|task|model`) power the UI's burn view. Phase 3 replaces "meter per routed task" with real Assignment-bound meters — the ledger interface (`open_meter`, `reserve`, `record`, `close_meter`) already matches.
 
 ## 6. Message Router
 
-Detailed in `data-plane.md`. Control-plane surface: `POST /api/dp/a2a/{targetNodeId}` (run-token auth; the *only* way any agent reaches any other), channel table enforcing topology, per-agent durable delivery queues, and the operator intent entrypoint (`POST /api/organizations/{id}/intents` → routed to the root agent as an A2A task).
+Detailed in `data-plane.md`. Control-plane surface: `POST /api/dp/a2a/{targetNodeId}` (run-token auth; the *only* way any agent reaches any other), channel table enforcing topology, per-agent durable delivery queues, and the operator intent entrypoint (`POST /api/teams/{id}/intents` → routed to the root agent as an A2A task).
 
 ## 7. Artifact Store
 
-`workspace.md` details the agent-facing flow. Storage: content blobs under `data/artifacts/<sha256[0:2]>/<sha256>`, metadata rows `{ ref, orgId, producedByNodeId, taskId, type, filename, size, sha256, version, prevVersion, createdAt }`. Refs follow the domain grammar `org://<org-slug>/<node-or-team>/<name>@<version>`; immutable; new versions link back. Interface (`put/get/resolve/list`) is object-store-shaped so S3/GCS is a backend swap.
+`workspace.md` details the agent-facing flow. Storage: content blobs under `data/artifacts/<sha256[0:2]>/<sha256>`, metadata rows `{ ref, orgId, producedByNodeId, taskId, type, filename, size, sha256, version, prevVersion, createdAt }`. Refs follow the domain grammar `team://<team-slug>/<node-or-pod>/<name>@<version>` (writers emit `team://` since C1; readers accept the legacy `org://` scheme indefinitely — `design/organizations/07` §2.4); immutable; new versions link back. Interface (`put/get/resolve/list`) is object-store-shaped so S3/GCS is a backend swap.
 
 ## 8. Activity Log
 
@@ -63,14 +63,14 @@ Append-only `{ ts, actor (operator|system|nodeId), kind, subjectIds, payload }` 
 
 | Method & path | Purpose |
 |---|---|
-| `POST /organizations/{id}/actuations` | Actuate (validates bindings/readiness → `202` with actuation id) |
-| `GET /organizations/{id}/actuations/current` | Full actuation state incl. per-node status (UI polls or SSE) |
-| `DELETE /organizations/{id}/actuations/current` | Deactuate (drain → teardown) |
-| `POST /organizations/{id}/intents` | Submit intent `{ text, targetNodeId? (default root) }` → `{ intentId, taskId }` |
-| `GET /organizations/{id}/intents/{intentId}` | Status + final artifact refs + spend rollup |
-| `GET/POST/PUT/DELETE /organizations/{id}/profiles`, `/bindings`, `/secrets` | Profile management (`agent-profile.md`) |
-| `GET /organizations/{id}/spend` | Ledger rollups |
-| `GET /organizations/{id}/activity` | Activity feed (cursor-paginated) |
+| `POST /teams/{id}/actuations` | Actuate (validates bindings/readiness → `202` with actuation id) |
+| `GET /teams/{id}/actuations/current` | Full actuation state incl. per-node status (UI polls or SSE) |
+| `DELETE /teams/{id}/actuations/current` | Deactuate (drain → teardown) |
+| `POST /teams/{id}/intents` | Submit intent `{ text, targetNodeId? (default root) }` → `{ intentId, taskId }` |
+| `GET /teams/{id}/intents/{intentId}` | Status + final artifact refs + spend rollup |
+| `GET/POST/PUT/DELETE /teams/{id}/profiles`, `/bindings`, `/secrets` | Profile management (`agent-profile.md`) |
+| `GET /teams/{id}/spend` | Ledger rollups |
+| `GET /teams/{id}/activity` | Activity feed (cursor-paginated) |
 | `GET /artifacts/{ref}` | Artifact metadata; `?content=1` streams the blob |
 
 Data-plane API (`/api/dp/*`, run-token auth only): `register`, `heartbeat`, `llm/complete`, `a2a/{targetNodeId}`, `inbox/poll`, `artifacts` (put), `artifacts/{ref}` (get, grant-checked). Loopback-bound in v1.

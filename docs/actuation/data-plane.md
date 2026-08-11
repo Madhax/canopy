@@ -58,7 +58,7 @@ The router carries opaque-ish envelopes: `{ id, actuationId, fromNodeId, toNodeI
 |---|---|
 | Intent (operator → root) | new A2A task; `message.metadata.canopy = { kind: "intent", intentId }` |
 | Delegation (manager → report) | new A2A task on the report; metadata `{ kind: "delegation", parentTaskId, briefArtifactRefs[] }` |
-| Deliverable (report → manager) | task completion; A2A artifact parts carry `org://` refs (never inline blobs > 64KB) |
+| Deliverable (report → manager) | task completion; A2A artifact parts carry `team://` refs (never inline blobs > 64KB) |
 | Status nudge / re-brief | `message/send` on the existing task |
 | Rejection of defective brief | task `rejected` state + reason message (ClarificationGate proper is phase 3) |
 | Escalation-shaped question | `input-required` on the child task, question in the status message; manager answers with `message/send` (EscalationGate proper is phase 3) |

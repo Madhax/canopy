@@ -93,7 +93,7 @@ process; and waits for the newborn agent to call home and register.
 The new agent boots, fetches its charter, lays out its desk, registers, and starts
 **heartbeating** — a ten-second "I'm alive" pulse into the **Agent Directory**, the
 head office's attendance register. The node turns green in the editor. When every
-node is green, the org is **live**. A **reconciler** loop then patrols every fifteen
+node is green, the team is **live**. A **reconciler** loop then patrols every fifteen
 seconds, comparing what *should* be running against what *is*, restarting anything
 dead — a supervisor doing rounds.
 

@@ -19,6 +19,7 @@ import { downloadJson, pickJsonFile } from "../lib/download";
 import { slugify } from "../lib/format";
 import { CenteredSpinner, useToast } from "../components/common";
 import { Breadcrumbs } from "../components/editor/Breadcrumbs";
+import { OrgScopeChip } from "../components/OrgScopeChip";
 import { Toolbar } from "../components/editor/Toolbar";
 import { ActuationControls } from "../components/editor/ActuationControls";
 import { ConflictDialog } from "../components/editor/ConflictDialog";
@@ -322,7 +323,11 @@ export function EditorPage() {
       )}
       <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2">
         <div className="flex items-center gap-3">
-          <Breadcrumbs doc={doc} path={path} onNavigate={setPath} />
+          <div className="flex items-center gap-2">
+            <OrgScopeChip teamId={doc.id} />
+            <span className="text-ink-subtle">/</span>
+            <Breadcrumbs doc={doc} path={path} onNavigate={setPath} />
+          </div>
           <ActuationControls teamId={doc.id} />
         </div>
         <Toolbar

@@ -12,7 +12,7 @@ The deliberate asymmetry: the data plane is **dumb and replaceable** (any agent 
 ┌─────────────────────────── CONTROL PLANE (FastAPI, one process in v1) ───────────────────────────┐
 │                                                                                                   │
 │  Org Registry / Catalog   Agent Profiles    Secret Store     Budget Ledger      Artifact Store    │
-│  (phase-1 documents)      (LLM configs)     (encrypted)      (meters+spend)     (org:// refs)     │
+│  (phase-1 documents)      (LLM configs)     (encrypted)      (meters+spend)     (team:// refs)     │
 │                                                                                                   │
 │  Actuator                 Agent Directory   Model Gateway    Message Router     Activity Log      │
 │  (provision state         (node → endpoint, (ONLY path to    (ONLY path         (audit events)    │
@@ -47,7 +47,7 @@ Two mediation chokepoints define the security and observability model:
 | Model Gateway | control | module | provider adapters, Steps, SpendEvents | `control-plane.md` |
 | Message Router | control | module | mediated A2A, queues, topology enforcement | `data-plane.md` |
 | Budget Ledger | control | module | Salaries → meters → spend, hard-stops | `control-plane.md` |
-| Artifact Store | control | module | immutable versioned artifacts, `org://` refs | `workspace.md` |
+| Artifact Store | control | module | immutable versioned artifacts, `team://` refs | `workspace.md` |
 | Activity Log | control | module | append-only audit events | `control-plane.md` |
 | Sandbox Provider | data | subprocess impl | agent process lifecycle + isolation | `sandbox.md` |
 | Agent Runtime | data | `canopy-agent` pkg | A2A server, step loop, workspace use | `agent-runtime.md` |

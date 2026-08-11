@@ -26,7 +26,7 @@ receive task ─▶ INTAKE: parse brief, resolve cited artifact refs into worksp
                  POST /api/dp/llm/complete            ◀── every model call = one metered Step
                  dispatch returned tool calls (below), append results
                  until finish tool called or step cap ⇒ fail(step-cap)
-            ─▶ DISCHARGE: upload outputs from workspace/out/ ⇒ org:// refs,
+            ─▶ DISCHARGE: upload outputs from workspace/out/ ⇒ team:// refs,
                  complete the A2A task with refs as A2A artifact parts
 402 BUDGET_EXHAUSTED at any step ⇒ status paused, task → failed(budget), note to manager
 ```
@@ -38,7 +38,7 @@ Tools are the runtime's capabilities, executed locally or via control-plane APIs
 | Tool | Effect | Notes |
 |---|---|---|
 | `write_file(path, content)` / `read_file(path)` / `list_files()` | workspace I/O | paths jailed to the workspace (canonicalize + prefix check — defense in depth against escapes) |
-| `produce_artifact(path, type, name)` | upload from `workspace/out/` → returns `org://` ref | the only way work leaves the sandbox |
+| `produce_artifact(path, type, name)` | upload from `workspace/out/` → returns `team://` ref | the only way work leaves the sandbox |
 | `fetch_artifact(ref)` | download into `workspace/brief/` | control plane checks the ref is in the task's granted set |
 | `delegate(reportNodeId, brief, artifactRefs[], deliverableContract)` | **managers only** (charter has reports) — router creates an A2A task on the report | returns child task id; polls/receives completion via router callbacks |
 | `await_reports(taskIds[])` | block on child task completions, receive their artifact refs | the fan-out/fan-in primitive for the smoke path |

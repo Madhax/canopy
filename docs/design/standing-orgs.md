@@ -63,9 +63,9 @@ Flood behavior after downtime or a label backfill: candidates drain at `maxPerPa
 
 `routes/work.py` additions, mirroring cadence CRUD:
 
-- `GET|POST /organizations/{id}/triggers`; `PUT|DELETE /organizations/{id}/triggers/{tid}` — validation: kind known, node in chart, instance exists + enabled + serves `issues.read` (else `BAD_TRIGGER_SOURCE`), template placeholders ∈ vocabulary (`BAD_TEMPLATE`).
-- `POST /organizations/{id}/triggers/{tid}/check` — one synchronous pass for this trigger (the *check now* button); returns `{fired: [...], candidates: n}`.
-- `POST /organizations/{id}/triggers/{tid}/dry-run` — the poll without firing: candidate list + rendered template for the first. No cursor movement, no fire rows.
+- `GET|POST /teams/{id}/triggers`; `PUT|DELETE /teams/{id}/triggers/{tid}` — validation: kind known, node in chart, instance exists + enabled + serves `issues.read` (else `BAD_TRIGGER_SOURCE`), template placeholders ∈ vocabulary (`BAD_TEMPLATE`).
+- `POST /teams/{id}/triggers/{tid}/check` — one synchronous pass for this trigger (the *check now* button); returns `{fired: [...], candidates: n}`.
+- `POST /teams/{id}/triggers/{tid}/dry-run` — the poll without firing: candidate list + rendered template for the first. No cursor movement, no fire rows.
 
 Events: `trigger.created|updated|deleted|fired|error` on the activity feed; SSE invalidation family `^trigger\.` (the events.ts pattern).
 
