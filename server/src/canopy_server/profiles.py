@@ -78,6 +78,9 @@ class AgentProfile(BaseModel):
     model: str
     endpoint: str | None = None
     apiKeySecretId: str | None = None  # reference into the Secret Store — NEVER the key itself
+    # C2 (design/organizations/02 §2): auth lives on the ProviderAccount; the profile keeps
+    # model choice. Nullable until the boot migration stamps it; legacy fields stay readable.
+    providerAccountId: str | None = None
     params: ProfileParams = Field(default_factory=ProfileParams)
     systemPreamble: str = ""
     createdAt: str
@@ -107,6 +110,8 @@ class ProfileStore:
             model=row["model"],
             endpoint=row["endpoint"],
             apiKeySecretId=row["api_key_secret_id"],
+            providerAccountId=(row["provider_account_id"]
+                               if "provider_account_id" in row.keys() else None),
             params=ProfileParams.model_validate(json.loads(row["params"])),
             systemPreamble=row["system_preamble"],
             createdAt=row["created_at"],

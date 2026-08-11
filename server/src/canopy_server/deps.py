@@ -444,3 +444,48 @@ def _team_home_for(path_str: str, data_dir_str: str):
 
 def get_actuator():
     return _actuator_for(str(get_db_path()), str(get_data_dir()))
+
+
+# --------------------------------------------------------------------------- #
+# Capacity layer (design/organizations/02–03, C2). Cached per database file.
+# --------------------------------------------------------------------------- #
+@lru_cache(maxsize=8)
+def _provider_accounts_for(path_str: str):
+    from .capacity.accounts import ProviderAccountStore
+
+    return ProviderAccountStore(_db_for(path_str), now=now_iso)
+
+
+def get_provider_accounts():
+    return _provider_accounts_for(str(get_db_path()))
+
+
+@lru_cache(maxsize=8)
+def _capacity_ledger_for(path_str: str):
+    from .capacity.ledger import CapacityLedger
+    from .config import get_capacity_attribution_window_s, get_capacity_reading_ttl_s
+
+    return CapacityLedger(
+        _db_for(path_str), now=now_iso,
+        reading_ttl_s=get_capacity_reading_ttl_s(),
+        attribution_window_s=get_capacity_attribution_window_s(),
+    )
+
+
+def get_capacity_ledger():
+    return _capacity_ledger_for(str(get_db_path()))
+
+
+@lru_cache(maxsize=8)
+def _capacity_service_for(path_str: str):
+    from .capacity.service import CapacityService
+    from .config import get_capacity_enabled
+
+    return CapacityService(
+        _provider_accounts_for(path_str), _capacity_ledger_for(path_str),
+        _profile_store_for(path_str), enabled=get_capacity_enabled,
+    )
+
+
+def get_capacity_service():
+    return _capacity_service_for(str(get_db_path()))

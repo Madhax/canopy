@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from . import capacity as _capacity  # noqa: F401  (schema registration at import)
 from .catalog import get_catalog
 from .config import get_ui_dist
 from .routes import actuations as actuation_routes

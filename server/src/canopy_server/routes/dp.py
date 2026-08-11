@@ -233,6 +233,14 @@ class EventBody(BaseModel):
     model: str = "claude-cli"
     health: str | None = None  # 'session-health' events (F14): running | erroring
     healthDetail: str | None = None
+    # 'limit-signal' events (C2, design/organizations/03 §1-2): the runtime forwards raw
+    # S1/S2 material; the account's quota adapter interprets it server-side.
+    signal: str | None = None  # session-result | api_retry | mock-reading
+    text: str | None = None
+    error: str | None = None
+    errorStatus: int | None = None
+    retryDelayMs: int | None = None
+    payload: dict[str, Any] | None = None
 
 
 class DependsOnIn(BaseModel):
@@ -432,6 +440,15 @@ def assignment_events(
                 return _work_conflict(WorkError("session-ref needs sessionRef"))
             work_store.set_session_ref(body.assignmentId, body.sessionRef,
                                        transcript_path=body.transcriptPath)
+        elif body.kind == "limit-signal":
+            from ..deps import get_capacity_service
+
+            get_capacity_service().ingest_session_signal(
+                rec.teamId, rec.nodeId,
+                {"signal": body.signal, "text": body.text, "error": body.error,
+                 "errorStatus": body.errorStatus, "retryDelayMs": body.retryDelayMs,
+                 **(body.payload or {})},
+            )
         elif body.kind == "session-health":
             # F14: the adapter's liveness report — any stream event is proof of life; a
             # session dead with a provider error carries the cause for the sweep to surface.
