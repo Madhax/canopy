@@ -74,12 +74,20 @@ gemini-2.5-flash = { input = 0.30, output = 2.5 }
 # The mock provider is free by construction.
 mock-1 = { input = 0.0, output = 0.0 }
 
-# --- C2+ (inert at C1; design/organizations/) --------------------------------
-# Capacity governance and the portfolio scheduler land in the C-series. These
-# sections exist so configs written today keep meaning tomorrow; both default
-# off and change nothing while disabled.
+# --- Capacity (C2, design/organizations/02-03) -------------------------------
+# The capacity substrate: provider accounts, quota windows, readings, attribution.
+# Off by default until the governor (C4) makes it load-bearing; enabling it starts
+# recording tier-2 readings from sessions Canopy already runs. The CANOPY_CAPACITY
+# env var overrides `enabled` for tests and scratch servers.
 [capacity]
 enabled = false
+# reading_ttl_s = 900           # tier-1 reading counts as fresh this long (02 §4)
+# attribution_window_s = 3600   # EWMA horizon for burn rates (02 §5)
 
+# [capacity.anthropic]
+# source = "observed"           # observed | usage-endpoint (03 §2 — the endpoint is
+#                               # [Community]/ToS-gray and stays off unless you opt in)
+
+# The portfolio scheduler (C4) — inert until it lands.
 [scheduler]
 enabled = false

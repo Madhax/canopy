@@ -12,6 +12,14 @@ The script comes from ``FAKE_CLAUDE_SCRIPT`` (a JSON file)::
                 "usage": [120, 40]}]}
 
 On ``--resume``, ``resumeTurns`` is used instead of ``turns`` when present.
+
+The C2 limit vocabulary (design/organizations/03 §4 — tier-2 parsing must be CI-truth):
+
+* a turn may carry ``"apiRetry": {"error": "rate_limit", "error_status": 429,
+  "retry_delay_ms": 1200}`` — emitted as a ``system/api_retry`` event before the turn;
+* the script may set ``"limitResult": "Claude AI usage limit reached|<epoch>"`` (or the
+  interactive phrasing) — the final ``result`` becomes an error carrying that text,
+  exactly the S1 shape the real CLI emits at exhaustion.
 """
 
 from __future__ import annotations
@@ -71,6 +79,8 @@ def main() -> int:
            "model": "claude-fake", "tools": []})
 
     for turn in turns:
+        if "apiRetry" in turn:
+            _emit({"type": "system", "subtype": "api_retry", **turn["apiRetry"]})
         content = []
         for tool in turn.get("tools", []):
             content.append({"type": "tool_use", "name": f"mcp__canopy__{tool['name']}",
@@ -88,6 +98,11 @@ def main() -> int:
                "message": {"content": content,
                            "usage": {"input_tokens": usage[0], "output_tokens": usage[1]}}})
 
+    if script.get("limitResult"):
+        _emit({"type": "result", "subtype": "error_during_execution", "is_error": True,
+               "result": script["limitResult"], "total_cost_usd": 0.0,
+               "num_turns": len(turns), "usage": {}})
+        return 1
     _emit({"type": "result", "subtype": "success", "total_cost_usd": 0.0,
            "num_turns": len(turns), "usage": {}})
     return 0

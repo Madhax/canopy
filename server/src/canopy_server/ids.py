@@ -141,3 +141,23 @@ def new_run_token() -> str:
 def new_org_id() -> str:
     """Organization (the umbrella entity, design/organizations/01 §3): ``org_`` + nanoid(8)."""
     return _prefixed("org", 8)
+
+
+def new_provider_account_id() -> str:
+    """ProviderAccount (capacity layer, design/organizations/02 §2)."""
+    return _prefixed("pa", 8)
+
+
+def new_window_id() -> str:
+    """QuotaWindow (capacity layer)."""
+    return _prefixed("qw", 8)
+
+
+def new_reading_id() -> str:
+    """WindowReading (capacity layer, append-only)."""
+    return _prefixed("qr")
+
+
+def new_capacity_event_id() -> str:
+    """Capacity feed event (exhaustions, holds, fallbacks)."""
+    return _prefixed("ce")

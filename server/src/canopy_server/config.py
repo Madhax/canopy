@@ -183,8 +183,22 @@ def get_prices() -> dict[str, dict[str, dict[str, float]]]:
 
 
 def get_capacity_enabled() -> bool:
-    """[capacity] enabled — the C2 substrate gate (inert at C1, defaults off)."""
+    """[capacity] enabled — the C2 substrate gate (defaults off). The CANOPY_CAPACITY
+    env var overrides for tests and scratch servers, mirroring CANOPY_DATA_DIR."""
+    env = os.environ.get("CANOPY_CAPACITY")
+    if env is not None:
+        return env.lower() in ("1", "true", "on", "yes")
     return bool(_raw_config().get("capacity", {}).get("enabled", False))
+
+
+def get_capacity_reading_ttl_s() -> int:
+    """[capacity] reading_ttl_s — how long a tier-1 reading counts as fresh (02 §4)."""
+    return int(_raw_config().get("capacity", {}).get("reading_ttl_s", 900))
+
+
+def get_capacity_attribution_window_s() -> int:
+    """[capacity] attribution_window_s — the EWMA horizon for burn rates (02 §5)."""
+    return int(_raw_config().get("capacity", {}).get("attribution_window_s", 3600))
 
 
 def get_scheduler_enabled() -> bool:

@@ -268,7 +268,20 @@ def _observe_stream(
             except httpx.HTTPError:
                 pass  # liveness is best-effort; the next event retries
 
-        if etype == "system" and event.get("subtype") == "init":
+        if etype == "system" and event.get("subtype") == "api_retry":
+            # C2 (organizations/03 §2 S2): rate-limit pressure is a provider fact — forward
+            # it raw; the server-side quota adapter decides what it means.
+            try:
+                client.post("/api/dp/assignment/events", json={
+                    "assignmentId": assignment_id, "kind": "limit-signal",
+                    "signal": "api_retry", "error": event.get("error"),
+                    "errorStatus": event.get("error_status"),
+                    "retryDelayMs": event.get("retry_delay_ms"),
+                })
+            except httpx.HTTPError:
+                pass
+
+        elif etype == "system" and event.get("subtype") == "init":
             session_id = event.get("session_id")
             if session_id:
                 client.post("/api/dp/assignment/events", json={
@@ -331,6 +344,20 @@ def _observe_stream(
                  cost_usd=event.get("total_cost_usd"), turns=event.get("num_turns"),
                  is_error=bool(event.get("is_error")),
                  error=(str(err)[:200] if err is not None else None))
+            try:
+                if event.get("is_error"):
+                    client.post("/api/dp/assignment/events", json={
+                        "assignmentId": assignment_id, "kind": "limit-signal",
+                        "signal": "session-result",
+                        "text": (str(err)[:300] if err is not None else ""),
+                    })
+                else:
+                    client.post("/api/dp/assignment/events", json={
+                        "assignmentId": assignment_id, "kind": "limit-signal",
+                        "signal": "session-ok",
+                    })
+            except httpx.HTTPError:
+                pass
             if event.get("is_error"):
                 # F11: surface the cause to the control plane instead of dying silently into
                 # a crash-loop the sweep reads as a stall.
