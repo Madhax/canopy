@@ -1,5 +1,5 @@
 import { useStore } from "zustand";
-import { useTemporalStore } from "../../store/documentStore";
+import { safeRedo, safeUndo, useTemporalStore } from "../../store/documentStore";
 import type { LayoutDirection } from "../../store/settingsStore";
 import type { SaveStatus as Status } from "../../hooks/useAutosave";
 import { Button } from "../common";
@@ -16,6 +16,7 @@ interface Props {
   onInvert: () => void;
   direction: LayoutDirection;
   onReset: () => void;
+  onHistory: () => void;
   onExport: () => void;
   onDownload: () => void;
   onUpload: () => void;
@@ -33,6 +34,7 @@ export function Toolbar({
   onInvert,
   direction,
   onReset,
+  onHistory,
   onExport,
   onDownload,
   onUpload,
@@ -59,10 +61,10 @@ export function Toolbar({
 
       <div className="mx-1 h-5 w-px bg-border" />
 
-      <Button size="sm" variant="ghost" disabled={!canUndo} onClick={() => useTemporalStore.getState().undo()}>
+      <Button size="sm" variant="ghost" disabled={!canUndo} onClick={safeUndo}>
         Undo
       </Button>
-      <Button size="sm" variant="ghost" disabled={!canRedo} onClick={() => useTemporalStore.getState().redo()}>
+      <Button size="sm" variant="ghost" disabled={!canRedo} onClick={safeRedo}>
         Redo
       </Button>
       <Button size="sm" variant="ghost" onClick={onAutoLayout}>
@@ -75,6 +77,9 @@ export function Toolbar({
         title={direction === "BT" ? "Currently bottom-up — flip to top-down" : "Currently top-down — flip to bottom-up"}
       >
         {direction === "BT" ? "↑ Bottom-up" : "↓ Top-down"}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onHistory} title="Version history — restore any of the last 20 saved versions">
+        History
       </Button>
       <Button size="sm" variant="ghost" onClick={onReset}>
         Reset
