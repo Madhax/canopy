@@ -15,6 +15,9 @@ interface Props {
   onDelete?: () => void;
   /** Custody transfer to another Organization (design/organizations/01 §3). */
   onMove?: () => void;
+  /** Scheduler run state (C4) — shown as a chip; drives the pause/resume action. */
+  runState?: "running" | "paused" | "drain";
+  onTogglePause?: () => void;
 }
 
 export function TeamCard({
@@ -26,6 +29,8 @@ export function TeamCard({
   onDuplicate,
   onDelete,
   onMove,
+  runState,
+  onTogglePause,
 }: Props) {
   const navigate = useNavigate();
   const color = section ? sectionColor(section) : "#6b7280";
@@ -42,6 +47,9 @@ export function TeamCard({
           </Badge>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {runState && runState !== "running" && (
+            <Badge color="var(--color-warn)">{runState}</Badge>
+          )}
           {actuation && (
             <Badge color="var(--color-ok)">{actuation === "live" ? "live" : actuation}</Badge>
           )}
@@ -83,6 +91,11 @@ export function TeamCard({
           {onMove && (
             <button className="text-ink-muted hover:text-ink" onClick={onMove}>
               Move…
+            </button>
+          )}
+          {onTogglePause && (
+            <button className="text-ink-muted hover:text-ink" onClick={onTogglePause}>
+              {runState === "paused" ? "▶ Resume" : "⏸ Pause"}
             </button>
           )}
           {onDelete && (
