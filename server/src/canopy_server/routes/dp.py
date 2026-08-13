@@ -346,6 +346,16 @@ def assignment_current(
     a = work_store.current_assignment(rec.teamId, rec.nodeId)
     if a is None:
         return JSONResponse(content=None)  # nothing to do — the runtime idles
+    # The governor's boundary (04 §2): whether this node may run right now. A live
+    # assignment that must stop suspends behind the capacity gate; the runtime just
+    # sees {"hold": ...} and does nothing this tick — never a stall, never an error.
+    from ..deps import get_scheduler
+
+    sched = get_scheduler()
+    admission = sched.check(rec.teamId, rec.nodeId, a)
+    if not admission.admit:
+        sched.hold(a, admission)
+        return {"hold": {**admission.payload, "reason": admission.reason}}
     brief = work_store.get_brief(a.id)
     meter = ledger.get_meter(a.meterId) if a.meterId else None
     return {
@@ -357,7 +367,18 @@ def assignment_current(
         # Undelivered notes, stamped delivered_at by this very read (amendment D-5) — advisory
         # context for the next turn, never a suspension.
         "notes": [n.model_dump() for n in work_store.take_undelivered_notes(a.id)],
+        # K3/K4 (C4): pacing + degrade-model ride the same response; runtimes that
+        # ignore them (loop) behave exactly as before.
+        "pace": _pace_of(sched, rec.teamId),
+        "modelOverride": admission.model_override,
     }
+
+
+def _pace_of(sched, team_id: str) -> dict | None:
+    row = sched.get(team_id)
+    if row.paceChunkTurns:
+        return {"chunkTurns": row.paceChunkTurns, "delayS": row.paceDelayS or 0}
+    return None
 
 
 @router.get("/meter")

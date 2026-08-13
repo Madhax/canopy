@@ -204,3 +204,8 @@ def get_capacity_attribution_window_s() -> int:
 def get_scheduler_enabled() -> bool:
     """[scheduler] enabled — the C4 governor gate (inert at C1, defaults off)."""
     return bool(_raw_config().get("scheduler", {}).get("enabled", False))
+
+
+def get_scheduler_resume_jitter_s() -> int:
+    """[scheduler] resume_jitter_s — capacity-gate auto-resume jitter (04 §7)."""
+    return int(_raw_config().get("scheduler", {}).get("resume_jitter_s", 120))

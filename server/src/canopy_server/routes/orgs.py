@@ -144,6 +144,10 @@ def portfolio(
         card = _summary(team)
         current = actuator.get_current(team.id)
         card["actuation"] = getattr(current, "state", None) if current else None
+        # K1 on the card (C4): pause/resume needs the run state at a glance.
+        from ..deps import get_scheduler
+
+        card["runState"] = get_scheduler().get(team.id).runState
         org_id = card.get("organizationId") or getattr(store, "default_org_id", None)
         teams_by_org.setdefault(org_id, []).append(card)
     return {

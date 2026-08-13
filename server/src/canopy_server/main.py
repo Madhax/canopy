@@ -20,6 +20,7 @@ from . import capacity as _capacity  # noqa: F401  (schema registration at impor
 from .catalog import get_catalog
 from .config import get_ui_dist
 from .routes import actuations as actuation_routes
+from .routes import capacity as capacity_routes
 from .routes import catalog as catalog_routes
 from .routes import connectors as connector_routes
 from .routes import dp as dp_routes
@@ -60,9 +61,10 @@ async def _trigger_sweep_loop() -> None:
     Budget warn/hard-stop ride each step report; this loop catches the quiet failures."""
     while True:
         try:
-            from .deps import get_engine
+            from .deps import get_engine, get_scheduler
 
             get_engine().sweep_triggers()
+            get_scheduler().sweep()  # capacity-gate timer resolution (04 §4; C4)
         except Exception:  # noqa: BLE001 - the sweep must survive any single bad pass
             pass
         await asyncio.sleep(30)
@@ -194,6 +196,7 @@ def create_app() -> FastAPI:
     api.include_router(catalog_routes.router)
     api.include_router(team_routes.router)
     api.include_router(org_routes.router)  # organizations + portfolio + move (C1)
+    api.include_router(capacity_routes.router)  # capacity aggregate + accounts + S3 tap (C3)
     api.include_router(profiles_routes.router)  # profiles / bindings / secrets (A1)
     api.include_router(connector_routes.router)  # connector instances (builder-connectors.md)
     api.include_router(operations_routes.router)  # spend rollups + activity feed (A1)

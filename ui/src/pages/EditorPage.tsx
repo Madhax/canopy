@@ -10,6 +10,7 @@ import { useDocumentStore, useTemporalStore } from "../store/documentStore";
 import { useSelectionStore } from "../store/selectionStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { ResetDialog } from "../components/editor/ResetDialog";
+import { HistoryDialog } from "../components/editor/HistoryDialog";
 import { getOrgAtPath } from "../store/orgTree";
 import { useValidation } from "../hooks/useValidation";
 import { useAutosave } from "../hooks/useAutosave";
@@ -62,6 +63,7 @@ export function EditorPage() {
   const [childDialog, setChildDialog] = useState(false);
   const [customRoleDialog, setCustomRoleDialog] = useState(false);
   const [resetDialog, setResetDialog] = useState(false);
+  const [historyDialog, setHistoryDialog] = useState(false);
   const [rescueDoc, setRescueDoc] = useState<TeamDoc | null>(null);
   const [pendingLayout, setPendingLayout] = useState(false);
 
@@ -340,6 +342,7 @@ export function EditorPage() {
           onInvert={onInvert}
           direction={direction}
           onReset={() => setResetDialog(true)}
+          onHistory={() => setHistoryDialog(true)}
           onExport={onExport}
           onDownload={onDownload}
           onUpload={onUpload}
@@ -355,10 +358,6 @@ export function EditorPage() {
           onPlaceRole={(roleKey) =>
             select({ kind: "agent", id: store.placeAgent(path, roleKey, { x: 360, y: 200 }, catalog.data!) })
           }
-          onStampFormation={(formationKey) => {
-            const root = team.agents.find((a) => a.managerId === null);
-            store.stampFormation(path, formationKey, root?.id ?? null, { x: 400, y: 140 }, catalog.data!);
-          }}
           onAddCustomRole={() => setCustomRoleDialog(true)}
           onAddChildOrg={() => {
             if (team.agents.length === 0) {
@@ -435,6 +434,17 @@ export function EditorPage() {
           store.addCustomRole(path, role);
           setCustomRoleDialog(false);
           toast(`Custom role “${role.title}” added.`, "success");
+        }}
+      />
+
+      <HistoryDialog
+        open={historyDialog}
+        teamId={id!}
+        onClose={() => setHistoryDialog(false)}
+        onRestored={(restored) => {
+          load(restored);
+          useTemporalStore.getState().clear();
+          markSavedSignature(restored);
         }}
       />
 

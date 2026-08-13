@@ -481,11 +481,43 @@ def _capacity_service_for(path_str: str):
     from .capacity.service import CapacityService
     from .config import get_capacity_enabled
 
+    work_store = _work_store_for(path_str)
+
+    def notify(team_id, severity, kind, text, *, dedupe_key=None):
+        work_store.notify(team_id, severity, kind, text, dedupe_key=dedupe_key)
+
     return CapacityService(
         _provider_accounts_for(path_str), _capacity_ledger_for(path_str),
-        _profile_store_for(path_str), enabled=get_capacity_enabled,
+        _profile_store_for(path_str), enabled=get_capacity_enabled, notify=notify,
     )
 
 
 def get_capacity_service():
     return _capacity_service_for(str(get_db_path()))
+
+
+def _engine_gates_for(path_str: str):
+    """The engine's own GateService — the scheduler suspends/resumes through the same
+    machinery every other gate uses (no parallel path)."""
+    return get_engine().gates
+
+
+@lru_cache(maxsize=8)
+def _scheduler_for(path_str: str):
+    from .config import get_capacity_enabled, get_scheduler_resume_jitter_s
+    from .scheduler import Scheduler
+
+    return Scheduler(
+        _db_for(path_str), now=now_iso,
+        capacity_service=_capacity_service_for(path_str),
+        capacity_ledger=_capacity_ledger_for(path_str),
+        work_store=_work_store_for(path_str),
+        gates=_engine_gates_for(path_str),
+        enabled=get_capacity_enabled,
+        resume_jitter_s=get_scheduler_resume_jitter_s(),
+    )
+
+
+def get_scheduler():
+    """The portfolio governor (design/organizations/04; C4)."""
+    return _scheduler_for(str(get_db_path()))

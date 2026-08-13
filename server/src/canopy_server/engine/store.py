@@ -1367,6 +1367,16 @@ class WorkStore:
                 )
         return cur.rowcount
 
+    def list_open_gates_by_opener(self, opened_by: str) -> list[Gate]:
+        """Open gates by their opener — the capacity sweep's worklist (C4)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_gate WHERE opened_by = ? AND state = 'open'"
+                " ORDER BY created_at",
+                (opened_by,),
+            ).fetchall()
+        return [_gate(r) for r in rows]
+
     def list_gates_for_node(self, team_id: str, node_id: str, *, limit: int = 100) -> list[Gate]:
         """All gates on one node's assignments, newest first — the inspector's Gates tab
         (open + historical in one query; the route partitions)."""

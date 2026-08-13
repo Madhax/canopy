@@ -231,6 +231,10 @@ def loop_tick(client: httpx.Client, cfg: AgentConfig) -> str:
         return "idle"
 
     cur = r.json()
+    if "hold" in cur:
+        # The governor says not now (C4): scheduled waiting, not an error — idle this
+        # tick; the capacity gate resolves itself when the window reopens.
+        return "idle"
     a = cur["assignment"]
     aid, state = a["id"], a["state"]
     if state not in _ACTIVE_STATES:

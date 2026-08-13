@@ -356,3 +356,102 @@ def test_dp_limit_signal_reaches_ledger(client, make_org, mint_session, monkeypa
     assert acct is not None
     w = get_capacity_ledger().window(acct.id, "mock_window")
     assert w is not None and w["utilization_pct"] == 55.0 and w["source"] == "provider-read"
+
+
+# --------------------------------------------------------------------------- #
+# C3 — the read surface: aggregate honesty, the S3 tap, capacity notifications
+# --------------------------------------------------------------------------- #
+def _signal(client, s, aid, payload):
+    return client.post(
+        "/api/dp/assignment/events",
+        headers={"Authorization": f"Bearer {s['token']}"},
+        json={"assignmentId": aid, "kind": "limit-signal", **payload},
+    )
+
+
+def test_capacity_aggregate_wears_source_and_age(client, make_org, mint_session,
+                                                 monkeypatch):
+    monkeypatch.setenv("CANOPY_CAPACITY", "1")
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = next(a for a in team["agents"] if a["managerId"] is None)
+    s = mint_session(team["id"], node_id=root["id"])
+    from canopy_server.deps import get_engine
+
+    a = get_engine().submit_intent(team["id"], s["actuationId"], "work",
+                                   target_node=root["id"]).assignment
+    r = _signal(client, s, a.id, {"signal": "mock-reading",
+                "payload": {"windowKey": "mock_window", "utilizationPct": 61.0,
+                            "source": "provider-read"}})
+    assert r.status_code == 200
+
+    agg = client.get("/api/capacity").json()
+    assert agg["enabled"] is True
+    (acct,) = [x for x in agg["accounts"] if x["provider"] == "mock"]
+    (w,) = [x for x in acct["windows"] if x["key"] == "mock_window"]
+    # The honesty rule: every level wears its tier and its age (06 §6.1).
+    assert w["utilizationPct"] == 61.0 and w["source"] == "provider-read"
+    assert w["ageS"] is not None
+    # The event feed carries the reading with its team attached.
+    assert any(ev["kind"] == "window-reading" and ev["teamId"] == team["id"]
+               for ev in acct["events"])
+
+
+def test_expected_windows_render_no_reading_never_zero(client, make_org, mint_session,
+                                                       monkeypatch):
+    monkeypatch.setenv("CANOPY_CAPACITY", "1")
+    from canopy_server.deps import get_provider_accounts
+
+    get_provider_accounts().ensure_cli_account("anthropic")
+    agg = client.get("/api/capacity").json()
+    (acct,) = [x for x in agg["accounts"] if x["authMode"] == "subscription-cli"]
+    by_key = {w["key"]: w for w in acct["windows"]}
+    # planHint/adapter seeds the gauges; unknown beats fabricated (06 §6.3).
+    assert "five_hour" in by_key and "seven_day_opus" in by_key
+    assert by_key["five_hour"]["state"] == "unknown"
+    assert by_key["five_hour"]["utilizationPct"] is None  # never 0%, never a guess
+
+
+def test_statusline_tap_records_tier1_readings(client, monkeypatch):
+    monkeypatch.setenv("CANOPY_CAPACITY", "1")
+    r = client.post("/api/capacity/statusline", json={
+        "rate_limits": {
+            "five_hour": {"used_percentage": 82.0, "resets_at": 1754899200},
+            "seven_day": {"used_percentage": 31.0, "resets_at": 1755100800},
+        }
+    })
+    assert r.status_code == 200 and r.json()["readings"] == 2
+    from canopy_server.deps import get_capacity_ledger, get_provider_accounts
+
+    acct = get_provider_accounts().find("anthropic", "subscription-cli")
+    w = get_capacity_ledger().window(acct.id, "five_hour")
+    assert w["utilization_pct"] == 82.0 and w["source"] == "provider-read"
+    assert w["resets_at"].endswith("Z")
+
+
+def test_statusline_tap_disabled_when_capacity_off(client, monkeypatch):
+    monkeypatch.setenv("CANOPY_CAPACITY", "0")
+    r = client.post("/api/capacity/statusline", json={"rate_limits": {}})
+    assert r.status_code == 409
+
+
+def test_exhaustion_emits_info_notification_once(client, make_org, mint_session,
+                                                 monkeypatch):
+    monkeypatch.setenv("CANOPY_CAPACITY", "1")
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = next(a for a in team["agents"] if a["managerId"] is None)
+    s = mint_session(team["id"], node_id=root["id"])
+    from canopy_server.deps import get_engine
+
+    a = get_engine().submit_intent(team["id"], s["actuationId"], "work",
+                                   target_node=root["id"]).assignment
+    payload = {"signal": "mock-reading",
+               "payload": {"windowKey": "mock_window", "utilizationPct": 100.0,
+                           "source": "provider-event", "stateHint": "exhausted",
+                           "resetsAt": "2027-01-01T00:00:00Z"}}
+    _signal(client, s, a.id, payload)
+    _signal(client, s, a.id, payload)  # a signal storm is one notification (dedupe)
+
+    notes = client.get(f"/api/teams/{team['id']}/notifications").json()["notifications"]
+    cap = [n for n in notes if n["kind"] == "capacity-exhausted"]
+    # Exhaustion is NOT an emergency (06 §5): info severity, the governor handles it.
+    assert len(cap) == 1 and cap[0]["severity"] == "info"

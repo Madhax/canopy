@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useDocumentStore, useTemporalStore } from "../store/documentStore";
+import { safeRedo, safeUndo, useDocumentStore } from "../store/documentStore";
 import { useSelectionStore } from "../store/selectionStore";
 
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -19,8 +19,8 @@ export function useKeyboardShortcuts(onSave: () => void) {
 
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        if (e.shiftKey) useTemporalStore.getState().redo();
-        else useTemporalStore.getState().undo();
+        if (e.shiftKey) safeRedo();
+        else safeUndo();
         return;
       }
       if (mod && e.key.toLowerCase() === "s") {

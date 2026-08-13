@@ -102,7 +102,16 @@ export function GateCard({ gate, nodeName, onResolve, busy }: Props) {
             </Button>
           </>
         )}
-        {gate.kind === "intervention" && !governed && (
+        {gate.openedBy === "trigger:capacity" && (
+          <span className="text-xs text-ink-muted">
+            holding for {(gate.payload.window as string) ?? "capacity"}
+            {typeof gate.payload.resetsAt === "string"
+              ? ` · resumes ~${new Date(gate.payload.resetsAt as string).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : " · resumes when the window reopens"}{" "}
+            — scheduled wait, resolves itself
+          </span>
+        )}
+        {gate.kind === "intervention" && !governed && gate.openedBy !== "trigger:capacity" && (
           <>
             <Button onClick={() => resolve({ action: "resume" })} disabled={busy}>
               Resume
