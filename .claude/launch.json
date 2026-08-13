@@ -43,6 +43,27 @@
         "8700"
       ],
       "port": 8700
+    },
+    {
+      "name": "canopy-scratch-8704",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "D:/workspace/canopy/server",
+        "uvicorn",
+        "canopy_server.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8704"
+      ],
+      "port": 8704,
+      "env": {
+        "CANOPY_PORT": "8704",
+        "CANOPY_CAPACITY": "1",
+        "CANOPY_DATA_DIR": "D:/workspace/canopy/data-scratch-c3"
+      }
     }
   ]
 }

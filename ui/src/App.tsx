@@ -4,6 +4,7 @@ import { ToastProvider } from "./components/common";
 import { MainLayout } from "./components/MainLayout";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import { OrgPage } from "./pages/OrgPage";
+import { CapacityPage } from "./pages/CapacityPage";
 import { NewTeamWizard } from "./pages/NewTeamWizard";
 import { EditorPage } from "./pages/EditorPage";
 import { ActuatePage } from "./pages/ActuatePage";
@@ -22,6 +23,7 @@ export function App() {
             <Route element={<MainLayout />}>
               <Route path="/" element={<PortfolioPage />} />
               <Route path="/orgs/:id" element={<OrgPage />} />
+              <Route path="/capacity" element={<CapacityPage />} />
               <Route path="/actuate" element={<ActuatePage />} />
               <Route path="/execute" element={<ExecutePage />} />
             </Route>
