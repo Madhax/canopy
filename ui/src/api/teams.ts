@@ -58,3 +58,25 @@ export function useImportTeam() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["teams"] }),
   });
 }
+
+// --- Revisions: every overwrite is one restore away (server revisions.py) ----
+export interface TeamRevision {
+  id: string;
+  reason: "save" | "overwrite" | "restore" | "delete";
+  savedAt: string;
+  name: string;
+  agentCount: number;
+  updatedAt: string | null;
+}
+
+export function useRevisions(id: string | undefined, open: boolean) {
+  return useQuery({
+    queryKey: ["team-revisions", id],
+    queryFn: () => apiGet<{ revisions: TeamRevision[] }>(`/teams/${id}/revisions`),
+    enabled: !!id && open,
+  });
+}
+
+export function restoreRevision(teamId: string, revisionId: string) {
+  return apiSend<SaveResult>("POST", `/teams/${teamId}/revisions/${revisionId}/restore`);
+}

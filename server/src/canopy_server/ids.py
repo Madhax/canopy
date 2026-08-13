@@ -161,3 +161,8 @@ def new_reading_id() -> str:
 def new_capacity_event_id() -> str:
     """Capacity feed event (exhaustions, holds, fallbacks)."""
     return _prefixed("ce")
+
+
+def new_revision_id() -> str:
+    """Team document revision (the overwrite safety net)."""
+    return _prefixed("rv")

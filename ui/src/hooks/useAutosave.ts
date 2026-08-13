@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { TeamDoc } from "../schema/team";
 import { ApiError } from "../api/client";
 import { saveTeam } from "../api/teams";
-import { useDocumentStore, useTemporalStore } from "../store/documentStore";
+import { noteServerUpdatedAt, useDocumentStore, useTemporalStore } from "../store/documentStore";
 
 export type SaveStatus = "saved" | "saving" | "unsaved" | "failed" | "conflict";
 
@@ -18,7 +18,10 @@ export function useAutosave(doc: TeamDoc | null) {
 
   // Initialize the saved signature the first time a document loads.
   useEffect(() => {
-    if (doc && savedSig.current === null) savedSig.current = sig(doc);
+    if (doc && savedSig.current === null) {
+      savedSig.current = sig(doc);
+      noteServerUpdatedAt(doc.updatedAt); // the loaded copy IS the server version
+    }
   }, [doc]);
 
   const doSave = useCallback(async () => {
@@ -31,6 +34,7 @@ export function useAutosave(doc: TeamDoc | null) {
       useTemporalStore.getState().pause();
       setUpdatedAt(result.document.updatedAt ?? current.updatedAt ?? null);
       useTemporalStore.getState().resume();
+      noteServerUpdatedAt(result.document.updatedAt ?? current.updatedAt ?? null);
       savedSig.current = sig(current);
       retry.current = 0;
       // If the user kept editing during the save, we're already dirty again.
@@ -78,6 +82,7 @@ export function useAutosave(doc: TeamDoc | null) {
       useTemporalStore.getState().pause();
       setUpdatedAt(serverUpdatedAt);
       useTemporalStore.getState().resume();
+      noteServerUpdatedAt(serverUpdatedAt);
       savedSig.current = null; // force re-dirty
       await doSave();
     },
@@ -86,6 +91,7 @@ export function useAutosave(doc: TeamDoc | null) {
 
   const markSavedSignature = useCallback((d: TeamDoc) => {
     savedSig.current = sig(d);
+    noteServerUpdatedAt(d.updatedAt);
     setStatus("saved");
   }, []);
 
