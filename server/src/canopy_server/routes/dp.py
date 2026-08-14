@@ -371,6 +371,11 @@ def assignment_current(
         # ignore them (loop) behave exactly as before.
         "pace": _pace_of(sched, rec.teamId),
         "modelOverride": admission.model_override,
+        # C6 rungs 3–4: a fresh-session fallback profile (switch-account) and the
+        # extra-usage engagement flag (steps get tagged server-side regardless —
+        # the flag is advisory context for the adapter's logs).
+        "profileOverride": admission.profile_override,
+        "extraUsage": admission.extra_usage,
     }
 
 
@@ -438,6 +443,16 @@ def assignment_events(
         if body.kind == "intake-complete":
             engine.mark_intake_complete(body.assignmentId)
         elif body.kind == "step":
+            # K10 (04 §5 rung 4): while the extra-usage rung is engaged, settled
+            # spend is tagged provider='claude-extra' — real dollars at list rates,
+            # separable in the cost explorer forever, never blended into "$0"
+            # subscription rows (06 §6.5). Server-decided: agents stay ignorant.
+            provider_label = None
+            if body.settle:
+                from ..deps import get_scheduler
+
+                if get_scheduler().check(rec.teamId, rec.nodeId, _a).extra_usage:
+                    provider_label = "claude-extra"
             engine.record_step(
                 body.assignmentId, input_tokens=body.inputTokens, output_tokens=body.outputTokens,
                 duration_ms=body.durationMs, kind=body.stepKind, stage_idx=body.stageIdx,
@@ -445,6 +460,7 @@ def assignment_events(
                 session_span_id=body.sessionSpanId, settle=body.settle, model=body.model,
                 cache_read_tokens=body.cacheReadTokens,
                 cache_creation_tokens=body.cacheCreationTokens,
+                provider_label=provider_label,
             )
         elif body.kind == "stage-update":
             if body.stageIdx is None or body.stageState is None:

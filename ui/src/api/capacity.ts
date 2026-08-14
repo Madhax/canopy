@@ -135,6 +135,8 @@ export interface TeamSchedule {
   priority: "interactive" | "batch";
   activeHours: string | null;
   fallbackPolicy: string[];
+  /** switch-account rung (C6): ordered fallback profile ids, per-team opt-in. */
+  profileChain: string[];
   updatedAt: string | null;
 }
 

@@ -83,6 +83,38 @@ async def _cadence_loop() -> None:
         await asyncio.sleep(30)
 
 
+async def _capacity_poll_loop() -> None:
+    """Tier-1 pull for adapters with something to poll (03 §1; C6). Inert by
+    default: the only polling adapter today is anthropic-max's S4 delegate, and it
+    returns nothing unless ``[capacity.anthropic] source = "usage-endpoint"`` was
+    explicitly set — the loop's cadence honors the 180 s etiquette floor either way.
+    Sleeps first: no boot-time dial-out, ever."""
+    while True:
+        try:
+            from .config import get_capacity_anthropic_poll_s
+
+            delay = float(get_capacity_anthropic_poll_s())
+        except Exception:  # noqa: BLE001
+            delay = 300.0
+        await asyncio.sleep(delay)
+        try:
+            from .capacity.adapters import adapter_for
+            from .config import get_capacity_enabled
+            from .deps import get_capacity_ledger, get_provider_accounts
+
+            if not get_capacity_enabled():
+                continue
+            ledger = get_capacity_ledger()
+            for acct in get_provider_accounts().list():
+                adapter = adapter_for(acct)
+                if adapter is None:
+                    continue
+                for reading in await asyncio.to_thread(adapter.poll, acct):
+                    ledger.record_reading(acct.id, reading)
+        except Exception:  # noqa: BLE001 - polling must survive any single bad pass
+            pass
+
+
 async def _trigger_poll_loop() -> None:
     """Every 60 s, poll enabled event triggers and open intents for new external events
     (standing-orgs.md §3). Stateless: the fire ledger + per-trigger cursor are the only
@@ -167,6 +199,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.create_task(_trigger_sweep_loop()),
         asyncio.create_task(_cadence_loop()),
         asyncio.create_task(_trigger_poll_loop()),
+        asyncio.create_task(_capacity_poll_loop()),
     ]
     try:
         yield
