@@ -58,12 +58,18 @@ def _window_json(w: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/capacity")
 def capacity_aggregate(
+    orgId: str | None = None,
     accounts=Depends(get_provider_accounts),
     ledger=Depends(get_capacity_ledger),
     store=Depends(get_store),
     orgs=Depends(get_org_store),
 ) -> dict:
-    """The console's single source (02 §7): stored facts + derived math, computed here."""
+    """The console's single source (02 §7): stored facts + derived math, computed here.
+
+    With ``orgId`` (the ``/orgs/:id/capacity`` view, 06 §8): burn stacks and the feed
+    narrow to the org's teams, but pool windows, runway, and the *totals* stay pool
+    truth — other orgs' burn folds into one labeled ``otherOrgsPpHr`` band rather
+    than vanishing. Filtered, not falsified."""
     team_names: dict[str, str] = {}
     team_orgs: dict[str, str] = {}
     org_meta: dict[str, dict] = {o.id: {"key": o.key, "name": o.name} for o in orgs.list()}
@@ -119,17 +125,26 @@ def capacity_aggregate(
                 continue
             rates = ledger.burn_rates(acct.id, w["key"])
             external = rates.pop("external", 0.0)
+            other_orgs = 0.0
+            if orgId is not None:
+                mine = {t: r for t, r in rates.items() if team_orgs.get(t) == orgId}
+                other_orgs = sum(r for t, r in rates.items() if t not in mine)
+                rates = mine
             burn[w["key"]] = {
                 "teams": sorted(
                     (band(t, r) for t, r in rates.items()),
                     key=lambda b: -b["ppHr"],
                 ),
                 "externalPpHr": round(external, 2),
+                **({"otherOrgsPpHr": round(other_orgs, 2)} if orgId is not None else {}),
             }
             if w["key"] == headline or (headline not in known and runway is None):
                 runway = {**ledger.runway(acct.id, w["key"]), "windowKey": w["key"]}
         events = []
         for ev in ledger.events(acct.id, limit=30):
+            if orgId is not None and ev["team_id"] \
+                    and team_orgs.get(ev["team_id"]) != orgId:
+                continue
             events.append({
                 "id": ev["id"], "kind": ev["kind"], "windowKey": ev["window_key"],
                 "teamId": ev["team_id"],
@@ -146,7 +161,59 @@ def capacity_aggregate(
             "runway": runway,
             "events": events,
         })
-    return {"enabled": get_capacity_enabled(), "accounts": out_accounts}
+    # Org economics ride the aggregate (C5): the console shows K7 shares / K8
+    # reserves / the ceiling read-only, linking to the org page's editor (06 §3).
+    from ..deps import get_scheduler
+
+    sched = get_scheduler()
+    out_orgs = [
+        {"id": o.id, "key": o.key, "name": o.name, "economics": sched.org_economics(o.id)}
+        for o in orgs.list()
+        if orgId is None or o.id == orgId
+    ]
+    return {"enabled": get_capacity_enabled(), "accounts": out_accounts,
+            "organizations": out_orgs, "orgId": orgId}
+
+
+class WhatIfRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    accountId: str | None = None  # default: the first account with any burn
+    windowKey: str | None = None
+    neededPp: float | None = None  # the goal: "free N points of this window"
+    byTime: str | None = None  # ISO horizon; default = until the window's reset
+
+
+@router.post("/capacity/whatif")
+def what_if(
+    req: WhatIfRequest,
+    accounts=Depends(get_provider_accounts),
+    store=Depends(get_store),
+):
+    """The what-if strip (06 §3): the operator states a goal, the scheduler
+    enumerates knob combinations from the same prediction math the chips use.
+    Nothing auto-applies — Apply stays one explicit click per suggestion."""
+    if not get_capacity_enabled():
+        return _error(409, "CAPACITY_DISABLED", "[capacity] enabled is false.")
+    from ..deps import get_scheduler
+
+    sched = get_scheduler()
+    account_id = req.accountId
+    if account_id is None:
+        for acct in accounts.list():
+            probe = sched.what_if(acct.id, window_key=req.windowKey)
+            if probe.get("windowKey"):
+                account_id = acct.id
+                break
+    if account_id is None:
+        return {"accountId": None, "windowKey": None, "suggestions": [],
+                "basis": "no-burn"}
+    out = sched.what_if(account_id, window_key=req.windowKey,
+                        needed_pp=req.neededPp, by=req.byTime)
+    names = {t.id: t.name for t in store.read_all()}
+    for s in out["suggestions"]:
+        for action in s["actions"]:
+            action["teamName"] = names.get(action["teamId"], action["teamId"])
+    return out
 
 
 # --------------------------------------------------------------------------- #

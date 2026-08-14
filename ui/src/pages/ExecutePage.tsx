@@ -237,7 +237,22 @@ export function ExecutePage() {
               </form>
               {submit.isError && (
                 <p className="mb-2 text-xs text-danger">
-                  {(submit.error as Error).message} — is the team actuated?
+                  {(submit.error as Error).message}
+                  {(submit.error as { code?: string }).code === "NOT_ACTUATED"
+                    ? " — is the team actuated?"
+                    : ""}
+                </p>
+              )}
+              {(submit.data as { budgetWarning?: { weekSpendUsd: number; ceilingUsd: number } } | undefined)
+                ?.budgetWarning && (
+                <p className="mb-2 text-xs text-warn">
+                  Heads up: this organization is at est. $
+                  {(submit.data as { budgetWarning: { weekSpendUsd: number; ceilingUsd: number } })
+                    .budgetWarning.weekSpendUsd.toFixed(2)}{" "}
+                  of its $
+                  {(submit.data as { budgetWarning: { weekSpendUsd: number; ceilingUsd: number } })
+                    .budgetWarning.ceilingUsd.toFixed(2)}{" "}
+                  weekly ceiling — new intents will be refused once it's crossed.
                 </p>
               )}
               <div className="flex flex-wrap gap-2">

@@ -1,11 +1,13 @@
 // One organization's page (design/organizations/05-ux-portfolio, C1 slice): identity,
-// purpose, priority class, budget-at-a-glance, and the teams behind this org's wall.
-// Editing is deliberately light at C1 — name/purpose; budgets get their console at C5.
+// purpose, priority class, and the teams behind this org's wall — plus, since C5, the
+// budget editor: the weekly ceiling (admission budget, estimated dollars), K7 shares,
+// and K8 reserves. The capacity console displays these read-only and links here.
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCatalog, indexCatalog } from "../api/catalog";
-import { usePortfolio, type PortfolioOrg } from "../api/orgs";
+import { useOrg, usePortfolio, useUpdateOrgBudget, type PortfolioOrg } from "../api/orgs";
+import { useCapacity } from "../api/capacity";
 import { apiSend, ApiError } from "../api/client";
 import { TeamCard } from "../components/list/TeamCard";
 import { Button, CenteredSpinner, useToast } from "../components/common";
@@ -17,6 +19,117 @@ const ORG_COLORS: Record<string, string> = {
   rose: "#BE123C",
   slate: "#475569",
 };
+
+// The budget editor (01 §6, C5). Three claims, three jobs, labeled as such:
+// the ceiling bounds *spend*, shares divide *supply* under contention, reserves
+// hold *headroom* for interactive work.
+function BudgetEditor({ orgId }: { orgId: string }) {
+  const { toast } = useToast();
+  const org = useOrg(orgId);
+  const capacity = useCapacity();
+  const save = useUpdateOrgBudget();
+
+  const [ceiling, setCeiling] = useState("");
+  const [shares, setShares] = useState<Record<string, string>>({});
+  const [reserves, setReserves] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const eco = org.data?.economics;
+    if (!eco || !("weekResetsAt" in eco)) return;
+    setCeiling(eco.weeklyCostCeilingUsd != null ? String(eco.weeklyCostCeilingUsd) : "");
+    setShares(
+      Object.fromEntries(Object.entries(eco.capacityShares).map(([k, v]) => [k, String(v)])),
+    );
+    setReserves(
+      Object.fromEntries(
+        Object.entries(eco.reserveWatermarkPct).map(([k, v]) => [k, String(v)]),
+      ),
+    );
+  }, [org.data?.id]);
+
+  const eco = org.data?.economics;
+  const weekSpend = eco && "weekSpendUsd" in eco ? eco.weekSpendUsd : null;
+  const accounts = capacity.data?.accounts ?? [];
+
+  async function commit() {
+    const numeric = (entries: Record<string, string>) =>
+      Object.fromEntries(
+        Object.entries(entries)
+          .filter(([, v]) => v !== "")
+          .map(([k, v]) => [k, Number(v)]),
+      );
+    try {
+      await save.mutateAsync({
+        orgId,
+        budget: {
+          weeklyCostCeilingUsd: ceiling === "" ? null : Number(ceiling),
+          capacityShares: numeric(shares),
+          reserveWatermarkPct: numeric(reserves),
+        },
+      });
+      toast("Budget saved.", "success");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Save failed.", "error");
+    }
+  }
+
+  return (
+    <section className="mb-8 rounded-xl border border-border bg-surface p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-semibold text-ink">Budget</h2>
+        {weekSpend != null && (
+          <span className="text-xs text-ink-muted">
+            this week: est. ${weekSpend.toFixed(2)}
+            {ceiling !== "" ? ` of $${Number(ceiling).toFixed(2)}` : ""}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-end gap-4 text-xs">
+        <label className="flex flex-col gap-0.5 text-ink-muted">
+          weekly ceiling ($, estimates — refuses new intents when crossed)
+          <input
+            type="number"
+            min={0}
+            step="1"
+            className="w-28 rounded-md border border-border bg-surface px-1.5 py-1 text-ink"
+            value={ceiling}
+            placeholder="none"
+            onChange={(e) => setCeiling(e.target.value)}
+          />
+        </label>
+        {accounts.map((acct) => (
+          <div key={acct.id} className="flex items-end gap-2">
+            <label className="flex flex-col gap-0.5 text-ink-muted">
+              {acct.label} share (weight, binds under contention)
+              <input
+                type="number"
+                min={0}
+                className="w-20 rounded-md border border-border bg-surface px-1.5 py-1 text-ink"
+                value={shares[acct.id] ?? ""}
+                placeholder="unset"
+                onChange={(e) => setShares((s) => ({ ...s, [acct.id]: e.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-ink-muted">
+              reserve (% held for interactive)
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="w-20 rounded-md border border-border bg-surface px-1.5 py-1 text-ink"
+                value={reserves[acct.id] ?? ""}
+                placeholder="0"
+                onChange={(e) => setReserves((s) => ({ ...s, [acct.id]: e.target.value }))}
+              />
+            </label>
+          </div>
+        ))}
+        <Button variant="secondary" onClick={commit} disabled={save.isPending}>
+          Save budget
+        </Button>
+      </div>
+    </section>
+  );
+}
 
 export function OrgPage() {
   const { id } = useParams<{ id: string }>();
@@ -116,6 +229,9 @@ export function OrgPage() {
                 Edit
               </Button>
             )}
+            <Button variant="secondary" onClick={() => navigate(`/orgs/${id}/capacity`)}>
+              Capacity
+            </Button>
             <Button variant="secondary" onClick={() => navigate("/")}>
               Portfolio
             </Button>
@@ -124,6 +240,7 @@ export function OrgPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-8">
+        {id && <BudgetEditor orgId={id} />}
         {org.teams.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {org.teams.map((s) => {

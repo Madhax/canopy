@@ -3,6 +3,7 @@
 // and the teams grouped behind its isolation wall.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend } from "./client";
+import type { OrgEconomics } from "./capacity";
 import type { OrgSummary } from "./types";
 
 export interface Organization {
@@ -39,6 +40,33 @@ export function usePortfolio() {
   return useQuery({
     queryKey: ["portfolio"],
     queryFn: () => apiGet<{ organizations: PortfolioOrg[] }>("/portfolio"),
+  });
+}
+
+/** One org with live economics (C5): budget claims + derived week spend. */
+export function useOrg(orgId: string | undefined) {
+  return useQuery({
+    queryKey: ["org", orgId],
+    queryFn: () =>
+      apiGet<Organization & { teamIds: string[]; economics: OrgEconomics | Record<string, never> }>(
+        `/orgs/${orgId}`,
+      ),
+    enabled: !!orgId,
+  });
+}
+
+/** The org-level knobs (K7 shares, K8 reserves, weekly ceiling) — audited server-side. */
+export function useUpdateOrgBudget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgId, budget }: { orgId: string; budget: Record<string, unknown> }) =>
+      apiSend<Organization>("PUT", `/orgs/${orgId}/budget`, budget),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["org", vars.orgId] });
+      qc.invalidateQueries({ queryKey: ["orgs"] });
+      qc.invalidateQueries({ queryKey: ["portfolio"] });
+      qc.invalidateQueries({ queryKey: ["capacity"] });
+    },
   });
 }
 

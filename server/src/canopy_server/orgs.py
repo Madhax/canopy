@@ -75,6 +75,69 @@ def valid_org_key(key: str) -> bool:
     return bool(_KEY_RE.match(key))
 
 
+# --------------------------------------------------------------------------- #
+# Budget (01 §3/§6, milestone C5): three org-level claims, three distinct jobs.
+# `weeklyCostCeilingUsd` bounds *spend* (admission budget, estimated dollars);
+# `capacityShares` divides *supply* under contention (04 §6, weights per pool);
+# `reserveWatermarkPct` holds *headroom* for interactive work (02 §6, hard floor).
+# --------------------------------------------------------------------------- #
+class OrgBudget(BaseModel):
+    """Typed view over ``organization.budget_json``. Unset means unenforced."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    weeklyCostCeilingUsd: float | None = None
+    capacityShares: dict[str, float] = Field(default_factory=dict)
+    reserveWatermarkPct: dict[str, float] = Field(default_factory=dict)
+
+
+def parse_budget(budget: dict[str, Any] | None) -> OrgBudget:
+    """Lenient read for stored rows: unknown keys are dropped, bad values zeroed —
+    a malformed budget must never wedge admission (the active-hours rule's cousin)."""
+    budget = budget or {}
+    try:
+        return OrgBudget(
+            weeklyCostCeilingUsd=budget.get("weeklyCostCeilingUsd"),
+            capacityShares={
+                str(k): float(v)
+                for k, v in (budget.get("capacityShares") or {}).items()
+                if isinstance(v, (int, float)) and float(v) >= 0
+            },
+            reserveWatermarkPct={
+                str(k): float(v)
+                for k, v in (budget.get("reserveWatermarkPct") or {}).items()
+                if isinstance(v, (int, float)) and 0 <= float(v) <= 100
+            },
+        )
+    except Exception:  # noqa: BLE001 - unparseable budget = no budget
+        return OrgBudget()
+
+
+def validate_budget(budget: dict[str, Any]) -> list[str]:
+    """Strict write-side check for PUT bodies — reject rather than silently drop."""
+    errors: list[str] = []
+    known = {"weeklyCostCeilingUsd", "capacityShares", "reserveWatermarkPct"}
+    for key in budget:
+        if key not in known:
+            errors.append(f"unknown budget key {key!r}")
+    ceiling = budget.get("weeklyCostCeilingUsd")
+    if ceiling is not None and (not isinstance(ceiling, (int, float)) or ceiling < 0):
+        errors.append("weeklyCostCeilingUsd must be a non-negative number or null")
+    for field_name, upper in (("capacityShares", None), ("reserveWatermarkPct", 100)):
+        value = budget.get(field_name)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            errors.append(f"{field_name} must be an object of pool → number")
+            continue
+        for pool, weight in value.items():
+            if not isinstance(weight, (int, float)) or weight < 0 or (
+                    upper is not None and weight > upper):
+                bound = f"0–{upper}" if upper is not None else "≥ 0"
+                errors.append(f"{field_name}[{pool!r}] must be a number {bound}")
+    return errors
+
+
 def _row_to_org(row) -> Organization:
     return Organization(
         id=row["id"],

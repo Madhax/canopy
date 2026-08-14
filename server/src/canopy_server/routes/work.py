@@ -90,12 +90,43 @@ def submit_intent(
     store=Depends(get_store),
     actuator=Depends(get_actuator),
     engine=Depends(get_engine),
+    work_store=Depends(get_work_store),
 ) -> Any:
     if not store.exists(team_id):
         return _error(404, "NOT_FOUND", f"No team {team_id!r}")
     current = actuator.get_current(team_id)
     if current is None or current.state not in ("live", "degraded"):
         return _error(409, "NOT_ACTUATED", "Actuate the team before submitting intents.")
+    # Boundary 3 (04 §2, C5): the org weekly ceiling gates *admission* — it refuses
+    # new intents, never touches running work. Warn first, refuse when crossed (01 §6).
+    from ..deps import get_scheduler
+
+    admission = get_scheduler().admit_intent(team_id)
+    budget = admission.payload
+    if not admission.admit:
+        work_store.notify(
+            team_id, "attention", "capacity-budget",
+            f"{budget.get('orgKey', 'org')}: weekly ceiling crossed — est."
+            f" ${budget.get('weekSpendUsd', 0):.2f} of ${budget.get('ceilingUsd', 0):.2f};"
+            f" new intents refused until {budget.get('weekResetsAt', 'next week')}",
+            dedupe_key=f"cap-budget:{budget.get('orgId')}:{budget.get('weekResetsAt')}",
+        )
+        return JSONResponse(status_code=409, content={"error": {
+            "code": "ORG_BUDGET_EXCEEDED",
+            "message": "This organization crossed its weekly cost ceiling; new intents"
+            " are refused until the week resets. Running work is unaffected.",
+            "budget": budget,
+        }})
+    budget_warning = budget if admission.reason == "org-budget-approaching" else None
+    if budget_warning is not None:
+        pct = 100.0 * budget_warning["weekSpendUsd"] / budget_warning["ceilingUsd"]
+        work_store.notify(
+            team_id, "warning", "capacity-budget",
+            f"{budget_warning.get('orgKey', 'org')}: est. weekly spend at {pct:.0f}%"
+            f" of the ${budget_warning['ceilingUsd']:.2f} ceiling",
+            dedupe_key=f"cap-budget-warn:{budget_warning.get('orgId')}:"
+            f"{budget_warning.get('weekResetsAt')}",
+        )
     try:
         res = engine.submit_intent(
             team_id, current.id, body.text, target_node=body.targetNodeId, kind=body.kind,
@@ -103,7 +134,10 @@ def submit_intent(
         )
     except WorkError as exc:
         return _error(422, "BAD_INTENT", str(exc))
-    return {"intent": res.intent.model_dump(), "assignment": res.assignment.model_dump()}
+    out = {"intent": res.intent.model_dump(), "assignment": res.assignment.model_dump()}
+    if budget_warning is not None:
+        out["budgetWarning"] = budget_warning
+    return out
 
 
 @router.get("/teams/{team_id}/intents")
