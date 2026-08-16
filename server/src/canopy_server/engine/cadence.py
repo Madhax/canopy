@@ -136,16 +136,30 @@ def validate_cron(expr: str) -> Cron:
     return cron
 
 
+# The governor's refusal reasons → the `cadence.skipped` vocabulary the activity feed
+# speaks (engine.md §4): money, operator, or provider — the admission detail rides along.
+_SKIP_REASONS = {
+    "org-budget": "budget",
+    "paused": "paused",
+    "drain": "drain",
+    "window-exhausted": "capacity",
+    "park": "capacity",
+}
+
+
 # -------------------------------------------------------------- scheduler
 class CadenceScheduler:
     """Fires due cadences. Stateless between passes (engine.md §8): work truth is the
     ``work_cadence`` row's ``last_fired_at`` — a control-plane restart just resumes the loop."""
 
-    def __init__(self, store, engine, actuator, *, activity=None):
+    def __init__(self, store, engine, actuator, *, activity=None, scheduler=None):
         self.store = store
         self.engine = engine
         self.actuator = actuator
         self.activity = activity
+        # The portfolio governor (04 §9.4, C7): standing intents consult it before they
+        # submit. None = ungoverned (bare test stacks); the deps wiring always passes it.
+        self.scheduler = scheduler
 
     def run_once(self, now: datetime | None = None):
         """One scheduler pass: fire (or consume-and-skip) every enabled cadence whose next
@@ -176,6 +190,26 @@ class CadenceScheduler:
                 self._log("cadence.skipped", c,
                           {"reason": "previous-open", "intentId": open_prev.id})
                 continue
+            fired_payload: dict = {}
+            if self.scheduler is not None:
+                # 04 §9.4 (C7): the governor's third boundary for standing intents — the
+                # org ceiling, a paused/drained team, or an exhausted window with no rung
+                # that admits. Skip-with-note; the occurrence stays consumed (coalesces).
+                try:
+                    node_id = self.engine._node(self.engine._org(c.teamId), c.nodeId).id
+                except WorkError as exc:
+                    self._log("cadence.skipped", c, {"reason": "error", "detail": str(exc)})
+                    continue
+                admission = self.scheduler.admit_cadence(c.teamId, node_id)
+                if not admission.admit:
+                    detail = {k: v for k, v in admission.payload.items() if k != "reason"}
+                    self._log("cadence.skipped", c, {
+                        **detail, "reason": _SKIP_REASONS.get(admission.reason, "capacity"),
+                        "admission": admission.reason,
+                    })
+                    continue
+                if admission.reason == "org-budget-approaching":
+                    fired_payload["budgetWarning"] = admission.payload
             try:
                 res = self.engine.submit_intent(
                     c.teamId, current.id, c.intentText, target_node=c.nodeId,
@@ -188,7 +222,7 @@ class CadenceScheduler:
                 c.teamId, "info", "cadence-fired", f"Cadence '{c.name}' fired",
                 subject_ids=[c.id, res.intent.id], dedupe_key=res.intent.id,
             )
-            self._log("cadence.fired", c, {"intentId": res.intent.id})
+            self._log("cadence.fired", c, {"intentId": res.intent.id, **fired_payload})
             fired.append(res.intent)
         return fired
 

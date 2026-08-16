@@ -145,6 +145,8 @@ Derived on read (never stored, so they cannot silently go stale): current window
 enabled = true
 reading_ttl_s = 900          # tier-1 reading considered fresh this long
 attribution_window_s = 3600  # EWMA horizon for burn rates
+reading_retention_days = 30  # §9.3 (C7): hourly compaction; each window's newest reading always kept; 0 = forever
+event_retention_days = 90    # the feed/audit rows; the console shows the last 100 regardless
 
 [capacity.anthropic]
 source = "observed"          # observed | usage-endpoint   (03 §2 — compliance posture differs)
@@ -160,5 +162,5 @@ Accounts themselves are created in the UI (they involve logins and secrets), not
 
 1. **Meter currency unification (F1's open sub-item).** Assignment meters charge raw input+output tokens; windows burn cache-weighted compute. Calibration (§5) absorbs the mismatch for capacity math, but salaries denominated in "tokens" and windows denominated in "percent" still meet nowhere. A future amendment may re-denominate salaries in window-share or estimated USD; explicitly out of scope here.
 2. **How many accounts per provider?** The schema allows several Max logins (§2). The ToS posture of *operating* several is the operator's affair; `03` §6 states what we will and won't build around it.
-3. **Reading retention.** `capacity_reading` grows forever; a 30-day compaction default seems right. Decide at C2.
+3. **Reading retention.** ~~`capacity_reading` grows forever; a 30-day compaction default seems right. Decide at C2.~~ **Decided at C7 (2026-08-15):** 30-day compaction of readings, hourly, keeping each window's newest reading regardless of age (the denormalized window state points at it — a window whose only reading was pruned would read as "never observed"); feed events keep 90 days; both keys in §8, `0` = forever. Attribution/burn look back one `attribution_window_s`, so retention can never starve the math. Vector: `test_c7_hardening.py::test_reading_retention_keeps_each_windows_newest`.
 4. **Cross-instance capacity.** Two Canopy instances (desktop + laptop) sharing one subscription see each other only as `external` burn. A shared capacity ledger is firmly out of scope; noted so nobody mistakes `external` for noise.

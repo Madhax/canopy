@@ -333,6 +333,7 @@ def _cadence_scheduler_for(path_str: str, data_dir_str: str):
         _engine_for(path_str, data_dir_str),
         _actuator_for(path_str, data_dir_str),
         activity=_activity_for(path_str),
+        scheduler=_scheduler_for(path_str),  # 04 §9.4: standing intents are governed too
     )
 
 

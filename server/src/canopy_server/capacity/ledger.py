@@ -185,6 +185,41 @@ class CapacityLedger:
             return "warning"
         return "ok"
 
+    # --------------------------------------------------------------- retention
+    def prune(self, *, reading_retention_days: int = 30,
+              event_retention_days: int = 90) -> dict[str, int]:
+        """Compaction (02 §9.3, decided at C7). Readings older than the retention go,
+        EXCEPT each window's newest — the denormalized window state points at it, and
+        a window whose only reading was pruned would read as "never observed". Feed
+        events have their own, longer horizon. Retention ``<= 0`` means keep forever.
+        Attribution/burn math looks back ``attribution_window_s`` (an hour), so a
+        30-day floor can never starve it. Returns the rows removed per table."""
+        now = _parse_ts(self._now())
+        assert now is not None
+        removed = {"readings": 0, "events": 0}
+        with self.db.transaction() as conn:
+            if reading_retention_days > 0:
+                cutoff = datetime.fromtimestamp(
+                    now.timestamp() - reading_retention_days * 86400, tz=UTC
+                ).isoformat().replace("+00:00", "Z")
+                cur = conn.execute(
+                    "DELETE FROM capacity_reading WHERE observed_at < ? AND id NOT IN ("
+                    " SELECT r.id FROM capacity_reading r"
+                    " WHERE r.window_id = capacity_reading.window_id"
+                    " ORDER BY r.observed_at DESC, r.id DESC LIMIT 1)",
+                    (cutoff,),
+                )
+                removed["readings"] = int(cur.rowcount or 0)
+            if event_retention_days > 0:
+                cutoff = datetime.fromtimestamp(
+                    now.timestamp() - event_retention_days * 86400, tz=UTC
+                ).isoformat().replace("+00:00", "Z")
+                cur = conn.execute(
+                    "DELETE FROM capacity_event WHERE created_at < ?", (cutoff,)
+                )
+                removed["events"] = int(cur.rowcount or 0)
+        return removed
+
     # -------------------------------------------------------------------- feed
     def record_event(self, account_id: str, kind: str, *, window_key: str | None = None,
                      org_id: str | None = None, team_id: str | None = None,

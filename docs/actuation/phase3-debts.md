@@ -103,6 +103,25 @@ The two adopted proposal series (`../design/organizations/`, `../design/experime
 | LAB-D4 | **Evaluation overhead unbounded a priori.** Judging cost scales with trials × panel. | cost | Surfaced on the experiment header from L3; a cap knob if reality demands. |
 | LAB-D5 | **Promotion applies via deactuate→re-actuate.** Inherits D7/D8 (no live structural edits); mid-flight promotion waits for drain. | lifecycle | Sunsets with D7/D8 themselves. |
 
+### Status — C-series close-out (C1–C7, 2026-08-09 → 2026-08-15)
+
+The organizations series landed as seven milestones (`../design/organizations/07` §1). CAP-D1–D5 above are now *live* rows, not registrations; their status, and the open items the build itself surfaced (registered here at C7 per the milestone's done-bar), follow. Everything below is post-MVP scope unless marked otherwise.
+
+| # | Status | Where it stands |
+|---|---|---|
+| CAP-D1 | Open, contained | S4 shipped at C6 exactly as registered: `capacity/adapters/anthropic_usage.py` is the single deletable module, gated by `[capacity.anthropic] source = "usage-endpoint"` (default `"observed"`), poll floor 180 s, every failure degrades soft to `[]`. Sunset watch unchanged. |
+| CAP-D2 | Open, mitigated | Every window carries `source` + `age_s` from the ledger to the console (C3); tier-2 events pin exhaustions; C7's live smoke asserts a tier-2 reading lands from a real login. Calibration constant is still the provisional 1.0 (`CapacityLedger._canopy_fraction`, 02 §5) — refine from tier-1 anchors when S3/S4 readings accumulate. |
+| CAP-D3 | Open, unmeasured | K3 chunking shipped at C4 with the prediction chip's honest "duty-cycle estimate" basis; the resume re-read overhead is not yet a cost-explorer number. Do that before any default tightens. |
+| CAP-D4 | Open, permanent | v1 importer + glossary note shipped at C1; `pitch/` and old exports still speak the old sense by design. |
+| CAP-D5 | Open, as designed | `google_consumer.py` (C6) is classification + counting only; the `cli-gemini` runtime that would exercise it does not exist. |
+| CAP-D6 | **Open** | **api-key header windows are wired only up to the gateway.** `anthropic_api.readings_from_headers` (C6) turns rate-limit headers into token-bucket windows, but the Model Gateway's SDK path hides raw responses, so no reading is ever fed. Dormant until the gateway grows a raw-response hook (or the api-key path is retired). |
+| CAP-D7 | **Open** | **Portfolio SSE not multiplexed.** `07` §3 planned `GET /api/events` (org-tagged) + `/api/capacity/events`; the console polls `GET /api/capacity` every 5 s and the schedule/knob panel refreshes on mutation only. Fine at desk scale; revisit when the console is left open on a wall. |
+| CAP-D8 | **Open** | **API-only knobs.** The profile chain (`switch-account`, `team_schedule.profile_chain_json`) and the account extra-usage cap (`provider_account.extra_usage_cap_usd`) have validated `PUT`s but no UI editors. |
+| CAP-D9 | **Open** | **Reserve watermark depth is fleet-wide.** K8's binding watermark is the max reserve across orgs, and *any* org's interactive team admits above it (`Scheduler._above_reserve_watermark`); per-org reserve depth waits for a real second-org case. |
+| CAP-D10 | **Open** | **Cadence runway refinement.** C7 closed `04` §9.4's decision — cadences consult the governor (`Scheduler.admit_cadence`: org ceiling, paused/drain, exhausted binding window with no admitting rung → `cadence.skipped reason=budget|paused|drain|capacity`, occurrence coalesces). The finer test the question asked for — "the median run fits the remaining runway" — needs per-cadence run-size history; not built. Trigger-fired intents (`engine/triggers.py`) take the same direct `submit_intent` path and are *not* yet governed at boundary 3. |
+| CAP-D11 | **Open** | **The C5 demo is a scheduler test, not a Playwright e2e.** `07` §6 asked for the two-org contended-pool arc (knob turn → hold → scripted reset → resume) to join the e2e suite; it lives in `test_economics.py` + `test_scheduler.py` on the mock spine. The headless preview cannot render React Flow edges, so the console projection is unit-tested; the browser arc is a fast-follow. |
+| — | Closed at C7 | Reading retention (`02` §9.3): 30-day compaction, newest-per-window kept, events 90 days, hourly loop. Restart-mid-hold audit (`test_c7_hardening.py`). The two trigger-loop sweeps isolated (E6's lesson). `hold-resumed` feed rows for every kind of hold. The one marked live smoke (`test_live_smoke.py`, `-m live`, `CANOPY_LIVE=1`). |
+
 ## Not debts — deliberate Phase-2 assets
 
 - **`mock` model provider.** Added as a first-class provider (the docs named `anthropic`/`gemini`

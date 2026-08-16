@@ -56,18 +56,59 @@ async def _reconciler_loop() -> None:
         await asyncio.sleep(15)
 
 
+def sweep_once() -> dict[str, int]:
+    """One pass of the two sweeps the trigger loop runs — the stall triggers over executing
+    assignments (work-model.md §6) and the capacity-gate timer resolution (04 §4). Each in
+    its OWN try (E6's lesson, applied here at C7): a bad stall pass must never starve the
+    capacity sweep, or a reset that passed while the control plane was down would sit
+    unresolved until the next pass that happened not to throw. The first call happens at
+    boot, before the loop's first sleep — that IS the restart sweep 04 §7 promises.
+    Returns per-sweep counts (``-1`` marks a pass that raised) for tests and callers."""
+    from .deps import get_engine, get_scheduler
+
+    out = {"triggers": -1, "capacity": -1}
+    try:
+        out["triggers"] = len(get_engine().sweep_triggers())
+    except Exception:  # noqa: BLE001 - the sweep must survive any single bad pass
+        pass
+    try:
+        out["capacity"] = get_scheduler().sweep()
+    except Exception:  # noqa: BLE001 - isolate the two sweeps from each other
+        pass
+    return out
+
+
 async def _trigger_sweep_loop() -> None:
-    """Every 30 s, evaluate the stall triggers over executing assignments (work-model.md §6).
-    Budget warn/hard-stop ride each step report; this loop catches the quiet failures."""
+    """Every 30 s, ``sweep_once``. Budget warn/hard-stop ride each step report; this loop
+    catches the quiet failures and resolves scheduled waits."""
     while True:
         try:
-            from .deps import get_engine, get_scheduler
-
-            get_engine().sweep_triggers()
-            get_scheduler().sweep()  # capacity-gate timer resolution (04 §4; C4)
-        except Exception:  # noqa: BLE001 - the sweep must survive any single bad pass
+            sweep_once()
+        except Exception:  # noqa: BLE001 - even the import must not kill the loop
             pass
         await asyncio.sleep(30)
+
+
+async def _capacity_retention_loop() -> None:
+    """Hourly compaction of the capacity ledger's append-only tables (02 §9.3, decided at
+    C7): readings older than ``[capacity] reading_retention_days`` (30) go — except each
+    window's newest, which is the state's provenance — and feed events older than
+    ``event_retention_days`` (90). Runs once at boot, then hourly; ``0`` keeps forever."""
+    while True:
+        try:
+            from .config import (
+                get_capacity_event_retention_days,
+                get_capacity_reading_retention_days,
+            )
+            from .deps import get_capacity_ledger
+
+            get_capacity_ledger().prune(
+                reading_retention_days=get_capacity_reading_retention_days(),
+                event_retention_days=get_capacity_event_retention_days(),
+            )
+        except Exception:  # noqa: BLE001 - hygiene must survive any single bad pass
+            pass
+        await asyncio.sleep(3600)
 
 
 async def _cadence_loop() -> None:
@@ -200,6 +241,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.create_task(_cadence_loop()),
         asyncio.create_task(_trigger_poll_loop()),
         asyncio.create_task(_capacity_poll_loop()),
+        asyncio.create_task(_capacity_retention_loop()),
     ]
     try:
         yield

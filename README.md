@@ -94,11 +94,19 @@ Three phases are implemented; the chart is built, actuated, **and worked**:
 The E-series (E1–E8) is complete, capped by Canopy's first self-PR — a design proposal authored,
 reviewed, and PR'd by a Canopy org working on this repo. Connectors + triggers shipped next: the
 builder binds GitHub/local-git instances with on-canvas scope, PR-create is a governed action, and
-issue triggers generate intents on their own. **The MVP is not declared delivered until the
-C-series lands** ([`docs/design/organizations/`](docs/design/organizations/), adopted 2026-08-09):
-the Team/Organization vocabulary correction, the portfolio home, and provider-truthful capacity
-governance. After that, the L-series ([`docs/design/experiments/`](docs/design/experiments/))
-adds the experiment lab.
+issue triggers generate intents on their own. **The C-series is built (C1–C7,
+[`docs/design/organizations/`](docs/design/organizations/), adopted 2026-08-09)** — the MVP's
+last prerequisite: **Organizations** own **Teams** (the vocabulary correction, migrated end to
+end); the portfolio home groups teams by organization with vitals and actuation at a glance; and
+**capacity governance** makes one shared subscription safe for a fleet — provider-anchored window
+gauges with source + age on every number, per-team burn attribution (the operator's own usage as
+its own band), throttle knobs (pause · session cap · pacing · tier cap · priority · active hours)
+with predicted effects, org budgets, shares and reserves under contention, and a fallback ladder
+(hold-resume · degrade-model · switch-account · extra-usage · park) that holds work reversibly at
+the turn boundary and resumes it at the provider's reset — through control-plane restarts.
+Cadences consult the same governor. Declaring the MVP delivered is the operator's release call
+([`docs/execution/mvp.md`](docs/execution/mvp.md)); after it, the L-series
+([`docs/design/experiments/`](docs/design/experiments/)) adds the experiment lab.
 
 ## Quickstart — run the software team
 
@@ -112,20 +120,29 @@ uv sync --project server     # server deps
 pnpm dev                     # server :8700 + UI :5173 → open http://localhost:5173
 ```
 
-Then, in the app *(until milestone C1 lands, in-app labels still say "Organization" for what the
-docs now call a **Team** — create an organization, add a team)*:
+Then, in the app (the home page is the **portfolio**: your organizations, each with its teams;
+a `default` organization exists from the first boot):
 
-1. **Build** — *New Organization* → pick a software org type → *Start from a formation* → stamp
-   the **Product Engineering Pod** (an engineering lead with backend, frontend, and QA reports).
-2. **Bind** — in the editor's org settings, create an Agent Profile (provider `mock`, model
+1. **Build** — *New team* (inside the default organization, or *New organization* first) → pick
+   a software team type → *Start from a formation* → stamp the **Product Engineering Pod** (an
+   engineering lead with backend, frontend, and QA reports).
+2. **Bind** — in the editor's team settings, create an Agent Profile (provider `mock`, model
    `mock-1`, no key) and bind it to each node. Every node needs a binding before actuation.
 3. **Actuate** — the *Actuate* page (or the editor toolbar) → **▶ Actuate**. Readiness issues are
-   listed with fixes; a few seconds later the org is live: each node is a real sandboxed process.
+   listed with fixes; a few seconds later the team is live: each node is a real sandboxed process.
 4. **Work** — the *Execute* page: submit an intent (e.g. *"Add CSV export; all tests must
    pass"*). The lead plans and fans out; the **plan review** card lands in your inbox with the
-   actual proposed delegations — approve it, then watch the living plan advance, the org pulse
+   actual proposed delegations — approve it, then watch the living plan advance, the team pulse
    tick, and the deliverable arrive for your acceptance. The *costs* tab shows the burn
    (all zeros on `mock`); clicking any node name opens the full agent inspector.
+5. **Govern** — the *Capacity* page (`[capacity] enabled = true` in `canopy.toml`, or
+   `CANOPY_CAPACITY=1`): every provider window with its source and age, who is burning it, runway,
+   and the what-if strip; each team card carries Pause/Resume and a knob panel whose chips predict
+   the effect before you commit. Each organization's page carries its weekly budget, share, and
+   reserve. On `mock`, the fake CLI's limit script lets you watch a window exhaust, sessions hold
+   at the turn boundary as *scheduled waiting*, and resume at the scripted reset — the worked
+   example in [`docs/design/organizations/README.md`](docs/design/organizations/README.md),
+   keyless.
 
 **Real CLI sessions:** with a logged-in [Claude Code](https://claude.com/claude-code) CLI on your
 PATH, set `runtime_override = ""` in `canopy.toml` — engineer-class roles then run their

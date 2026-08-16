@@ -9,13 +9,10 @@ this suite exercises on windows-latest).
 from __future__ import annotations
 
 import json
-import socket
 import sys
-import threading
 import time
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 _AGENT_SRC = Path(__file__).resolve().parents[2] / "agent" / "src"
@@ -27,29 +24,9 @@ from canopy_agent.runtime import AgentConfig  # noqa: E402
 
 FAKE_CLI = Path(__file__).resolve().parent / "fake_claude.py"
 
-
-@pytest.fixture()
-def live_server(client):
-    """A real HTTP server over the same app + test DB, for the fake-CLI subprocess."""
-    import uvicorn
-
-    from canopy_server.main import app
-
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 15
-    while not server.started:
-        if time.monotonic() > deadline:
-            raise RuntimeError("uvicorn thread never started")
-        time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    thread.join(timeout=5)
+# The `live_server` fixture (real uvicorn over the test DB) lives in conftest.py — shared
+# with the marked live smoke (test_live_smoke.py), which drives a real `claude` down the
+# same wire.
 
 
 def _seed_charter(team: dict, actuation_id: str, node_id: str) -> None:
