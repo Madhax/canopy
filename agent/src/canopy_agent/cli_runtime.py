@@ -151,27 +151,31 @@ def _rotate_if_large(path: Path, cap: int = _STDERR_ROTATE_BYTES) -> None:
 
 def _work_root() -> Path:
     """F13: the assignment tree's stable home. The actuator passes an actuation-independent
-    path (``data/orgs/<orgKey>/teams/<teamId>/work/<nodeId>``) so the CLI's per-directory conversation key — and
-    with it ``--resume`` — survives deactuate → re-actuate. Absent (tests, older actuators),
+    path (``data/orgs/<orgKey>/teams/<teamId>/work/<nodeId>``) so the CLI's per-directory
+    conversation key — and with it ``--resume`` — survives deactuate → re-actuate. Absent
+    (tests, older actuators),
     the sandbox cwd keeps the legacy per-actuation shape."""
     raw = os.environ.get("CANOPY_WORK_ROOT")
     return Path(raw) if raw else Path.cwd()
 
 
-def _transcript_path(workdir: Path, session_id: str) -> Path:
+def _transcript_path(workdir: Path, session_id: str,
+                     config_dir: str | None = None) -> Path:
     """Where the CLI writes this session's conversation (F16's pointer): the config dir's
     ``projects/<key>/<sessionId>.jsonl``, where the key is the workdir path with every
-    non-alphanumeric character flattened to ``-`` (the CLI's own munge)."""
-    raw = os.environ.get("CLAUDE_CONFIG_DIR")
+    non-alphanumeric character flattened to ``-`` (the CLI's own munge). A
+    switch-account session (C6) lives in the fallback account's own config dir."""
+    raw = config_dir or os.environ.get("CLAUDE_CONFIG_DIR")
     base = Path(raw) if raw else Path.home() / ".claude"
     key = re.sub(r"[^A-Za-z0-9]", "-", str(workdir))
     return base / "projects" / key / f"{session_id}.jsonl"
 
 
-def _archive_transcript(workroot: Path, workdir: Path, session_id: str) -> None:
+def _archive_transcript(workroot: Path, workdir: Path, session_id: str,
+                        config_dir: str | None = None) -> None:
     """F16: copy the session transcript into the assignment's own home — the team owns the
     complete record of what its agent said and did, not the operator's CLI profile."""
-    src = _transcript_path(workdir, session_id)
+    src = _transcript_path(workdir, session_id, config_dir)
     try:
         if src.is_file():
             dest = workroot / "transcripts"
@@ -182,8 +186,8 @@ def _archive_transcript(workroot: Path, workdir: Path, session_id: str) -> None:
         _log("transcript_archive_failed", session=session_id, error=str(exc))
 
 
-def _cli_command() -> list[str]:
-    raw = os.environ.get("CANOPY_CLI_CMD", "claude")
+def _cli_command(override: str | None = None) -> list[str]:
+    raw = override or os.environ.get("CANOPY_CLI_CMD", "claude")
     cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
     # Windows: CreateProcess never applies PATHEXT to a bare name, so an npm shim like
     # claude.cmd is invisible to Popen even though `claude` resolves in every shell.
@@ -238,6 +242,7 @@ _RESUME_FALLBACK: set[str] = set()
 def _observe_stream(
     client: httpx.Client, proc: subprocess.Popen, assignment_id: str, *,
     budget_remaining: int, is_manager: bool, workroot: Path, workdir: Path,
+    config_dir: str | None = None, model_label: str | None = None,
 ) -> None:
     """Parse stream-json → settled Step reports; kill the tree when spend crosses the budget."""
     session_id: str | None = None
@@ -288,7 +293,8 @@ def _observe_stream(
                     "assignmentId": assignment_id, "kind": "session-ref",
                     "sessionRef": session_id,
                     # F16: the team's pointer to the conversation's ground truth.
-                    "transcriptPath": str(_transcript_path(workdir, session_id)),
+                    "transcriptPath": str(
+                        _transcript_path(workdir, session_id, config_dir)),
                 })
                 _log("session_init", assignment=assignment_id, session=session_id)
 
@@ -325,9 +331,10 @@ def _observe_stream(
                 "durationMs": int((now - last_event) * 1000),
                 "deltaKind": delta, "deltaRef": tools[0] if tools else None,
                 "sessionSpanId": session_id, "settle": True,
-                # The session's model prices the settle (F1) — profile.model rides the same
-                # env var that sets --model; absent (fake CLI) falls back to the default.
-                "model": os.environ.get("CANOPY_CLI_MODEL") or "claude-cli",
+                # The session's model prices the settle (F1) — the ACTIVE model:
+                # a degrade or account-switch override, else profile.model via env.
+                "model": model_label or os.environ.get("CANOPY_CLI_MODEL")
+                or "claude-cli",
             })
             last_event = now
             spent += in_tok + out_tok
@@ -382,7 +389,7 @@ def _observe_stream(
 
     proc.wait()
     if session_id:
-        _archive_transcript(workroot, workdir, session_id)
+        _archive_transcript(workroot, workdir, session_id, config_dir)
     stderr_tail: list[str] = []
     if proc.returncode:
         try:
@@ -444,6 +451,14 @@ def _start_session(
         return
 
     brief_text = (cur.get("brief") or {}).get("text", "")
+    # C6 rung 3 (04 §5): the scheduler picked a fallback profile on another account.
+    # A FRESH session on that account — context does not cross providers; the durable
+    # work model re-briefs it. The switch is noted so the transcript explains itself.
+    switch = cur.get("profileOverride") or None
+    if switch:
+        resume = False
+        _log("switch_account", assignment=aid, account=switch.get("accountId"),
+             profile=switch.get("profileId"), model=switch.get("model"))
     if resume and a.get("sessionRef"):
         prompt = ("You have been resumed. Call the canopy `get_assignment` tool to see the "
                   "current state (resolutions, notes, deliveries), then continue the protocol. "
@@ -468,18 +483,26 @@ def _start_session(
     # through cmd.exe, which treats embedded newlines as command separators — a multi-line
     # brief silently strips every flag after it (the session answers in plain text and the
     # observer sees zero events). Stdin also sidesteps the 32K command-line ceiling.
-    cmd = _cli_command() + [
+    cmd = _cli_command((switch or {}).get("cliCmd")) + [
         "-p", "--output-format", "stream-json", "--verbose",
         "--max-turns", str(max_turns), "--permission-mode", "default",
         "--mcp-config", ".mcp.json", "--strict-mcp-config", *extra,
     ]
     # The profile's model is the session's model (cli-runtime.md §2: profile.model → --model);
-    # without it the CLI silently runs on the operator's personal default.
-    model = cur.get("modelOverride") or os.environ.get("CANOPY_CLI_MODEL")
-    if cur.get("modelOverride"):
+    # without it the CLI silently runs on the operator's personal default. Overrides,
+    # most specific first: the switch target's profile model, then degrade-model.
+    model = ((switch or {}).get("model") or cur.get("modelOverride")
+             or os.environ.get("CANOPY_CLI_MODEL"))
+    if cur.get("modelOverride") and not switch:
         _log("degrade_model", assignment=a["id"], model=model)
     if model:
         cmd += ["--model", model]
+    # The fallback account's login: its own CLAUDE_CONFIG_DIR keeps the two pools'
+    # credentials — and their windows — honestly separate (02 §2).
+    switch_config_dir = (switch or {}).get("cliConfigDir")
+    env = None
+    if switch_config_dir:
+        env = {**os.environ, "CLAUDE_CONFIG_DIR": str(switch_config_dir)}
     # CLI stderr goes to a per-assignment file, not DEVNULL: when a session dies at
     # startup (auth, bad flag), this file is the only place the reason lands.
     stderr_path = workroot / "session.stderr.log"
@@ -487,7 +510,7 @@ def _start_session(
     popen_kw: dict = {
         "cwd": str(workdir), "stdin": subprocess.PIPE, "stdout": subprocess.PIPE,
         "stderr": open(stderr_path, "ab"),  # noqa: SIM115 - fd is inherited by the child
-        "text": True, "encoding": "utf-8",
+        "text": True, "encoding": "utf-8", "env": env,
     }
     if sys.platform == "win32":
         popen_kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -517,7 +540,8 @@ def _start_session(
     session.thread = threading.Thread(
         target=_observe_stream, args=(client, proc, aid),
         kwargs={"budget_remaining": remaining or 10**9, "is_manager": is_manager,
-                "workroot": workroot, "workdir": workdir},
+                "workroot": workroot, "workdir": workdir,
+                "config_dir": switch_config_dir, "model_label": model},
         daemon=True,
     )
     session.thread.start()

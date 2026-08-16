@@ -31,6 +31,12 @@ class CapacityService:
         profile = self.profiles.get_profile(binding.profileId) if binding else None
         if profile is None:
             return None
+        return self.account_for_profile(profile)
+
+    def account_for_profile(self, profile) -> ProviderAccount | None:
+        """Profile → account resolution (02 §2): the account carries auth, the
+        profile carries model choice. Also the switch-account rung's map from a
+        chain entry to the pool it would draw on (04 §5 rung 3)."""
         account_id = getattr(profile, "providerAccountId", None)
         if account_id:
             acct = self.accounts.get(account_id)

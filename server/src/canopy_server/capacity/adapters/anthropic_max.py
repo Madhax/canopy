@@ -77,7 +77,22 @@ def parse_limit_text(text: str) -> WindowReading | None:
 @register_adapter("anthropic:subscription-cli")
 class AnthropicMaxAdapter(QuotaAdapter):
     def expected_windows(self, account: ProviderAccount) -> list[WindowSpec]:
-        return list(WINDOWS)
+        specs = list(WINDOWS)
+        if account.extraUsageCapUsd is not None:
+            # K10 opted in: the credit pool becomes a visible window (02 §3).
+            specs.append(WindowSpec("extra_usage", "credit-pool", "Extra usage"))
+        return specs
+
+    def poll(self, account: ProviderAccount) -> list[WindowReading]:
+        """S4 behind the explicit config gate (03 §2): 'observed' (default) polls
+        nothing — the compliance decision is the operator's, made in canopy.toml."""
+        from ...config import get_capacity_anthropic_source
+
+        if get_capacity_anthropic_source() != "usage-endpoint":
+            return []
+        from . import anthropic_usage
+
+        return anthropic_usage.fetch_usage(account)
 
     def on_session_event(
         self, account: ProviderAccount, ev: SessionSignal

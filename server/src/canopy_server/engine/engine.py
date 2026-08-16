@@ -785,6 +785,7 @@ class ExecutionEngine:
         delta_ref: str | None = None, step_id: str | None = None,
         session_span_id: str | None = None, settle: bool = False, model: str = "claude-cli",
         cache_read_tokens: int = 0, cache_creation_tokens: int = 0,
+        provider_label: str | None = None,
     ):
         """Record an observable Step.
 
@@ -818,7 +819,10 @@ class ExecutionEngine:
             )
             self.ledger.record(
                 a.meterId, step_id=step.id, team_id=a.teamId, node_id=a.nodeId,
-                actuation_id=a.actuationId, provider="claude-cli", model=model,
+                actuation_id=a.actuationId,
+                # C6 K10: while the extra-usage rung is engaged the caller labels
+                # the spend 'claude-extra' — money, never subscription "$0" rows.
+                provider=provider_label or "claude-cli", model=model,
                 input_tokens=input_tokens, output_tokens=output_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cache_creation_tokens=cache_creation_tokens, est_cost_micros=est_cost,

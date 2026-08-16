@@ -35,10 +35,21 @@ CREATE TABLE IF NOT EXISTS team_schedule (
     priority                 TEXT NOT NULL DEFAULT 'batch',
     active_hours             TEXT,
     fallback_json            TEXT NOT NULL DEFAULT '["hold-resume"]',
+    profile_chain_json       TEXT NOT NULL DEFAULT '[]',
     updated_at               TEXT
 );
 """
 register_schema(SCHEMA)
+
+
+def _ensure_profile_chain_column(db: Db) -> None:
+    """C6 additive migration: installs whose team_schedule predates the profile
+    chain gain the column in place (CREATE IF NOT EXISTS never re-runs)."""
+    with db.transaction() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(team_schedule)")}
+        if cols and "profile_chain_json" not in cols:
+            conn.execute("ALTER TABLE team_schedule ADD COLUMN profile_chain_json"
+                         " TEXT NOT NULL DEFAULT '[]'")
 
 RUN_STATES = ("running", "paused", "drain")
 PRIORITIES = ("interactive", "batch")
@@ -66,6 +77,10 @@ class Schedule:
     priority: str = "batch"
     activeHours: str | None = None
     fallbackPolicy: list[str] = field(default_factory=lambda: ["hold-resume"])
+    # switch-account rung (04 §5 rung 3): ordered fallback profiles, per-team
+    # opt-in and operator-configured — never global, never automatic spillover
+    # between same-provider subscription accounts (03 §6 last row).
+    profileChain: list[str] = field(default_factory=list)
     updatedAt: str | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -75,6 +90,7 @@ class Schedule:
             "paceChunkTurns": self.paceChunkTurns, "paceDelayS": self.paceDelayS,
             "modelTierCap": self.modelTierCap, "priority": self.priority,
             "activeHours": self.activeHours, "fallbackPolicy": self.fallbackPolicy,
+            "profileChain": self.profileChain,
             "updatedAt": self.updatedAt,
         }
 
@@ -87,6 +103,12 @@ class Admission:
     payload: dict[str, Any] = field(default_factory=dict)
     # degrade-model rung: the model the next chunk should run on (04 §5 rung 2)
     model_override: str | None = None
+    # switch-account rung (04 §5 rung 3): the fallback profile the next session
+    # runs on — a FRESH session (context does not cross providers)
+    profile_override: dict[str, Any] | None = None
+    # extra-usage rung (04 §5 rung 4, K10): steps recorded while engaged are
+    # tagged provider='claude-extra' — real dollars, never blended into "$0" rows
+    extra_usage: bool = False
 
 
 def _parse_hhmm(s: str) -> tuple[int, int] | None:
@@ -115,9 +137,10 @@ def in_active_hours(spec: str | None, now: datetime) -> bool:
 
 class Scheduler:
     def __init__(self, db: Db, *, now, capacity_service, capacity_ledger, work_store,
-                 gates, enabled, resume_jitter_s: int = 120):
+                 gates, enabled, resume_jitter_s: int = 120, notify=None):
         self.db = db
         db.ensure_schema()
+        _ensure_profile_chain_column(db)
         self._now = now  # -> ISO string (injected clock)
         self.capacity = capacity_service
         self.ledger = capacity_ledger
@@ -125,6 +148,13 @@ class Scheduler:
         self.gates = gates
         self._enabled = enabled  # callable
         self.resume_jitter_s = resume_jitter_s
+        # notify(team_id, severity, kind, text, dedupe_key) — the park rung's
+        # `capacity-parked` attention (06 §5); None in bare test stacks.
+        self._notify = notify
+        # Feed-event dedupe for rung engagements: check() runs every poll, the
+        # feed wants one row per engagement. In-memory by design — decoration,
+        # resets on restart; the gate/notification rows are the durable record.
+        self._engaged: set[tuple[str, str, str, str]] = set()
 
     # ------------------------------------------------------------- schedule CRUD
     def get(self, team_id: str) -> Schedule:
@@ -141,6 +171,7 @@ class Scheduler:
             modelTierCap=row["model_tier_cap"], priority=row["priority"],
             activeHours=row["active_hours"],
             fallbackPolicy=json.loads(row["fallback_json"] or '["hold-resume"]'),
+            profileChain=json.loads(row["profile_chain_json"] or "[]"),
             updatedAt=row["updated_at"],
         )
 
@@ -150,18 +181,21 @@ class Scheduler:
             conn.execute(
                 "INSERT INTO team_schedule (team_id, run_state, max_concurrent_sessions,"
                 " pace_chunk_turns, pace_delay_s, model_tier_cap, priority, active_hours,"
-                " fallback_json, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+                " fallback_json, profile_chain_json, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(team_id) DO UPDATE SET run_state=excluded.run_state,"
                 " max_concurrent_sessions=excluded.max_concurrent_sessions,"
                 " pace_chunk_turns=excluded.pace_chunk_turns,"
                 " pace_delay_s=excluded.pace_delay_s,"
                 " model_tier_cap=excluded.model_tier_cap, priority=excluded.priority,"
                 " active_hours=excluded.active_hours, fallback_json=excluded.fallback_json,"
+                " profile_chain_json=excluded.profile_chain_json,"
                 " updated_at=excluded.updated_at",
                 (schedule.teamId, schedule.runState, schedule.maxConcurrentSessions,
                  schedule.paceChunkTurns, schedule.paceDelayS, schedule.modelTierCap,
                  schedule.priority, schedule.activeHours,
-                 json.dumps(schedule.fallbackPolicy), schedule.updatedAt),
+                 json.dumps(schedule.fallbackPolicy),
+                 json.dumps(schedule.profileChain), schedule.updatedAt),
             )
         return schedule
 
@@ -195,27 +229,14 @@ class Scheduler:
                                 payload={"reason": "session-cap",
                                          "cap": sched.maxConcurrentSessions})
 
-        # Window exhaustion → the fallback ladder (04 §5, C4 rungs 1–2).
+        # Window exhaustion → the fallback ladder (04 §5, all five rungs at C6).
         account = self.capacity.account_for_session(team_id, node_id)
         if account is not None:
             exhausted = [w for w in self.ledger.windows(account.id)
                          if w["state"] == "exhausted"]
             binding = self._binding_window(exhausted, sched)
             if binding is not None:
-                cap = (sched.modelTierCap or "").lower()
-                scope = (binding.get("model_scope") or "").lower()
-                cap_is_the_exhausted_tier = bool(cap) and (cap in scope or scope in cap)
-                if (scope and "degrade-model" in sched.fallbackPolicy
-                        and sched.modelTierCap and not cap_is_the_exhausted_tier):
-                    # Only a model-scoped window is shut; the chunk restarts on the
-                    # fallback tier, same account (rung 2). A Directive records it.
-                    return Admission(admit=True, reason="degrade-model",
-                                    model_override=sched.modelTierCap)
-                return Admission(admit=False, reason="window-exhausted", payload={
-                    "pool": account.id, "window": binding["key"],
-                    "reason": "exhausted", "resetsAt": binding.get("resets_at"),
-                    "policy": "hold-resume",
-                })
+                return self._walk_ladder(team_id, sched, account, binding)
             # C5 fairness (04 §6) — NEW spawns only, like K2: a suspended
             # conversation resuming is not a new session, and running work is
             # never evicted by a share or a watermark.
@@ -426,6 +447,121 @@ class Scheduler:
                 "SELECT organization_id FROM teams WHERE id = ?", (team_id,)
             ).fetchone()
         return row["organization_id"] if row is not None else None
+
+    # ------------------------------------------------ the fallback ladder (04 §5)
+    def _walk_ladder(self, team_id: str, sched: Schedule, account, binding) -> Admission:
+        """Each configured rung is attempted, in order, at the moment work would
+        otherwise hold. ``hold-resume`` is the terminal rung — always last
+        implicitly (04 §5 rung 1), so listing it early never masks the rungs
+        behind it (C4's contract: presence of ``degrade-model`` engages it)."""
+        for rung in sched.fallbackPolicy:
+            if rung == "degrade-model":
+                cap = (sched.modelTierCap or "").lower()
+                scope = (binding.get("model_scope") or "").lower()
+                cap_is_the_exhausted_tier = bool(cap) and (cap in scope or scope in cap)
+                if scope and sched.modelTierCap and not cap_is_the_exhausted_tier:
+                    # Only a model-scoped window is shut; the chunk restarts on the
+                    # fallback tier, same account (rung 2). A Directive records it.
+                    self._engagement_event(team_id, account, binding, "degrade-model",
+                                           {"model": sched.modelTierCap})
+                    return Admission(admit=True, reason="degrade-model",
+                                     model_override=sched.modelTierCap)
+            elif rung == "switch-account":
+                override = self._switch_target(sched, account)
+                if override is not None:
+                    self._engagement_event(team_id, account, binding, "switch-account",
+                                           {"toAccountId": override["accountId"],
+                                            "toProfileId": override["profileId"]})
+                    return Admission(admit=True, reason="switch-account",
+                                     profile_override=override)
+            elif rung == "extra-usage":
+                spent = self._extra_usage_spent_usd(account)
+                cap_usd = account.extraUsageCapUsd
+                # House rule 2 (07 §6, adversarial invariant): NEVER engages
+                # without opt-in (a cap set on the account) + cap headroom.
+                if cap_usd is not None and cap_usd > 0 and spent < cap_usd:
+                    self._engagement_event(team_id, account, binding, "extra-usage",
+                                           {"spentUsd": round(spent, 2),
+                                            "capUsd": cap_usd})
+                    return Admission(admit=True, reason="extra-usage", extra_usage=True)
+            elif rung == "park":
+                # The explicit wake-the-human rung: drain (live sessions finish,
+                # nothing new starts) + an `attention` notification (06 §5).
+                if sched.runState != "drain":
+                    sched.runState = "drain"
+                    self.put(sched)
+                    if self._notify is not None:
+                        self._notify(
+                            team_id, "attention", "capacity-parked",
+                            f"{account.label}: {binding['key']} exhausted with no"
+                            " usable fallback — team drained, awaiting you",
+                            dedupe_key=f"cap-park:{account.id}:{team_id}:"
+                            f"{binding.get('resets_at')}",
+                        )
+                    self._engagement_event(team_id, account, binding, "park", {})
+                return Admission(admit=False, reason="park", payload={
+                    "pool": account.id, "window": binding["key"], "reason": "park",
+                    "resetsAt": binding.get("resets_at"), "policy": "park",
+                })
+        return Admission(admit=False, reason="window-exhausted", payload={
+            "pool": account.id, "window": binding["key"],
+            "reason": "exhausted", "resetsAt": binding.get("resets_at"),
+            "policy": "hold-resume",
+        })
+
+    def _switch_target(self, sched: Schedule, account) -> dict[str, Any] | None:
+        """Rung 3: the first profile in the team's chain whose account rides a pool
+        with headroom (03 §5 — 'is there a pool with headroom this team's profile
+        can use'). Same-account profiles are skipped (that pool is the shut one);
+        a fresh session on the target is the runtime's job."""
+        for pid in sched.profileChain:
+            profile = self.capacity.profiles.get_profile(pid)
+            if profile is None:
+                continue
+            target = self.capacity.account_for_profile(profile)
+            if target is None or target.id == account.id:
+                continue
+            exhausted = [w for w in self.ledger.windows(target.id)
+                         if w["state"] == "exhausted"]
+            if self._binding_window(exhausted, sched) is not None:
+                continue  # that pool is shut too — try the next link
+            return {
+                "profileId": profile.id, "model": profile.model,
+                "provider": profile.provider, "accountId": target.id,
+                "cliConfigDir": target.cliConfigDir, "cliCmd": target.cliCmd,
+            }
+        return None
+
+    def _extra_usage_spent_usd(self, account) -> float:
+        """Canopy-tracked `claude-extra` spend against this account's hard cap.
+        S4's ``used_credits`` (when enabled) is the provider truth on the console;
+        the CAP check uses our own ledger so it works in observed-only mode too."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT team_id, node_id, SUM(est_cost_micros) AS micros"
+                " FROM ledger_spend_event WHERE provider='claude-extra'"
+                " GROUP BY team_id, node_id"
+            ).fetchall()
+        total = 0
+        for r in rows:
+            acct = self.capacity.account_for_session(r["team_id"], r["node_id"])
+            if acct is not None and acct.id == account.id:
+                total += int(r["micros"] or 0)
+        return total / 1e6
+
+    def _engagement_event(self, team_id: str, account, binding, rung: str,
+                          detail: dict[str, Any]) -> None:
+        """One `fallback-engaged` feed row per engagement (06 §4: nothing the
+        ladder does is invisible or unexplained). Deduped in memory — check()
+        runs every poll; the feed wants the fact, not the polling rate."""
+        key = (account.id, team_id, rung, str(binding.get("resets_at")))
+        if key in self._engaged:
+            return
+        self._engaged.add(key)
+        self.ledger.record_event(
+            account.id, "fallback-engaged", window_key=binding.get("key"),
+            team_id=team_id, payload={"rung": rung, **detail},
+        )
 
     @staticmethod
     def _binding_window(exhausted: list[dict], sched: Schedule) -> dict | None:

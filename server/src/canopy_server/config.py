@@ -201,6 +201,24 @@ def get_capacity_attribution_window_s() -> int:
     return int(_raw_config().get("capacity", {}).get("attribution_window_s", 3600))
 
 
+def get_capacity_anthropic_source() -> str:
+    """[capacity.anthropic] source — 'observed' (default) or 'usage-endpoint' (S4,
+    [Community], ToS-gray; the compliance posture lives in adapters/anthropic_usage.py
+    and is the operator's explicit call, never a default — 03 §2)."""
+    return str(
+        _raw_config().get("capacity", {}).get("anthropic", {}).get("source", "observed")
+    )
+
+
+def get_capacity_anthropic_poll_s() -> int:
+    """[capacity.anthropic] poll_interval_s — usage-endpoint mode only. Floor 180 s:
+    community-verified etiquette for an aggressively rate-limited surface (03 §2)."""
+    raw = int(
+        _raw_config().get("capacity", {}).get("anthropic", {}).get("poll_interval_s", 300)
+    )
+    return max(180, raw)
+
+
 def get_scheduler_enabled() -> bool:
     """[scheduler] enabled — the C4 governor gate (inert at C1, defaults off)."""
     return bool(_raw_config().get("scheduler", {}).get("enabled", False))

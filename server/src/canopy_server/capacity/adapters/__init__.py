@@ -91,4 +91,9 @@ def adapter_for(account: ProviderAccount) -> QuotaAdapter | None:
     return None
 
 
-from . import anthropic_max, mock  # noqa: E402,F401  (registration side effects)
+from . import (  # noqa: E402,F401  (registration side effects)
+    anthropic_api,
+    anthropic_max,
+    google_consumer,
+    mock,
+)

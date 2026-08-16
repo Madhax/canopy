@@ -86,7 +86,10 @@ enabled = false
 
 # [capacity.anthropic]
 # source = "observed"           # observed | usage-endpoint (03 §2 — the endpoint is
-#                               # [Community]/ToS-gray and stays off unless you opt in)
+#                               # [Community]/ToS-gray and stays off unless you opt in;
+#                               # the full compliance posture is the docstring of
+#                               # capacity/adapters/anthropic_usage.py)
+# poll_interval_s = 300         # usage-endpoint mode only; floored at 180 (etiquette)
 
 # The portfolio scheduler (C4) — inert until it lands.
 [scheduler]

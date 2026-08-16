@@ -507,14 +507,20 @@ def _scheduler_for(path_str: str):
     from .config import get_capacity_enabled, get_scheduler_resume_jitter_s
     from .scheduler import Scheduler
 
+    work_store = _work_store_for(path_str)
+
+    def notify(team_id, severity, kind, text, *, dedupe_key=None):
+        work_store.notify(team_id, severity, kind, text, dedupe_key=dedupe_key)
+
     return Scheduler(
         _db_for(path_str), now=now_iso,
         capacity_service=_capacity_service_for(path_str),
         capacity_ledger=_capacity_ledger_for(path_str),
-        work_store=_work_store_for(path_str),
+        work_store=work_store,
         gates=_engine_gates_for(path_str),
         enabled=get_capacity_enabled,
         resume_jitter_s=get_scheduler_resume_jitter_s(),
+        notify=notify,
     )
 
 

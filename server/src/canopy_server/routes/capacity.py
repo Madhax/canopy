@@ -229,6 +229,8 @@ class CreateAccountRequest(BaseModel):
     apiKeySecretId: str | None = None
     planHint: str | None = None
     maxConcurrentSessions: int = 4
+    # K10 opt-in: extra usage NEVER engages without this hard cap being set.
+    extraUsageCapUsd: float | None = None
 
 
 class UpdateAccountRequest(BaseModel):
@@ -237,6 +239,8 @@ class UpdateAccountRequest(BaseModel):
     cliConfigDir: str | None = None
     planHint: str | None = None
     maxConcurrentSessions: int | None = None
+    # Negative clears the cap (turns extra usage back off for this account).
+    extraUsageCapUsd: float | None = None
 
 
 @router.get("/capacity/accounts")
@@ -251,6 +255,7 @@ def create_account(req: CreateAccountRequest, accounts=Depends(get_provider_acco
         cli_config_dir=req.cliConfigDir, cli_cmd=req.cliCmd,
         api_key_secret_id=req.apiKeySecretId, plan_hint=req.planHint,
         max_concurrent_sessions=req.maxConcurrentSessions,
+        extra_usage_cap_usd=req.extraUsageCapUsd,
     )
     return JSONResponse(status_code=201, content=acct.model_dump(mode="json"))
 
@@ -262,15 +267,19 @@ def update_account(
     acct = accounts.get(account_id)
     if acct is None:
         return _error(404, "NOT_FOUND", f"No account {account_id!r}")
+    extra_cap = acct.extraUsageCapUsd
+    if req.extraUsageCapUsd is not None:
+        extra_cap = req.extraUsageCapUsd if req.extraUsageCapUsd >= 0 else None
     with accounts.db.transaction() as conn:
         conn.execute(
             "UPDATE provider_account SET label=?, cli_config_dir=?, plan_hint=?,"
-            " max_concurrent_sessions=? WHERE id=?",
+            " max_concurrent_sessions=?, extra_usage_cap_usd=? WHERE id=?",
             (req.label if req.label is not None else acct.label,
              req.cliConfigDir if req.cliConfigDir is not None else acct.cliConfigDir,
              req.planHint if req.planHint is not None else acct.planHint,
              req.maxConcurrentSessions if req.maxConcurrentSessions is not None
              else acct.maxConcurrentSessions,
+             extra_cap,
              account_id),
         )
     return accounts.get(account_id).model_dump(mode="json")
@@ -333,6 +342,8 @@ class ScheduleRequest(BaseModel):
     priority: str | None = None
     activeHours: str | None = None
     fallbackPolicy: list[str] | None = None
+    # switch-account rung (C6): ordered fallback profile ids, per-team opt-in.
+    profileChain: list[str] | None = None
 
 
 @router.get("/teams/{team_id}/schedule")
@@ -364,6 +375,14 @@ def put_team_schedule(team_id: str, req: ScheduleRequest):
         if bad:
             return _error(400, "BAD_FALLBACK", f"unknown rungs: {bad}")
         row.fallbackPolicy = req.fallbackPolicy
+    if req.profileChain is not None:
+        from ..deps import get_profile_store
+
+        profiles = get_profile_store()
+        missing = [p for p in req.profileChain if profiles.get_profile(p) is None]
+        if missing:
+            return _error(400, "BAD_PROFILE_CHAIN", f"unknown profiles: {missing}")
+        row.profileChain = req.profileChain
     if req.maxConcurrentSessions is not None:
         # 0 is a real cap ("no new sessions"); negative clears the knob.
         row.maxConcurrentSessions = (req.maxConcurrentSessions
