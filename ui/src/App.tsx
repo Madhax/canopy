@@ -23,6 +23,7 @@ export function App() {
             <Route element={<MainLayout />}>
               <Route path="/" element={<PortfolioPage />} />
               <Route path="/orgs/:id" element={<OrgPage />} />
+              <Route path="/orgs/:id/capacity" element={<CapacityPage />} />
               <Route path="/capacity" element={<CapacityPage />} />
               <Route path="/actuate" element={<ActuatePage />} />
               <Route path="/execute" element={<ExecutePage />} />

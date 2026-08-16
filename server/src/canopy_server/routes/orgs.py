@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ..deps import get_activity, get_actuator, get_org_store, get_store
-from ..orgs import OrgError, OrgNotEmpty, OrgNotFound, valid_org_key
+from ..orgs import OrgError, OrgNotEmpty, OrgNotFound, valid_org_key, validate_budget
 from ..store import NotFound
 
 router = APIRouter()
@@ -87,11 +87,23 @@ def read_org(org_id: str, orgs=Depends(get_org_store), store=Depends(get_store))
         org = orgs.get(org_id)
     except OrgNotFound:
         return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
-    return {**_org_json(org), "teamIds": _team_ids_of(store, org_id)}
+    # Budget posture (C5): stored claims + derived week spend, so the org page's
+    # editor shows what the ceiling is currently measured against.
+    from ..deps import get_scheduler
+
+    return {
+        **_org_json(org),
+        "teamIds": _team_ids_of(store, org_id),
+        "economics": get_scheduler().org_economics(org_id),
+    }
 
 
 @router.put("/orgs/{org_id}")
 def update_org(org_id: str, req: UpdateOrgRequest, orgs=Depends(get_org_store)):
+    if req.budget is not None:
+        problems = validate_budget(req.budget)
+        if problems:
+            return _error(400, "BAD_BUDGET", "; ".join(problems))
     try:
         org = orgs.update(
             org_id,
@@ -107,11 +119,19 @@ def update_org(org_id: str, req: UpdateOrgRequest, orgs=Depends(get_org_store)):
 
 
 @router.put("/orgs/{org_id}/budget")
-def update_org_budget(org_id: str, budget: dict, orgs=Depends(get_org_store)):
+def update_org_budget(
+    org_id: str, budget: dict, orgs=Depends(get_org_store), activity=Depends(get_activity)
+):
+    """The org-level knobs (K7 shares, K8 reserves, the weekly ceiling) — governance,
+    edited on the org page and audited like every operator action (04 §8's rule)."""
+    problems = validate_budget(budget)
+    if problems:
+        return _error(400, "BAD_BUDGET", "; ".join(problems))
     try:
         org = orgs.update(org_id, budget=budget)
     except OrgNotFound:
         return _error(404, "NOT_FOUND", f"No organization {org_id!r}")
+    activity.log("operator", "org.budget-updated", payload={"orgId": org_id, "budget": budget})
     return _org_json(org)
 
 
