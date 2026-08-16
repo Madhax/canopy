@@ -31,6 +31,11 @@ packages = ["src/canopy_server"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    # docs/testing.md §6: the ONE live smoke. Skipped unless CANOPY_LIVE=1 and a logged-in
+    # `claude` is on PATH; spends real subscription quota. Run: uv run pytest -m live
+    "live: the marked live smoke against a real Max login (manual; never in CI)",
+]
 
 [tool.ruff]
 line-length = 100

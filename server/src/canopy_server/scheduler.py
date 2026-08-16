@@ -566,9 +566,12 @@ class Scheduler:
     @staticmethod
     def _binding_window(exhausted: list[dict], sched: Schedule) -> dict | None:
         """Which exhausted window actually binds this team's next session? Account-wide
-        (null scope) windows always bind; model-scoped ones bind unless the team is
-        already capped at/under a different tier (C4 approximation: scoped windows bind
-        when no tier cap routes around them)."""
+        (null scope) windows always bind, then a scoped one when the team has no tier
+        cap, then the scoped window the cap itself sits in. What remains — a scoped
+        window exhausted while the cap names a *different* tier — still binds here:
+        routing around it is the ladder's ``degrade-model`` rung (04 §5 rung 2), which
+        admits with a model override only when the team listed that rung. Without it,
+        the team holds like any other exhaustion (C4's presence-not-order contract)."""
         for w in exhausted:
             if not w.get("model_scope"):
                 return w
@@ -579,10 +582,7 @@ class Scheduler:
             if w.get("model_scope") and sched.modelTierCap \
                     and sched.modelTierCap.lower() in (w.get("model_scope") or "").lower():
                 return w
-        # A scoped window is exhausted but the tier cap routes around it (degrade case).
-        return exhausted[0] if exhausted and all(
-            not w.get("model_scope") for w in exhausted) else (
-            exhausted[0] if exhausted and not any(True for _ in ()) else None)
+        return exhausted[0] if exhausted else None
 
     def _active_sessions(self, team_id: str, *, exclude_node: str) -> int:
         with self.db.connect() as conn:
@@ -608,8 +608,12 @@ class Scheduler:
     def sweep(self) -> int:
         """Timer auto-resolution (04 §4): resolve capacity gates whose provider reset has
         passed (plus jitter) — including resets that passed while the control plane was
-        down. A gate with unknown ``resetsAt`` resolves when its window reads ok again.
-        Returns the number of gates resolved."""
+        down (04 §7: gates and ``team_schedule`` are SQLite truth; the boot pass of the
+        trigger loop re-evaluates every open capacity gate against current window state,
+        so a reset that passed during downtime resolves immediately). A gate with unknown
+        ``resetsAt`` resolves when its window reads ok again. Every resolution leaves one
+        ``hold-resumed`` row on the feed, whatever kind of hold it was. Returns the
+        number of gates resolved."""
         if not self._enabled():
             return 0
         resolved = 0
@@ -626,6 +630,7 @@ class Scheduler:
                     self.gates.resolve(gate, resolution={"action": "resume",
                                                          "by": "trigger:capacity"},
                                        resolved_by="system")
+                    self._resumed_event(a, reason, payload)
                     resolved += 1
                 continue
             resets = payload.get("resetsAt")
@@ -646,12 +651,25 @@ class Scheduler:
                 self.gates.resolve(gate, resolution={"action": "resume",
                                                      "by": "trigger:capacity"},
                                    resolved_by="system")
-                self.ledger.record_event(
-                    str(payload.get("pool") or "unknown"), "hold-resumed",
-                    window_key=payload.get("window"), team_id=a.teamId,
-                    payload={"assignmentId": a.id})
+                self._resumed_event(a, reason, payload)
                 resolved += 1
         return resolved
+
+    def _resumed_event(self, a: Assignment, reason: str, payload: dict[str, Any]) -> None:
+        """The feed's `hold-resumed` row (06 §4). Window holds carry their pool; operator
+        and clock holds (paused/drain/active-hours/session-cap) don't, so the row rides
+        the account the session draws on — or is skipped when there is none to file
+        it under (a team with no bound profile), never invented."""
+        pool = payload.get("pool")
+        if not pool:
+            account = self.capacity.account_for_session(a.teamId, a.nodeId)
+            pool = account.id if account is not None else None
+        if not pool:
+            return
+        self.ledger.record_event(
+            str(pool), "hold-resumed", window_key=payload.get("window"),
+            team_id=a.teamId, payload={"assignmentId": a.id, "reason": reason},
+        )
 
     # ---------------------------------------------------------------- predictions
     def predictions(self, team_id: str) -> dict[str, Any]:
@@ -728,6 +746,45 @@ class Scheduler:
             return Admission(admit=True, reason="org-budget-approaching",
                              payload=payload)
         return Admission(admit=True)
+
+    def admit_cadence(self, team_id: str, node_id: str) -> Admission:
+        """Boundary 3 for *standing* intents (04 §9.4, decided at C7): a cadence
+        occurrence consults the governor before it submits, so the fleet's unattended
+        work is exactly as governed as an operator's paste. Three refusals, each a
+        skip-with-note (the occurrence coalesces, matching the misfire policy):
+
+        - ``org-budget`` — the org's weekly ceiling is spent (same check as the route);
+        - ``paused`` / ``drain`` — the operator stopped the team; a cadence firing into
+          a stopped team would only bank work the operator asked not to start;
+        - the window that binds this team's next session is exhausted and the ladder
+          finds no rung that admits (``window-exhausted`` / ``park``) — the run cannot
+          start now, and a hold-then-run hours later is not "the 09:00 run" anyone
+          scheduled. Rungs that admit (degrade / switch / extra-usage) let it fire.
+
+        Spawn-time waits — active hours, the K2 cap, reserve/contention ordering — do
+        NOT skip: those are queues, not doors, and the intent simply waits at admission
+        like any other. Refining the exhaustion test into "the median run fits the
+        remaining runway" needs a per-cadence run-size history; registered as debt."""
+        if not self._enabled():
+            return Admission(admit=True, reason="capacity-disabled")
+        ceiling = self.admit_intent(team_id)
+        if not ceiling.admit:
+            return ceiling
+        sched = self.get(team_id)
+        if sched.runState in ("paused", "drain"):
+            return Admission(admit=False, reason=sched.runState,
+                             payload={"reason": sched.runState, "policy": "operator"})
+        account = self.capacity.account_for_session(team_id, node_id)
+        if account is not None:
+            exhausted = [w for w in self.ledger.windows(account.id)
+                         if w["state"] == "exhausted"]
+            binding = self._binding_window(exhausted, sched)
+            if binding is not None:
+                walked = self._walk_ladder(team_id, sched, account, binding)
+                if not walked.admit:
+                    return walked
+        # Carry the ceiling's approaching-warning through so the fire log can say so.
+        return Admission(admit=True, reason=ceiling.reason, payload=ceiling.payload)
 
     def org_economics(self, org_id: str) -> dict[str, Any]:
         """The org's budget posture for read surfaces (console K7/K8 read-only rows,

@@ -1,6 +1,6 @@
 # Organizations, Teams, and Capacity — Design Suite
 
-> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08
+> **Status:** Adopted 2026-08-09 (operator decision) — proposed by the portfolio-and-capacity working group, 2026-08-08. **Built: C1–C7 (2026-08-09 → 2026-08-15)** — see `07` §1 for what each milestone shipped and where it is tested; open items registered in `../../actuation/phase3-debts.md` (C-series close-out table, CAP-D1–D11).
 > **Sequencing:** Pre-MVP prerequisite (operator decision, 2026-08-08) — the C-series in `07-implementation-plan.md` is part of the MVP implementation plan itself and lands **before** the full Canopy MVP is declared delivered. See `07` §0.
 > **Reads with:** `../../domain-model.md` (authoritative for chart-level invariants), `../../org-roadmap.md` (O8 is realized here), `../../risks/scalability.md` (SC-5), `../../actuation/phase3-debts.md` (F1, F11, F13), `../connectors/` (sibling proposal series; same conventions)
 > **Supersedes on adoption:** the *vocabulary* of `domain-model.md` §Organization / §Team, `phases.md` navigation, and the org-picker information architecture of `../../execution/operator-experience.md` §1. Nothing in the chart-level work model changes.

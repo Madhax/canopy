@@ -1,3 +1,7 @@
+import socket
+import threading
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,6 +14,30 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("CANOPY_DATA_DIR", str(tmp_path))
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture()
+def live_server(client):
+    """A real HTTP server over the same app + test DB, for CLI subprocesses (the fake-CLI
+    shim in test_cli_runtime, the one marked live smoke in test_live_smoke) — the same
+    wire a logged-in `claude` uses to reach the MCP server."""
+    import uvicorn
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 15
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("uvicorn thread never started")
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=5)
 
 
 @pytest.fixture()

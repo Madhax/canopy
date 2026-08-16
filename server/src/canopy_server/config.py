@@ -201,6 +201,19 @@ def get_capacity_attribution_window_s() -> int:
     return int(_raw_config().get("capacity", {}).get("attribution_window_s", 3600))
 
 
+def get_capacity_reading_retention_days() -> int:
+    """[capacity] reading_retention_days — how long append-only readings are kept
+    before hourly compaction (02 §9.3, decided at C7: 30). Each window's newest reading
+    always survives (it is the state's provenance); ``0`` keeps everything forever."""
+    return int(_raw_config().get("capacity", {}).get("reading_retention_days", 30))
+
+
+def get_capacity_event_retention_days() -> int:
+    """[capacity] event_retention_days — the feed/audit rows' retention (default 90;
+    the console shows the last 100 either way). ``0`` keeps everything forever."""
+    return int(_raw_config().get("capacity", {}).get("event_retention_days", 90))
+
+
 def get_capacity_anthropic_source() -> str:
     """[capacity.anthropic] source — 'observed' (default) or 'usage-endpoint' (S4,
     [Community], ToS-gray; the compliance posture lives in adapters/anthropic_usage.py
