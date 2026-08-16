@@ -2,13 +2,15 @@
 
 **Status:** Aspirational roadmap (living) · **Date:** 2026-07-26
 **Purpose:** the milestone sequence expressed in *organizations*, not features. The A/E-milestones (`actuation/roadmap.md`, `execution/mvp.md` §4) sequence what the platform can do; this document sequences what should be **existing and running** on it — each rung an organization that pulls exactly the capabilities it needs behind a legible outcome. Feature work that no rung pulls is, by definition, not on the critical path.
-**Reads with:** `archetypes.md` (the palette these orgs draw from), `use-cases.md` (the recipes they instantiate), `risks/` (PF-1, PF-2, U-2, MK-3 — this doc is their standing answer), `execution/target-app.md` §10 (the benchmark discipline every rung inherits).
+**Reads with:** `mission.md` (the mission this ladder is the standing acceptance test of — and, since 2026-08-16, the canonical home of this document's standing rules), `archetypes.md` (the palette these orgs draw from), `use-cases.md` (the recipes they instantiate), `risks/` (PF-1, PF-2, U-2, MK-3 — this doc is their standing answer), `execution/target-app.md` §10 (the benchmark discipline every rung inherits).
 
 ---
 
 ## 1. The principle: Canopy grows by Canopy working on Canopy
 
 The organizations we most want existing are the ones that sustain the project's own organic growth. Not demo orgs — **staff**. The north star: the Canopy repository's bug backlog, feature pipeline, catalog content, documentation, and public voice are each worked by a standing Canopy organization, with the operator (the founder, then maintainers) governing through the same gates, meters, and plan views every user gets.
+
+This principle is the mission run reflexively (`mission.md` §3): the operator approves direction and approves consequences — the fleet produces everything in between. The ladder below is that claim's standing acceptance test, and §5's metrics are its measurement.
 
 Why this ordering beats a market-facing hero-archetype sequence:
 
@@ -18,6 +20,8 @@ Why this ordering beats a market-facing hero-archetype sequence:
 - **MK-3 (demo vs retention) inverts.** The public story is not a glowing chart; it is a commit history: *"this PR was produced by a Canopy org for $2.10, reproduced the bug first, passed QA, and a human approved the merge."* Receipts, not theater.
 
 ## 2. Standing rules of the ladder
+
+> **Amendment (2026-08-16):** these rules are promoted to mission-level standing commitments — `mission.md` §4 is now their canonical statement, binding every organization Canopy runs, not just this ladder. They remain below in their ladder-specific form; where the two diverge, the mission wins.
 
 1. **The recursion boundary.** Self-hosted orgs edit the codebase **as artifacts** — branches, diffs, proposed PRs. They never touch the running instance they execute on: merge is a governed action resolved by a human, deploy/self-update is not a grant that exists, and the control plane is never in any org's tool surface. The org proposes; the human ratifies; the platform the org runs on only changes when a human ships it.
 2. **The trust ladder.** Rungs escalate authority slowly: artifact-only work → PR-proposing work → (much later, if ever) consequential external actions. A rung never starts until the previous rung's acceptance rate makes the escalation boring.
@@ -98,3 +102,5 @@ External customers running the hardened rungs on their own repos and backlogs; t
 ## 5. What "existing and running" means (the metrics per rung)
 
 A rung is not "supported" when it is expressible — that bar is already met by 30 of 31 use cases. A rung exists when its org has **run unattended on a cadence for a month** with: acceptance rate the operator stopped watching nervously, cost-per-unit published, human minutes per merged PR trending down, and zero recursion-boundary violations (nothing merged, published, or executed without its gate). The ledger computes all of it; this document just commits us to reading it out loud.
+
+*Amendment (2026-08-16):* this bar now has an instrument — `design/unattended/06-readiness-and-soak.md`: the per-team readiness checklist, the compressed-clock fleet soak, and the posture ladder whose **P2 (unattended-month)** is exactly this paragraph, entered by checklist and boredom rather than by hope.

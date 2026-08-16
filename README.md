@@ -6,6 +6,8 @@ Canopy lets you define an organization — a software team, a franchise, a resea
 
 The chart isn't a diagram of the system. It **is** the system.
 
+**The mission** ([`docs/mission.md`](docs/mission.md)): *Canopy turns one human's direction into the sustained, governed output of an organization.* Delegation to AI made safe enough, legible enough, and cheap enough that one person can run an organization — structure you can read, budgets you can see, consequences only you ratify. Everything below serves that.
+
 ## The idea, in short
 
 - **Teams are typed and nestable.** A `software-company` team offers a different role palette than a `franchise-operation` or a `research-lab`, and any team can nest child teams — a support center inside a SaaS company, a single store inside a franchise network. *(A team is the actuatable chart; what Canopy called an "Organization" before the 2026-08 vocabulary correction — [`docs/design/organizations/`](docs/design/organizations/).)*
@@ -144,17 +146,36 @@ a `default` organization exists from the first boot):
    example in [`docs/design/organizations/README.md`](docs/design/organizations/README.md),
    keyless.
 
-**Real CLI sessions:** with a logged-in [Claude Code](https://claude.com/claude-code) CLI on your
-PATH, set `runtime_override = ""` in `canopy.toml` — engineer-class roles then run their
-assignments as metered headless `claude` sessions with the Canopy MCP server as their tool plane
-(see [`docs/execution/cli-runtime.md`](docs/execution/cli-runtime.md)). The `mock` gateway
-provider needs no key either way; `anthropic`/`gemini` profiles take real keys via the
-encrypted secret store.
+### Running with real Claude sessions
+
+The quickstart above is keyless (`mock` provider + `loop` runtime). To have engineer-class roles
+run real headless [Claude Code](https://claude.com/claude-code) sessions instead:
+
+1. **Once per machine** — install the Claude Code CLI and log in (run `claude` in a terminal and
+   authenticate). Canopy takes no API key for this path: sessions use your CLI login. The
+   `anthropic`/`gemini` gateway providers, if you use them, take keys via the encrypted secret
+   store — separate from this.
+2. **Point Canopy at it** — in `canopy.toml`, set `runtime_override = ""` under `[execution]`
+   (empty = per-role runtimes; roles like `backend-engineer` and `tech-writer` default to
+   `cli-claude`). Optionally set `[repo] source` to the repository you want worked on.
+3. **Restart and verify** — config is read at boot. Actuation readiness runs the CLI probe and
+   reports `CLI_UNAVAILABLE` with a fix hint if the login or PATH is missing
+   ([`docs/execution/cli-runtime.md`](docs/execution/cli-runtime.md)).
+4. **Govern it** — set `[capacity] enabled = true` and `[scheduler] enabled = true` so real burn
+   is gauged, attributed, and throttleable on the *Capacity* page before anything runs on a
+   schedule.
+
+Two run modes: `pnpm dev` (two processes, hot reload — for developing Canopy itself) and the
+production single-port mode under **Development** below — the right shape for leaving it running
+(service install: [`docs/design/unattended/03-continuity.md`](docs/design/unattended/03-continuity.md),
+proposed). Collapsing all of the above into `canopy up` + an in-app doctor is designed in
+[`docs/design/ux/04-first-run.md`](docs/design/ux/04-first-run.md) (proposed).
 
 See `docs/` for the full picture:
 
 | Doc | What's in it |
 |---|---|
+| [`docs/mission.md`](docs/mission.md) | The mission, the one-operator decision, the standing commitments, and what Canopy is not — the root document every other doc is downstream of |
 | [`docs/domain-model.md`](docs/domain-model.md) | The core abstractions — Organization, Team, Pod, Agent, Assignment, Gate, BudgetMeter, Step — their lifecycles, and the invariants the runtime must honor |
 | [`docs/archetypes.md`](docs/archetypes.md) | 26 team types, from software teams to franchises to research labs, each with example roles and dynamics |
 | [`docs/roles.md`](docs/roles.md) | 87+ catalog roles, each with responsibilities written as duty → deliverable |
@@ -164,6 +185,8 @@ See `docs/` for the full picture:
 | [`docs/org-chart-editor.md`](docs/org-chart-editor.md) | Phase-1 front-end design spec: the editor, its REST contract, the serialization format, and the validation rules |
 | [`docs/actuation/`](docs/actuation/) | Phase-2 design suite: control plane, sandbox, message router, budget ledger, and the debt ledger that kept the seams honest |
 | [`docs/execution/`](docs/execution/) | Phase-3 design suite: the work model, execution engine, CLI runtime, operator experience, and the E1–E8 milestone plan (`mvp.md`) |
+| [`docs/canopy-inc.md`](docs/canopy-inc.md) | The staff org design: the standing teams that grow Canopy itself, the repo-as-coordination principles, and the founding waves |
+| [`docs/design/unattended/`](docs/design/unattended/) + [`docs/design/ux/`](docs/design/ux/) | Proposed: hands-off operation (envelope, daily brief, continuity, readiness) and the operator-experience redesign (fleet glance, products-first views, one-command setup) |
 
 ## Development
 

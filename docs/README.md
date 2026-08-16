@@ -6,7 +6,8 @@ Design documentation for Canopy: a framework for building AI-agent organizations
 
 | File | What it is | Domain concept it feeds |
 |---|---|---|
-| `domain-model.md` | The core abstractions, lifecycles, and invariants. Read this first. | everything below hangs off it |
+| `mission.md` | The mission, the one-operator decision record, the standing commitments, and what Canopy is not. The root of the tree — every other document is downstream of it. | doctrine (`design/doctrine.md`) |
+| `domain-model.md` | The core abstractions, lifecycles, and invariants. Read this first for the *how*; `mission.md` is the *why*. | everything below hangs off it |
 | `archetypes.md` | Team types: the palette of chart kinds a user can build, each with its role set and dynamics | `TeamType` |
 | `roles.md` | The role catalog: every role's purpose and responsibilities, written as duty → deliverable contract | `RoleTemplate` |
 | `formations.md` | Formations: reusable manager+members subtrees with pre-wired artifact flow and dependencies | blueprint fragments for the chart |
@@ -19,9 +20,13 @@ Design documentation for Canopy: a framework for building AI-agent organizations
 | `risks/` | Risk register and derisking strategy across seven contexts (problem-fit, usefulness, marketing, design, architecture, implementation, scalability). Start at `risks/README.md`. | keeping the project alive |
 | `testing.md` | The consolidated testing strategy: four pillars, the current test estate, standing coverage rules, the milestone-by-milestone gap plan, CI topology, and the manual live path | keeping every other row true |
 | `org-roadmap.md` | The milestone sequence in organizations, not features: the self-hosting ladder (docs → bug-close → feature → catalog → voice → frontdesk → Canopy Inc.), the trust/recursion rules, and the capabilities each rung pulls | what should be *running* on all of the above |
+| `canopy-inc.md` | **Proposed:** the staff org design — the standing-team roster the ladder grows into (frontier, foundry, intake, maintenance, docs, release, receipts, forge, voice, frontdesk), the repo-as-coordination-medium principles, the self-extension loop, and the founding order | the `canopy-inc` Organization at cruise |
 | `design/connectors/` + `design/builder-connectors*.md` + `design/standing-orgs*.md` | Adopted + implemented: connector packs/instances/scoping/security, the builder UX (palette → pill → scope edge), and triggers (work arrives on its own) | `ConnectorInstance`, `WorkTrigger` |
 | `design/organizations/` | **Adopted, pre-MVP (C-series):** the Team/Organization/Pod vocabulary correction, the Organization entity (invariant 12), provider-truthful capacity, the portfolio scheduler, and the portfolio/capacity UX | `Organization`, `ProviderAccount`, `CapacityPool` |
-| `design/experiments/` | **Adopted, post-MVP (L-series):** A/B testing for team structures — experiments, variants, trials, rubrics, blinded panels, search under an envelope, governed promotion | `Experiment`, `Variant`, `Trial`, `Rubric` |
+| `design/experiments/` | **Adopted, post-MVP (L-series):** A/B testing for team structures — experiments, variants, trials, rubrics, blinded panels, search under an envelope, governed promotion; plus the proposed selection layer (`07`, 2026-08-16): factors, campaigns, the evidence store, advisory formation selection | `Experiment`, `Variant`, `Trial`, `Rubric`, `experiment_effect` |
+| `design/doctrine.md` | **Proposed:** the doctrine cascade — mission-level purpose attached to the Organization and structurally present in every compiled agent context (doctrine → purpose → duty → task) | the Organization's voice |
+| `design/unattended/` | **Proposed (H-series):** hands-off operation — the operations envelope (bounded standing consent), the daily brief + closed page set, platform continuity (supervision, credential health, backups), flow policies (trigger admission/refire, rebase, salary calibration), threat posture + docker T2, and the readiness checklist / fleet soak / posture ladder | `team_ops_envelope`, the brief, postures P0–P2 |
+| `design/ux/` | **Proposed (UX-series):** the operator experience reorganized around questions, not machinery — altitudes and navigation, products-first team views (the artifact feed), the fleet-glance health model, and setup-as-product (`canopy up`, doctor, wizard) | the five surfaces; the health taxonomy; receipt cards |
 | `plain-english/` | The companion series for non-engineers: what Canopy is, how work flows, how agents run, what keeps it safe — with a glossary | onboarding |
 
 The layering is strict: **use cases** are satisfied by **archetypes**, which compose **formations**, which compose **roles**, which are constrained by the **domain model**. Anything expressible in the lower layers but not deliverable through the upper ones is a catalog gap, not a user error.

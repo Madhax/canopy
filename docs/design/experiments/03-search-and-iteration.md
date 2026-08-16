@@ -36,6 +36,8 @@ Each variant's `mutation` records kind, target, detail, `proposedBy`, and an opt
 
 Sweeps are enumerable, so their variants auto-enroll inside the envelope (§5) without ceremony.
 
+**G1.5 — campaigns** *(amendment 2026-08-16; designed in `07-selection-and-evidence.md` §2)*: fractional-factorial batches over the catalog's factor vocabulary — the design-of-experiments upgrade to the sweeps. Where a sweep walks one axis, a campaign covers several factors at chosen levels in one batch, estimating main effects *and* interactions the one-mutation lineage is structurally blind to, with staged fidelity (screen on measured/programmatic factors, judge only survivors) to keep evaluation overhead bounded. Enumerable like sweeps, so campaign cells auto-enroll inside the envelope; their harvest feeds the `experiment_effect` evidence store rather than only the local leaderboard.
+
 **G2 — the proposer.** A `structure-proposer` role (new catalog role, lab formation §6): reads the scored lineage, verdict rationales, and run transcripts — **never holdout tasks** (`02` §7) — and produces a **VariantProposal artifact**: `{mutation, rationale, predictedEffect}`. The proposer is the retro-running manager the experiment needs: "B2's failures cluster in reproduction; propose restoring the triager but on the cheap tier." Its proposals are artifacts; the platform instantiates them (§7); its predictions are scored against outcomes, giving the proposer itself an accuracy stat — a proposer that can't beat the sweeps at suggesting mutations is itself evidence, and gets retired like any underperformer.
 
 ## 4. Policies — how the loop runs
@@ -106,7 +108,7 @@ The boundary that keeps this honest: **the lab has no authority over the experim
 | Re-weight the rubric | rubric editor | version bump; future trials; explicit re-score if wanted |
 | Pause / conclude | experiment header | stops scheduling; never kills in-flight runs |
 
-**Deliberately not designed here:** routing production work across specialized champions (the per-tag leaderboard will make "solo for trivial, full pod for gnarly" visible and tempting — that is a dispatch-policy product feature with its own design debt, not an experiment feature); genetic/bandit search policies (champion–challenger plus sweeps must prove insufficient first).
+**Deliberately not designed here:** routing production work across specialized champions (the per-tag leaderboard will make "solo for trivial, full pod for gnarly" visible and tempting — that is a dispatch-policy product feature with its own design debt, not an experiment feature); genetic/bandit search policies (champion–challenger plus sweeps must prove insufficient first). *(Amendment 2026-08-16: the evidence half of the routing question — conditional effects by stratum, advisory selection surfaces, never live dispatch — is now designed in `07-selection-and-evidence.md`; bounded within-campaign racing arrives with it. Open-ended bandit search and live routing remain out.)*
 
 ## 9. Resolved decisions and open questions
 
