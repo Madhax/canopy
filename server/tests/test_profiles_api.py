@@ -66,3 +66,25 @@ def test_profiles_scoped_to_existing_org(client):
         json={"name": "mock", "provider": "mock", "model": "mock-1"},
     )
     assert r.status_code == 404
+
+
+def test_new_team_has_a_team_default_profile(client, make_org):
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    d = client.get(f"/api/teams/{team['id']}/profile-default").json()
+    assert d["profileId"]
+    listed = client.get(f"/api/teams/{team['id']}/profiles").json()
+    assert [p["id"] for p in listed] == [d["profileId"]]
+    assert listed[0]["provider"] == "mock"
+
+
+def test_team_default_set_and_reject_foreign_profile(client, make_org):
+    a = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="A")
+    b = make_org(seed={"kind": "root", "roleKey": "engineering-lead"}, name="B")
+    p = client.post(
+        f"/api/teams/{a['id']}/profiles",
+        json={"name": "sonnet", "provider": "mock", "model": "mock-1"},
+    ).json()
+    r = client.put(f"/api/teams/{a['id']}/profile-default", json={"profileId": p["id"]})
+    assert r.status_code == 200 and r.json()["profileId"] == p["id"]
+    r = client.put(f"/api/teams/{b['id']}/profile-default", json={"profileId": p["id"]})
+    assert r.status_code == 422

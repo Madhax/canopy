@@ -82,6 +82,9 @@ def test_agent_state_aggregate(client, make_org, mint_session):
     assert st["queue"] == []
     assert st["spend"]["nodeTokens"] == 150
     assert st["spend"]["sharePct"] == 100.0
+    assert len(st["artifacts"]) == 1 and st["artifacts"][0]["name"] == "out"
+    team_arts = client.get(f"/api/teams/{team['id']}/artifacts").json()["artifacts"]
+    assert len(team_arts) == 1 and team_arts[0]["ref"] == st["artifacts"][0]["ref"]
 
     # Accept: history gains the row (with its spend), stats read 1-for-1 accepted.
     client.post(f"/api/assignments/{a['id']}/accept", json={"note": "ship it"})

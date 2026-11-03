@@ -6,6 +6,7 @@ import { MarkerType } from "@xyflow/react";
 import type { Catalog, CatalogRole } from "../schema/catalog";
 import type { Agent, ChildTeamDoc, CustomRole, TeamDoc } from "../schema/team";
 import type { LayoutDirection } from "./settingsStore";
+import type { NodeModelInfo } from "../lib/nodeModel";
 
 export interface AgentNodeData extends Record<string, unknown> {
   agent: Agent;
@@ -13,8 +14,12 @@ export interface AgentNodeData extends Record<string, unknown> {
   isManager: boolean;
   selected: boolean;
   hasIssue: boolean;
+  /** An invalid setting on this node (an error-severity issue) — the card renders red. */
+  hasError?: boolean;
   direction: LayoutDirection;
   status?: string; // live actuation status for this node (A2), undefined when not actuated
+  /** Which model feeds this node (UX-35); undefined while profiles are still loading. */
+  model?: NodeModelInfo;
 }
 
 export interface ChildOrgNodeData extends Record<string, unknown> {
@@ -24,6 +29,7 @@ export interface ChildOrgNodeData extends Record<string, unknown> {
   agentCount: number;
   selected: boolean;
   hasIssue: boolean;
+  hasError?: boolean;
   direction: LayoutDirection;
 }
 
@@ -35,6 +41,8 @@ export interface ProjectionInput {
   issueDepIds: Set<string>;
   direction: LayoutDirection;
   nodeStatus?: Map<string, string>; // nodeId -> live actuation status (A2)
+  errorAgentIds?: Set<string>; // nodes (and child teams) holding an error-severity issue
+  nodeModel?: (nodeId: string) => NodeModelInfo | undefined; // UX-35 model resolution
 }
 
 function resolveRole(
@@ -53,9 +61,16 @@ export function projectNodes(input: ProjectionInput): Node[] {
   const { team, catalog, selectedId, issueAgentIds, issueDepIds, direction } = input;
   void issueDepIds;
   const nodes: Node[] = [];
+  const agentIds = new Set(team.agents.map((a) => a.id));
 
   for (const agent of team.agents) {
     const role = resolveRole(catalog, team, agent.role.key);
+    const salaryInvalid =
+      !Number.isInteger(agent.salary.perAssignmentAllowance) ||
+      agent.salary.perAssignmentAllowance <= 0 ||
+      agent.salary.warnThresholdPct <= 0 ||
+      agent.salary.warnThresholdPct > 100;
+    const settingInvalid = !role || agent.name.trim() === "" || salaryInvalid;
     nodes.push({
       id: agent.id,
       type: "agent",
@@ -65,9 +80,11 @@ export function projectNodes(input: ProjectionInput): Node[] {
         role,
         isManager: role?.isManager ?? false,
         selected: selectedId === agent.id,
-        hasIssue: issueAgentIds.has(agent.id),
+        hasIssue: issueAgentIds.has(agent.id) || settingInvalid,
+        hasError: (input.errorAgentIds?.has(agent.id) ?? false) || settingInvalid,
         direction,
         status: input.nodeStatus?.get(agent.id),
+        model: input.nodeModel?.(agent.id),
       } satisfies AgentNodeData,
       selected: selectedId === agent.id,
     });
@@ -75,6 +92,7 @@ export function projectNodes(input: ProjectionInput): Node[] {
 
   for (const child of team.childTeams) {
     const type = catalog.organizationTypes.find((o) => o.key === child.team.organizationType);
+    const mountDangling = !agentIds.has(child.mountAgentId);
     nodes.push({
       id: child.team.id,
       type: "childTeam",
@@ -86,7 +104,8 @@ export function projectNodes(input: ProjectionInput): Node[] {
         section: type?.section ?? "corporate-chassis",
         agentCount: recursiveAgentCount(child.team),
         selected: selectedId === child.team.id,
-        hasIssue: issueAgentIds.has(child.team.id),
+        hasIssue: issueAgentIds.has(child.team.id) || mountDangling,
+        hasError: (input.errorAgentIds?.has(child.team.id) ?? false) || mountDangling,
         direction,
       } satisfies ChildOrgNodeData,
       selected: selectedId === child.team.id,

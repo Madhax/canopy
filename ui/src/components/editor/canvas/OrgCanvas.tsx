@@ -22,6 +22,7 @@ import { useDocumentStore } from "../../../store/documentStore";
 import { useSelectionStore } from "../../../store/selectionStore";
 import { useSettingsStore } from "../../../store/settingsStore";
 import { projectEdges, projectNodes } from "../../../store/projection";
+import type { NodeModelInfo } from "../../../lib/nodeModel";
 import { useToast } from "../../common";
 import type { ConnectorInstance } from "../../../api/connectors";
 import { AgentNode } from "./AgentNode";
@@ -39,6 +40,8 @@ interface Props {
   issueDepIds: Set<string>;
   onOpenChild: (childTeamId: string) => void;
   nodeStatus?: Map<string, string>;
+  errorAgentIds?: Set<string>;
+  nodeModel?: (nodeId: string) => NodeModelInfo | undefined;
   // Connector overlay (builder-connectors.md §7): instances are server truth projected onto
   // the canvas as pills + dashed scope edges — never chart data, never in undo history.
   connectors?: ConnectorInstance[];
@@ -98,7 +101,7 @@ export function connectorEdges(connectors: ConnectorInstance[], team: TeamDoc): 
 }
 
 function Canvas({
-  team, catalog, issueAgentIds, issueDepIds, onOpenChild, nodeStatus,
+  team, catalog, issueAgentIds, issueDepIds, onOpenChild, nodeStatus, errorAgentIds, nodeModel,
   connectors, connectorGoverned, selectedConnectorId, onSelectConnector, onLinkConnector,
   onDropConnector,
 }: Props) {
@@ -114,8 +117,14 @@ function Canvas({
 
   const selectedId = selection.kind !== "none" ? selection.id : undefined;
   const projectionInput = useMemo(
-    () => ({ team, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus }),
-    [team, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus],
+    () => ({
+      team, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus,
+      errorAgentIds, nodeModel,
+    }),
+    [
+      team, catalog, selectedId, issueAgentIds, issueDepIds, direction, nodeStatus,
+      errorAgentIds, nodeModel,
+    ],
   );
 
   const overlay = useMemo(() => {

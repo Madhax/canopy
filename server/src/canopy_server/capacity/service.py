@@ -27,7 +27,7 @@ class CapacityService:
         self._notify = notify
 
     def account_for_session(self, team_id: str, node_id: str) -> ProviderAccount | None:
-        binding = self.profiles.get_binding_for_node(team_id, node_id)
+        binding = self.profiles.resolve_binding(team_id, node_id)
         profile = self.profiles.get_profile(binding.profileId) if binding else None
         if profile is None:
             return None

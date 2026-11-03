@@ -34,6 +34,11 @@ export function ActuationControls({ teamId }: { teamId: string }) {
       else toast(e instanceof Error ? e.message : "Actuate failed.", "error");
     } finally {
       setBusy(false);
+      // Actuating a profile-less team materializes its team-default profile server-side
+      // (even when other readiness issues still block) — refresh what the editor shows.
+      for (const key of ["profiles", "bindings", "profile-default"]) {
+        qc.invalidateQueries({ queryKey: [key, teamId] });
+      }
     }
   };
 
@@ -86,8 +91,8 @@ export function ActuationControls({ teamId }: { teamId: string }) {
         }
       >
         <p className="mb-3 text-ink-muted">
-          Every node needs a valid Agent Profile binding before the team can be actuated. Fix these,
-          then try again:
+          Every node needs an Agent Profile — its own, or the team default — before the team can
+          be actuated. Fix these (they're highlighted red in the editor), then try again:
         </p>
         <ul className="flex flex-col gap-2">
           {(issues ?? []).map((i, idx) => (

@@ -32,7 +32,12 @@ export function Inspector({ team, catalog, issues, onFocusIssue, onOpenChild }: 
   return (
     <aside className="w-[340px] shrink-0 overflow-y-auto border-l border-border bg-surface">
       {agent ? (
-        <AgentPanel agent={agent} team={team} catalog={catalog} />
+        <AgentPanel
+          agent={agent}
+          team={team}
+          catalog={catalog}
+          issues={issues.filter((i) => i.agentIds?.includes(agent.id))}
+        />
       ) : dependency ? (
         <DependencyPanel dependency={dependency} team={team} />
       ) : child ? (

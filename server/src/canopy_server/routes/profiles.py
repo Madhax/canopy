@@ -59,6 +59,10 @@ class BindingBody(BaseModel):
     teamPath: list[str] = Field(default_factory=list)
 
 
+class TeamDefaultBody(BaseModel):
+    profileId: str | None = None  # null clears the team default
+
+
 class RepoSourceBody(BaseModel):
     source: str | None = None  # null / "" clears the binding (fall back to config/fixture)
 
@@ -143,6 +147,31 @@ def set_binding(team_id: str, body: BindingBody, profiles=Depends(get_profile_st
         return _error(422, "PROFILE_DANGLING", f"No profile {body.profileId!r}")
     b = profiles.set_binding(team_id, body.agentNodeId, body.profileId, body.teamPath)
     return b.model_dump()
+
+
+@router.get("/teams/{team_id}/profile-default")
+def get_team_default(
+    team_id: str, profiles=Depends(get_profile_store), store=Depends(get_store)
+) -> Any:
+    """The team-default profile (UX-35): what every node without its own binding runs on."""
+    if (err := _require_org(store, team_id)) is not None:
+        return err
+    return {"teamId": team_id, "profileId": profiles.get_team_default(team_id)}
+
+
+@router.put("/teams/{team_id}/profile-default")
+def set_team_default(
+    team_id: str, body: TeamDefaultBody,
+    profiles=Depends(get_profile_store), store=Depends(get_store),
+) -> Any:
+    if (err := _require_org(store, team_id)) is not None:
+        return err
+    if body.profileId:
+        p = profiles.get_profile(body.profileId)
+        if p is None or p.teamId != team_id:
+            return _error(422, "PROFILE_DANGLING", f"No profile {body.profileId!r} in this team")
+    profiles.set_team_default(team_id, body.profileId or None)
+    return {"teamId": team_id, "profileId": profiles.get_team_default(team_id)}
 
 
 @router.delete("/teams/{team_id}/bindings/{agent_node_id}", status_code=204)

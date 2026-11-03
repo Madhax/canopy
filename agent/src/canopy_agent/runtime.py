@@ -290,26 +290,83 @@ def _manager_tick(client: httpx.Client, cfg: AgentConfig, cur: dict, charter: di
     _produce_and_finish(client, cfg, cur)  # child set drained: synthesize and deliver
 
 
+#: Per-assignment failure backoff. A failing control-plane call must not turn the 2 s work
+#: poll into a paid retry storm (the live failure: 301 completions per node in 10 min while
+#: every artifact write 500'd) — retries wait 2, 4, 8 … up to 60 s.
+_BACKOFF_MAX_SECONDS = 60
+_FAILURES: dict[str, int] = {}
+_NEXT_TRY: dict[str, float] = {}
+#: A completion already paid for, kept until the deliverable lands so a retry after a
+#: downstream failure (artifact write, step report) re-uses it instead of re-billing.
+_COMPLETIONS: dict[str, tuple[dict, int]] = {}
+
+
+def _http_detail(resp: httpx.Response) -> str:
+    try:
+        err = resp.json().get("error") or {}
+        msg = err.get("message") or err.get("code")
+    except (ValueError, AttributeError):
+        msg = None
+    return f"HTTP {resp.status_code}" + (f": {msg}" if msg else " (see the server log)")
+
+
+def _fail(client: httpx.Client, aid: str, what: str, resp: httpx.Response) -> None:
+    """Back off, and tell the engine the session is erroring — it surfaces as a session-error
+    notification in Execute instead of a silent loop that reads as a 10-minute stall."""
+    n = _FAILURES.get(aid, 0) + 1
+    _FAILURES[aid] = n
+    _NEXT_TRY[aid] = time.monotonic() + min(_BACKOFF_MAX_SECONDS, 2 ** n)
+    detail = f"{what} failed ({_http_detail(resp)}); retrying"
+    _log(what.replace(" ", "_") + "_error", assignment=aid, status=resp.status_code,
+         attempt=n)
+    try:
+        client.post("/api/dp/assignment/events", json={
+            "assignmentId": aid, "kind": "session-health",
+            "health": "erroring", "healthDetail": detail,
+        })
+    except httpx.HTTPError:
+        pass
+
+
+def _recovered(client: httpx.Client, aid: str) -> None:
+    _NEXT_TRY.pop(aid, None)
+    _COMPLETIONS.pop(aid, None)
+    if _FAILURES.pop(aid, 0):
+        try:
+            client.post("/api/dp/assignment/events", json={
+                "assignmentId": aid, "kind": "session-health", "health": "running",
+            })
+        except httpx.HTTPError:
+            pass
+
+
 def _produce_and_finish(client: httpx.Client, cfg: AgentConfig, cur: dict) -> None:
     """The mock 'work': one metered completion → Step (shared stepId) → artifact → finish."""
     a = cur["assignment"]
     aid = a["id"]
+    if time.monotonic() < _NEXT_TRY.get(aid, 0.0):
+        return  # backing off after a failure
     brief_text = (cur.get("brief") or {}).get("text", "the assignment")
     contract = cur.get("contract") or {"kind": "artifact", "type": "Deliverable"}
 
-    started = time.monotonic()
-    comp = client.post("/api/dp/llm/complete", json={
-        "messages": [{"role": "user", "content": f"Produce the deliverable for: {brief_text}"}],
-        "kind": "production", "taskId": aid,
-    })
-    if comp.status_code == 402:  # budget hard-stop; operator intervention/top-up is E2
-        _log("budget_hard_stop", assignment=aid)
-        return
-    if comp.status_code != 200:
-        _log("completion_error", assignment=aid, status=comp.status_code)
-        return
-    res = comp.json()
-    duration_ms = int((time.monotonic() - started) * 1000)
+    cached = _COMPLETIONS.get(aid)
+    if cached is not None:
+        res, duration_ms = cached
+    else:
+        started = time.monotonic()
+        comp = client.post("/api/dp/llm/complete", json={
+            "messages": [{"role": "user", "content": f"Produce the deliverable for: {brief_text}"}],
+            "kind": "production", "taskId": aid,
+        })
+        if comp.status_code == 402:  # budget hard-stop; operator intervention/top-up is E2
+            _log("budget_hard_stop", assignment=aid)
+            return
+        if comp.status_code != 200:
+            _fail(client, aid, "completion", comp)
+            return
+        res = comp.json()
+        duration_ms = int((time.monotonic() - started) * 1000)
+        _COMPLETIONS[aid] = (res, duration_ms)
 
     body = (
         f"# {contract['type']}\n\n"
@@ -320,7 +377,7 @@ def _produce_and_finish(client: httpx.Client, cfg: AgentConfig, cur: dict) -> No
         "contentBase64": base64.b64encode(body).decode(),
     })
     if put.status_code != 200:
-        _log("artifact_error", assignment=aid, status=put.status_code)
+        _fail(client, aid, "saving the deliverable", put)
         return
     ref = put.json()["ref"]
 
@@ -337,6 +394,7 @@ def _produce_and_finish(client: httpx.Client, cfg: AgentConfig, cur: dict) -> No
     client.post("/api/dp/finish", json={
         "assignmentId": aid, "refs": [ref], "summary": f"Completed: {brief_text[:80]}",
     })
+    _recovered(client, aid)
     _log("delivered_artifact", assignment=aid, ref=ref)
 
 
@@ -372,10 +430,16 @@ def main() -> None:
             except httpx.HTTPError as exc:
                 _log("tick_error", error=str(exc))
                 status = "idle"
-            try:
-                client.post("/api/dp/heartbeat", json={"status": status})
-            except httpx.HTTPError as exc:
-                _log("heartbeat_error", error=str(exc))
+            # One retry: a server-side 500 closes the pooled keep-alive connection, and the
+            # next request on it dies with a reset — without the retry the pulse froze at the
+            # last status the node managed to report.
+            for attempt in (1, 2):
+                try:
+                    client.post("/api/dp/heartbeat", json={"status": status})
+                    break
+                except httpx.HTTPError as exc:
+                    if attempt == 2:
+                        _log("heartbeat_error", error=str(exc))
             time.sleep(WORK_POLL_SECONDS)
     except KeyboardInterrupt:
         pass

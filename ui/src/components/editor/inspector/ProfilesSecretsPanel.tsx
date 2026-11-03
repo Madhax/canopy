@@ -7,6 +7,8 @@ import {
   useProfiles,
   useSecretMutations,
   useSecrets,
+  useSetTeamDefaultProfile,
+  useTeamDefaultProfile,
 } from "../../../api/actuation";
 import type { Provider } from "../../../schema/actuation";
 import { Button } from "../../common";
@@ -22,6 +24,10 @@ export function ProfilesSecretsPanel({ teamId }: { teamId: string }) {
   const secrets = useSecrets(teamId);
   const profileM = useProfileMutations(teamId);
   const secretM = useSecretMutations(teamId);
+  const teamDefault = useTeamDefaultProfile(teamId);
+  const setDefault = useSetTeamDefaultProfile(teamId);
+  const defaultId = teamDefault.data?.profileId ?? null;
+  const noDefault = !!teamDefault.data && !defaultId;
 
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<Provider>("mock");
@@ -71,6 +77,37 @@ export function ProfilesSecretsPanel({ teamId }: { teamId: string }) {
         </p>
       </div>
 
+      {/* Team default (UX-35): what every node without its own binding runs on. */}
+      <label className="flex flex-col gap-1">
+        <span
+          className={`text-xs font-semibold ${noDefault ? "text-danger" : "text-ink-muted"}`}
+        >
+          Team default profile
+        </span>
+        <select
+          className={`rounded-md border bg-canvas px-2 py-1.5 text-sm outline-none ${
+            noDefault
+              ? "border-danger text-danger ring-1 ring-danger/40 focus:border-danger"
+              : "border-border focus:border-accent"
+          }`}
+          value={defaultId ?? ""}
+          aria-invalid={noDefault || undefined}
+          onChange={(e) => setDefault.mutate(e.target.value || null)}
+        >
+          <option value="">— none (every node needs its own) —</option>
+          {(profiles.data ?? []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} · {p.provider}/{p.model}
+            </option>
+          ))}
+        </select>
+        <span className={`text-xs ${noDefault ? "text-danger" : "text-ink-muted"}`}>
+          {noDefault
+            ? "No team default — nodes without their own profile have no model and can't actuate."
+            : "Nodes without their own profile run on this."}
+        </span>
+      </label>
+
       {/* Profiles */}
       <div className="flex flex-col gap-2">
         {(profiles.data ?? []).map((p) => (
@@ -79,7 +116,14 @@ export function ProfilesSecretsPanel({ teamId }: { teamId: string }) {
             className="flex items-center justify-between rounded-md border border-border bg-canvas px-2 py-1.5"
           >
             <div className="min-w-0">
-              <div className="truncate text-sm">{p.name}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-sm">{p.name}</span>
+                {p.id === defaultId && (
+                  <span className="shrink-0 rounded bg-accent/15 px-1 text-[9px] font-semibold uppercase tracking-wide text-accent">
+                    team default
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-ink-muted">
                 {p.provider} · {p.model}
               </div>

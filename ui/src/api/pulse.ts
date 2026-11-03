@@ -16,6 +16,8 @@ export interface PulseNode {
     briefPreview: string;
     /** F15: completed stages over the living plan — the honest progress headline. */
     stageProgress?: { done: number; total: number } | null;
+    /** Set while the node's session reports errors (status "erroring"): the last error. */
+    healthDetail?: string | null;
   } | null;
   queueDepth: number;
   wip: number;

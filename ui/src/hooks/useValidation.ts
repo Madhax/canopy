@@ -28,18 +28,44 @@ export function useValidation(
     [issues, path],
   );
 
-  const { issueAgentIds, issueDepIds } = useMemo(() => {
+  const { issueAgentIds, issueDepIds, errorAgentIds } = useMemo(() => {
     const agents = new Set<string>();
     const deps = new Set<string>();
+    // Nodes holding an invalid setting — rendered red on the canvas. Errors, plus an unknown
+    // role or role version (warnings in draft mode, but still a wrong setting on this node).
+    const errors = new Set<string>();
     for (const i of currentIssues) {
       for (const a of i.agentIds ?? []) agents.add(a);
       for (const d of i.dependencyIds ?? []) deps.add(d);
+      if (
+        i.severity === "error" ||
+        i.code === "ROLE_UNKNOWN" ||
+        i.code === "ROLE_VERSION_UNKNOWN"
+      ) {
+        for (const a of i.agentIds ?? []) errors.add(a);
+      }
     }
-    return { issueAgentIds: agents, issueDepIds: deps };
-  }, [currentIssues]);
+    // A child team on the current canvas with internal errors emits CHILD_INVALID at
+    // [...path, child.team.id] — mark the child team card itself as holding an error.
+    for (const i of issues) {
+      if (
+        i.code === "CHILD_INVALID" &&
+        i.teamPath &&
+        i.teamPath.length === path.length + 1 &&
+        arraysEqual(i.teamPath.slice(0, -1), path)
+      ) {
+        const childId = i.teamPath[i.teamPath.length - 1];
+        agents.add(childId);
+        errors.add(childId);
+      }
+    }
+    return { issueAgentIds: agents, issueDepIds: deps, errorAgentIds: errors };
+  }, [currentIssues, issues, path]);
 
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const warningCount = issues.filter((i) => i.severity === "warning").length;
 
-  return { issues, currentIssues, issueAgentIds, issueDepIds, errorCount, warningCount };
+  return {
+    issues, currentIssues, issueAgentIds, issueDepIds, errorAgentIds, errorCount, warningCount,
+  };
 }

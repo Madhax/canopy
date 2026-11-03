@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Catalog } from "../schema/catalog";
 import type { TeamDoc } from "../schema/team";
-import { projectEdges, projectNodes } from "./projection";
+import { projectEdges, projectNodes, type AgentNodeData, type ChildOrgNodeData } from "./projection";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const catalog = JSON.parse(
@@ -63,5 +63,31 @@ describe("projection", () => {
     const nodes = projectNodes(input());
     const lead = nodes.find((n) => n.id === "a_lead")!;
     expect((lead.data as { isManager: boolean }).isManager).toBe(true);
+  });
+
+  it("flags nodes with invalid settings and dangling child mounts as hasError", () => {
+    const team = pod();
+    team.agents[1].salary.perAssignmentAllowance = 0;
+    team.childTeams = [
+      {
+        mountAgentId: "missing_agent",
+        team: {
+          ...pod(),
+          id: "c1",
+          name: "Sub",
+        },
+      },
+    ];
+    const nodes = projectNodes({
+      ...input(),
+      team,
+      nodeModel: (id) => (id === "a_lead" ? { source: "unspecified" } : undefined),
+    });
+    const lead = nodes.find((n) => n.id === "a_lead")!.data as AgentNodeData;
+    const be = nodes.find((n) => n.id === "a_be")!.data as AgentNodeData;
+    const child = nodes.find((n) => n.id === "c1")!.data as ChildOrgNodeData;
+    expect(lead.model?.source).toBe("unspecified");
+    expect(be.hasError).toBe(true);
+    expect(child.hasError).toBe(true);
   });
 });

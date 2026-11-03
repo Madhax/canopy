@@ -94,12 +94,48 @@ def _build(tmp_path):
 
 
 def test_readiness_blocks_unbound_nodes(tmp_path):
+    """A team that has profiles but no team default, and an unbound node, is not ready —
+    the operator's own profiles are never guessed between."""
     store, profiles, *_rest, actuator = _build(tmp_path)
     store.write(_org())
+    p = profiles.create_profile("team-act", name="mine", provider="mock", model="mock-1")
+    profiles.set_binding("team-act", "a_root", p.id)
     with pytest.raises(ActuationError) as exc:
         actuator.create_actuation("team-act")
-    codes = {i.code for i in exc.value.issues}
-    assert "BINDING_MISSING" in codes
+    issues = [i for i in exc.value.issues if i.code == "BINDING_MISSING"]
+    assert [i.agentIds for i in issues] == [["a_be"]]
+    assert profiles.get_team_default("team-act") is None
+
+
+def test_profileless_team_gets_a_default_and_actuates(tmp_path):
+    """UX-35: a team with no profiles at all actuates on the first click — a default profile
+    on the configured provider is materialized and every unbound node inherits it."""
+    store, profiles, *_rest, actuator = _build(tmp_path)
+    store.write(_org())
+    actuator.create_actuation("team-act")
+    default_id = profiles.get_team_default("team-act")
+    assert default_id is not None
+    prof = profiles.get_profile(default_id)
+    assert prof is not None and prof.provider == "mock"
+    for node in ("a_root", "a_be"):
+        b = profiles.resolve_binding("team-act", node)
+        assert b is not None and b.profileId == default_id and b.id == "team-default"
+
+
+def test_node_binding_overrides_team_default(tmp_path):
+    store, profiles, *_rest, actuator = _build(tmp_path)
+    store.write(_org())
+    default_id = profiles.ensure_team_default("team-act")
+    assert profiles.ensure_team_default("team-act") == default_id  # idempotent
+    own = profiles.create_profile("team-act", name="own", provider="mock", model="mock-1")
+    profiles.set_binding("team-act", "a_be", own.id)
+    assert profiles.resolve_binding("team-act", "a_be").profileId == own.id
+    assert profiles.resolve_binding("team-act", "a_root").profileId == default_id
+    # Deleting the default profile clears the default rather than leaving it dangling.
+    profiles.delete_profile(default_id)
+    assert profiles.get_team_default("team-act") is None
+    assert profiles.resolve_binding("team-act", "a_root") is None
+    assert profiles.ensure_team_default("team-act") is None  # has profiles: no guessing
 
 
 def test_provision_to_live_then_deactuate(tmp_path):

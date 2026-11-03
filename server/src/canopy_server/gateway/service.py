@@ -176,7 +176,7 @@ class DefaultModelGateway(ModelGateway):
         if rec is None:
             raise GatewayAuthError("unknown or revoked run token")
 
-        binding = self.profiles.get_binding_for_node(rec.teamId, rec.nodeId, rec.teamPath)
+        binding = self.profiles.resolve_binding(rec.teamId, rec.nodeId, rec.teamPath)
         if binding is None:
             raise GatewayConfigError("BINDING_MISSING", f"node {rec.nodeId} has no profile binding")
         profile = self.profiles.get_profile(binding.profileId)

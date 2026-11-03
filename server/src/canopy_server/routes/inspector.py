@@ -22,6 +22,7 @@ from ..config import get_data_dir, get_runtime_override
 from ..deps import (
     get_activity,
     get_actuator,
+    get_artifact_store,
     get_db,
     get_directory,
     get_ledger,
@@ -30,6 +31,8 @@ from ..deps import (
     get_work_store,
 )
 from ..engine.models import ASSIGNMENT_ACTIVE_STATES, ASSIGNMENT_TERMINAL_STATES
+from ..profiles import TEAM_DEFAULT_BINDING_ID
+from .operations import effective_node_status
 from .work import _assignment_detail
 
 router = APIRouter()
@@ -155,6 +158,7 @@ def agent_state(
     profiles=Depends(get_profile_store),
     actuator=Depends(get_actuator),
     directory=Depends(get_directory),
+    artifacts=Depends(get_artifact_store),
 ) -> Any:
     if not store.exists(team_id):
         return _error(404, "NOT_FOUND", f"No team {team_id!r}")
@@ -165,7 +169,7 @@ def agent_state(
     team_path, agent = found
 
     # ---- Overview: charter (compiled fresh from the current doc), binding, live status
-    binding = profiles.get_binding_for_node(team_id, node_id, team_path)
+    binding = profiles.resolve_binding(team_id, node_id, team_path)
     profile = profiles.get_profile(binding.profileId) if binding else None
     current_view = actuator.get_current(team_id)
     actuation_id = current_view.id if current_view else None
@@ -244,7 +248,10 @@ def agent_state(
         "charter": charter.model_dump() if charter else None,
         "binding": (
             {"profileId": profile.id, "name": profile.name, "provider": profile.provider,
-             "model": profile.model}
+             "model": profile.model,
+             # "node" = bound on this node; "team-default" = inherited from the team default.
+             "source": ("team-default" if binding and binding.id == TEAM_DEFAULT_BINDING_ID
+                        else "node")}
             if profile else None
         ),
         "envelope": {
@@ -253,7 +260,8 @@ def agent_state(
         },
         "salary": agent.salary.model_dump(),
         "directory": (
-            {"status": dir_entry.status, "lastHeartbeatAt": dir_entry.lastHeartbeatAt,
+            {"status": effective_node_status(dir_entry.status, current),
+             "lastHeartbeatAt": dir_entry.lastHeartbeatAt,
              "heartbeatAgeSeconds": _age_seconds(dir_entry.lastHeartbeatAt),
              "endpointUrl": dir_entry.endpointUrl}
             if dir_entry else None
@@ -284,6 +292,7 @@ def agent_state(
             "toolEvents": tool_events,
             "logTail": _log_tail(team_id, node_id, session_actuation),
         },
+        "artifacts": [m.model_dump() for m in reversed(artifacts.list(team_id, node_id))],
         "workspace": _list_workspace(inspect_root) if inspect_root else None,
     }
 

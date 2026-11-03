@@ -38,7 +38,8 @@ CODE_MESSAGES: dict[str, str] = {
     "SALARY_INVALID": "Salary allowance must be a positive integer and warn threshold in (0, 100].",
     "AGENT_ORPHAN": "Agent is not wired into any dependency and has no reports.",
     # Phase-2 actuation readiness (agent-profile.md §3) — same ValidationIssue shape.
-    "BINDING_MISSING": "This node has no Agent Profile binding — assign one before actuating.",
+    "BINDING_MISSING": "This node has no Agent Profile — bind one to the node, or set a team "
+                       "default profile in Team settings, before actuating.",
     "PROFILE_DANGLING": "This node's binding points at a profile that no longer exists.",
     "SECRET_DANGLING": "This node's profile references an API key secret that no longer exists.",
     "PROFILE_UNREACHABLE": "The profile's provider could not be reached with its configured key.",
