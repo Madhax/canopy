@@ -132,6 +132,31 @@ def _cli_available() -> bool:
         return False
 
 
+@lru_cache(maxsize=1)
+def _gemini_cli_available() -> bool:
+    """One probe per process: is a working `gemini` (or the CANOPY_GEMINI_CLI_CMD /
+    CANOPY_CLI_CMD override — the fake-CLI shim in CI) answering --version?"""
+    import shutil
+    import subprocess
+
+    raw = (
+        os.environ.get("CANOPY_GEMINI_CLI_CMD")
+        or os.environ.get("CANOPY_CLI_CMD")
+        or "gemini"
+    )
+    cmd = json.loads(raw) if raw.strip().startswith("[") else [raw]
+    resolved = shutil.which(cmd[0])
+    if resolved:
+        cmd[0] = resolved
+    elif not Path(cmd[0]).exists():
+        return False
+    try:
+        r = subprocess.run([*cmd, "--version"], capture_output=True, timeout=15, check=False)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def enumerate_nodes(top: Team) -> Iterator[tuple[list[str], Agent]]:
     """Yield ``(team_path, agent)`` for every agent at every nesting level, roots first per team."""
 
@@ -196,12 +221,22 @@ class Actuator:
             role = next((r for r in self.catalog.roles if r.key == agent.role.key), None)
         return role or next((r for r in team.customRoles if r.key == agent.role.key), None)
 
-    def _node_runtime(self, team: Team, agent: Agent) -> str:
+    def _node_runtime(self, team: Team, agent: Agent, profile: Any = None) -> str:
         override = get_runtime_override()
         if override:
             return override
         role = self._role_for(team, agent)
-        return getattr(role, "defaultRuntime", "loop") or "loop"
+        rt = getattr(role, "defaultRuntime", "loop") or "loop"
+        if profile is not None:
+            if profile.provider == "gemini" and (
+                rt.startswith("cli-") or not profile.apiKeySecretId
+            ):
+                return "cli-gemini"
+            if profile.provider == "anthropic" and (
+                rt.startswith("cli-") or not profile.apiKeySecretId
+            ):
+                return "cli-claude"
+        return rt
 
     def _has_execute_grants(self, team: Team) -> bool:
         grants = {g.key: g for g in (self.catalog.toolGrants if self.catalog else [])}
@@ -223,6 +258,7 @@ class Actuator:
 
         conn_store = ConnectorStore(self.db)
         needs_cli = False
+        needs_gemini_cli = False
         for team_path, agent in enumerate_nodes(team):
             role = self._role_for(team, agent)
             role_grants = list(getattr(role, "toolGrants", []) or [])
@@ -245,9 +281,13 @@ class Actuator:
                 ):
                     issues.append(issue(code, "error", agentIds=[agent.id],
                                         teamPath=team_path))
-            if self._node_runtime(team, agent) == "cli-claude":
+            binding = self.profiles.resolve_binding(team.id, agent.id, team_path)
+            profile_for_rt = self.profiles.get_profile(binding.profileId) if binding else None
+            rt = self._node_runtime(team, agent, profile_for_rt)
+            if rt == "cli-claude":
                 needs_cli = True
-            binding = self.profiles.get_binding_for_node(team.id, agent.id, team_path)
+            elif rt == "cli-gemini":
+                needs_gemini_cli = True
             if binding is None:
                 issues.append(issue("BINDING_MISSING", "error", agentIds=[agent.id],
                                     teamPath=team_path))
@@ -260,13 +300,18 @@ class Actuator:
             if profile.apiKeySecretId and self.secrets.get_meta(profile.apiKeySecretId) is None:
                 issues.append(issue("SECRET_DANGLING", "error", agentIds=[agent.id],
                                     teamPath=team_path))
-        if needs_cli and not _cli_available():
+        if (needs_cli and not _cli_available()) or (
+            needs_gemini_cli and not _gemini_cli_available()
+        ):
             issues.append(issue("CLI_UNAVAILABLE", "error"))
         return issues
 
     # -- lifecycle ---------------------------------------------------------- #
     def create_actuation(self, team_id: str) -> str:
         team = self.store.read(team_id)
+        # A team with no profiles at all gets the ready-to-run default (UX-35) — so a freshly
+        # built team actuates on the first click instead of bouncing on BINDING_MISSING.
+        self.profiles.ensure_team_default(team_id)
         issues = self.check_readiness(team)
         if issues:
             raise ActuationError(issues)
@@ -322,7 +367,7 @@ class Actuator:
         self, actuation_id: str, top: Team, team_path: list[str], agent: Agent
     ) -> None:
         self.directory.upsert_provisioning(actuation_id, agent.id)
-        binding = self.profiles.get_binding_for_node(top.id, agent.id, team_path)
+        binding = self.profiles.resolve_binding(top.id, agent.id, team_path)
         profile = self.profiles.get_profile(binding.profileId) if binding else None
         preamble = profile.systemPreamble if profile else ""
         charter = compile_charter(top, team_path, agent.id, catalog=self.catalog,
@@ -348,14 +393,26 @@ class Actuator:
         else:
             node_work_root = self.work_root / top.id / agent.id
         node_work_root.mkdir(parents=True, exist_ok=True)
-        runtime_kind = self._node_runtime(top, agent)
+        runtime_kind = self._node_runtime(top, agent, profile)
+        cli_config_dir = None
+        cli_cmd = None
+        if profile is not None and getattr(profile, "providerAccountId", None):
+            from .capacity.accounts import ProviderAccountStore
+            from .deps import now_iso
+
+            acct = ProviderAccountStore(self.db, now=now_iso).get(profile.providerAccountId)
+            if acct is not None:
+                cli_config_dir = acct.cliConfigDir
+                cli_cmd = acct.cliCmd
         spec = SandboxSpec(
             actuation_id=actuation_id, node_id=agent.id, team_id=top.id,
             workspace_root=workspace_root,
             log_dir=node_work_root / "logs",  # F16: the adapter log outlives the actuation
             env=self._build_env(token, agent.id, actuation_id, runtime_kind=runtime_kind,
                                 model=profile.model if profile else None,
-                                work_root=node_work_root),
+                                work_root=node_work_root,
+                                cli_config_dir=cli_config_dir,
+                                cli_cmd=cli_cmd),
             a2a_port=None,
         )
         handle = await self.sandbox.create(spec)
@@ -371,6 +428,7 @@ class Actuator:
     def _build_env(
         self, token: str, node_id: str, actuation_id: str, *, runtime_kind: str = "loop",
         model: str | None = None, work_root: Path | None = None,
+        cli_config_dir: str | None = None, cli_cmd: str | None = None,
     ) -> dict[str, str]:
         env = {
             "CANOPY_CP_URL": self.cp_url,
@@ -387,12 +445,14 @@ class Actuator:
             env["PYTHONPATH"] = self.agent_pythonpath
         # Minimal host vars needed for the interpreter to start (Windows needs SystemRoot).
         passthrough = ["PATH", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "PYTHONHOME"]
-        if runtime_kind == "cli-claude":
+        if runtime_kind in ("cli-claude", "cli-gemini"):
             # The CLI needs its (operator-provisioned) auth/config dir and a home
             # (cli-runtime.md §8: trusted-local, stated plainly), plus the shim override.
             # USER/LOGNAME are load-bearing on macOS: without USER the CLI cannot reach
             # its Keychain credentials and every session exits "not logged in".
             passthrough += ["CLAUDE_CONFIG_DIR", "CANOPY_CLI_CMD", "FAKE_CLAUDE_SCRIPT",
+                            "GEMINI_CLI_HOME", "CANOPY_GEMINI_CLI_CMD", "FAKE_GEMINI_SCRIPT",
+                            "GEMINI_API_KEY", "GOOGLE_API_KEY",
                             "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
                             "USER", "LOGNAME", "TMPDIR", "LANG"]
             if model:
@@ -400,6 +460,15 @@ class Actuator:
         for key in passthrough:
             if key in os.environ:
                 env[key] = os.environ[key]
+        if runtime_kind in ("cli-claude", "cli-gemini"):
+            if cli_config_dir:
+                env["CLAUDE_CONFIG_DIR"] = str(cli_config_dir)
+                env["GEMINI_CLI_HOME"] = str(cli_config_dir)
+            if cli_cmd:
+                if runtime_kind == "cli-gemini":
+                    env["CANOPY_GEMINI_CLI_CMD"] = str(cli_cmd)
+                else:
+                    env["CANOPY_CLI_CMD"] = str(cli_cmd)
         return env
 
     async def _await_ready(self, actuation_id: str, node_id: str) -> bool:
@@ -465,7 +534,16 @@ class Actuator:
         recovered_any = False
         for stale in self.directory.stale(actuation_id, threshold):
             node = self._node(actuation_id, stale.nodeId)
-            if node is None or node["attempts"] >= _MAX_RESTARTS:
+            if node is None:
+                continue
+            if node["attempts"] >= _MAX_RESTARTS:
+                if stale.status != "dead":
+                    self.directory.set_status(actuation_id, stale.nodeId, "dead")
+                    self._set_node(
+                        actuation_id, stale.nodeId, sub_state="failed",
+                        error="heartbeat lost (restart limit reached)",
+                    )
+                    self._set_state(actuation_id, "degraded")
                 continue
             found = agents_by_id.get(stale.nodeId)
             if not found:

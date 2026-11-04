@@ -96,7 +96,7 @@ A variant is a **frozen, self-contained blueprint** of a competitor — everythi
 Rules:
 
 - **A variant is a snapshot, not a reference.** Enrolling a production team *copies* its document, bindings, and salaries at that moment. Editing the production team later never silently mutates a competitor; re-enrolling creates a new variant with `mutation.kind: "import"`.
-- **One mutation per variant, by convention.** Attribution is the point of the lineage: "B4 differs from B1 by exactly this" is what makes 100 iterations legible. Multi-edit variants are allowed (`mutation.kind: "manual"`) but the bench discourages them (`04` §5).
+- **One mutation per variant, by convention.** Attribution is the point of the lineage: "B4 differs from B1 by exactly this" is what makes 100 iterations legible. Multi-edit variants are allowed (`mutation.kind: "manual"`) but the bench discourages them (`04` §5). *(Amendment 2026-08-16: `mutation.kind: "campaign-cell"` is the sanctioned multi-factor exception — a campaign's design matrix carries the attribution the convention exists to protect. `07` §2.)*
 - **The solo baseline** is a generated variant: one node carrying the seed team's primary production role (the operator can re-pick), production salary, no managers. It is enrolled at experiment creation when `baseline.solo` is true (default), and never retired automatically — it is the standing answer to PF-1 and the denominator of the whole product thesis.
 - `status: graduated` records that this blueprint was promoted onto a production team (`05` §3); the variant stays in the lineage — graduation is provenance, not removal.
 
@@ -127,6 +127,8 @@ Three origins, in order of trust:
 - **Curated** — the operator writes it. Approved by construction.
 - **Replay** — imported from the owning org's *closed* intents (the picker in `04` §4). The richest source: real work, known-completable, with the historical cost and the accepted deliverable attached as reference metadata. Replay never touches the source team; it copies the intent text and pins the repo state the original ran against (or the closest available base).
 - **Generated** — a task-author agent expands the pool from the experiment's purpose and existing tasks ("more like these, vary the surface area"). Generated tasks land as `proposed` and require operator approval before entering rotation — an unreviewed generator quietly steers the whole experiment, so review is the wall, not politeness. Generation arrives at L4 (`06` §1); until then curated + replay suffice.
+
+> **Amendment (2026-08-16) — replay survivorship.** Replay imports only *closed* intents, so a replay-heavy pool systematically excludes the work that failed, stalled, or was cancelled — exactly where structural differences between teams matter most. A pool of survivors flatters every variant and narrows the spread the experiment exists to measure. Mitigations: the pool-health panel (`04` §4) reports **origin mix and a survivorship note** whenever replay exceeds ~⅔ of rotation; and at L4 the task-author's brief gains a standing quota of **failure-shaped tasks** — synthesized not from thin air but from the org's own rejection notes, rework chains, and stalled-intent transcripts (records the platform already keeps, even where no accepted deliverable exists to replay). Curated hard cases remain the operator's cheapest lever.
 
 ## 5. Holdout discipline
 

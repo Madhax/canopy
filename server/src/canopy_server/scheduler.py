@@ -237,6 +237,10 @@ class Scheduler:
             binding = self._binding_window(exhausted, sched)
             if binding is not None:
                 return self._walk_ladder(team_id, sched, account, binding)
+            if self._engaged:
+                self._engaged = {
+                    k for k in self._engaged if not (k[0] == account.id and k[1] == team_id)
+                }
             # C5 fairness (04 §6) — NEW spawns only, like K2: a suspended
             # conversation resuming is not a new session, and running work is
             # never evicted by a share or a watermark.
@@ -539,7 +543,7 @@ class Scheduler:
         with self.db.connect() as conn:
             rows = conn.execute(
                 "SELECT team_id, node_id, SUM(est_cost_micros) AS micros"
-                " FROM ledger_spend_event WHERE provider='claude-extra'"
+                " FROM ledger_spend_event WHERE provider IN ('claude-extra', 'gemini-extra')"
                 " GROUP BY team_id, node_id"
             ).fetchall()
         total = 0

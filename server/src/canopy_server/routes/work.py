@@ -328,11 +328,25 @@ _ARTIFACT_PREVIEW_LIMIT = 256 * 1024
 
 
 @router.get("/teams/{team_id}/artifacts")
-def read_artifact(team_id: str, ref: str, artifacts=Depends(get_artifact_store)) -> Any:
+def read_artifact(
+    team_id: str,
+    ref: str | None = None,
+    nodeId: str | None = None,
+    artifacts=Depends(get_artifact_store),
+) -> Any:
+    if ref is None:
+        rows = list(reversed(artifacts.list(team_id, nodeId)))
+        return {"artifacts": [m.model_dump() for m in rows]}
     meta = artifacts.resolve(ref)
     if meta is None or meta.teamId != team_id:
         return _error(404, "NOT_FOUND", f"No artifact {ref!r} in this team")
-    out: dict[str, Any] = {"meta": meta.model_dump(), "content": None, "reason": None}
+    lineage = [m.model_dump() for m in artifacts.lineage(ref)]
+    out: dict[str, Any] = {
+        "meta": meta.model_dump(),
+        "content": None,
+        "reason": None,
+        "lineage": lineage,
+    }
     if meta.size > _ARTIFACT_PREVIEW_LIMIT:
         out["reason"] = "too-large"
         return out

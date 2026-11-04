@@ -110,3 +110,78 @@ def test_fake_cli_satisfies_the_probe(monkeypatch, tmp_path):
         assert actuator_mod._cli_available() is True
     finally:
         actuator_mod._cli_available.cache_clear()
+
+
+def test_gemini_profile_routes_cli_role_to_cli_gemini(pod_actuator, monkeypatch):
+    """A CLI role bound to a gemini profile selects cli-gemini and probes the Gemini CLI."""
+    import json
+    import sys
+    from pathlib import Path
+
+    from canopy_server.deps import get_profile_store, get_store
+    from canopy_server.profiles import ProfileParams
+
+    act, team = pod_actuator
+    profiles = get_profile_store()
+    gem_prof = profiles.create_profile(
+        team["id"], name="Gemini", provider="gemini", model="gemini-2.5-pro",
+        api_key_secret_id=None, params=ProfileParams(maxOutputTokens=1024),
+    )
+    lead = next(a for a in team["agents"] if a["role"]["key"] == "engineering-lead")
+    profiles.set_binding(team["id"], lead["id"], gem_prof.id)
+
+    orig_probe = actuator_mod._gemini_cli_available
+    monkeypatch.setattr(actuator_mod, "get_runtime_override", lambda: "")
+    monkeypatch.setattr(actuator_mod, "_cli_available", lambda: True)
+    monkeypatch.setattr(actuator_mod, "_gemini_cli_available", lambda: False)
+
+    team_doc = get_store().read(team["id"])
+    lead_agent = next(a for a in team_doc.agents if a.id == lead["id"])
+    assert act._node_runtime(team_doc, lead_agent, gem_prof) == "cli-gemini"
+
+    issues = act.check_readiness(team_doc)
+    assert "CLI_UNAVAILABLE" in _codes(issues)
+
+    monkeypatch.setattr(actuator_mod, "_gemini_cli_available", orig_probe)
+    fake_gemini = Path(__file__).resolve().parent / "fake_gemini.py"
+    monkeypatch.setenv("CANOPY_GEMINI_CLI_CMD", json.dumps([sys.executable, str(fake_gemini)]))
+    orig_probe.cache_clear()
+    try:
+        assert orig_probe() is True
+        assert "CLI_UNAVAILABLE" not in _codes(act.check_readiness(team_doc))
+    finally:
+        orig_probe.cache_clear()
+
+    env = act._build_env("tok", lead["id"], "act_1", runtime_kind="cli-gemini",
+                         model="gemini-2.5-pro", cli_config_dir="/tmp/gemini-acct-2")
+    assert env["CANOPY_RUNTIME"] == "cli-gemini"
+    assert env["CANOPY_CLI_MODEL"] == "gemini-2.5-pro"
+    assert env["GEMINI_CLI_HOME"] == "/tmp/gemini-acct-2"
+
+
+def test_any_catalog_role_routes_to_cli_when_bound_to_keyless_profile(
+    client, make_org, mint_session, monkeypatch,
+):
+    """Even a catalog role whose defaultRuntime is 'loop' (e.g. frontend-engineer) routes
+    to cli-claude / cli-gemini when bound to a subscription (keyless) anthropic / gemini
+    profile, rather than failing in the API gateway for lack of an API key."""
+    from canopy_server.deps import get_actuator, get_profile_store, get_store
+    from canopy_server.profiles import ProfileParams
+
+    team = make_org(seed={"kind": "root", "roleKey": "frontend-engineer"})
+    act = get_actuator()
+    profiles = get_profile_store()
+    monkeypatch.setattr(actuator_mod, "get_runtime_override", lambda: "")
+
+    claude_sub = profiles.create_profile(
+        team["id"], name="Claude Sub", provider="anthropic", model="claude-sonnet-5",
+        api_key_secret_id=None, params=ProfileParams(maxOutputTokens=1024),
+    )
+    gemini_sub = profiles.create_profile(
+        team["id"], name="Gemini Sub", provider="gemini", model="gemini-2.5-flash",
+        api_key_secret_id=None, params=ProfileParams(maxOutputTokens=1024),
+    )
+    team_doc = get_store().read(team["id"])
+    fe_agent = team_doc.agents[0]
+    assert act._node_runtime(team_doc, fe_agent, claude_sub) == "cli-claude"
+    assert act._node_runtime(team_doc, fe_agent, gemini_sub) == "cli-gemini"

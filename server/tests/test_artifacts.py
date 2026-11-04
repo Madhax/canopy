@@ -70,3 +70,31 @@ def test_legacy_org_scheme_reads_forever(tmp_path):
     assert store.resolve(legacy) is not None
     assert store.resolve(legacy).ref == meta.ref
     assert store.read(legacy) == b"content"
+
+
+def test_pre_c1_artifact_table_is_migrated(tmp_path):
+    """A DB from before the C1 rename has ``org_id``/``org_slug`` on artifacts_artifact. The
+    boot migration must rename BOTH — a missed ``org_slug`` made every artifact write fail
+    with "no such column: team_slug" (agents looped on HTTP 500, nothing ever delivered)."""
+    import sqlite3
+
+    path = tmp_path / "canopy.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE artifacts_artifact (id TEXT PRIMARY KEY, ref TEXT NOT NULL UNIQUE, "
+        "org_id TEXT NOT NULL, org_slug TEXT NOT NULL, node_id TEXT NOT NULL, task_id TEXT, "
+        "name TEXT NOT NULL, type TEXT NOT NULL, filename TEXT, size INTEGER NOT NULL, "
+        "sha256 TEXT NOT NULL, version INTEGER NOT NULL, prev_version_ref TEXT, "
+        "created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO artifacts_artifact VALUES ('art_old', 'org://acme/a_be/report@1', 'o1', "
+        "'acme', 'a_be', NULL, 'report', 'document', NULL, 3, 'abc', 1, NULL, '2026-07-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    store = LocalArtifactStore(Db(path), tmp_path / "artifacts")
+    meta = store.put("o1", "acme", "a_be", "report", "document", b"new content")
+    assert meta.ref == "team://acme/a_be/report@2"  # versions on from the legacy row
+    assert meta.prevVersionRef == "team://acme/a_be/report@1"  # ref rewritten org:// → team://

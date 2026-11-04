@@ -382,3 +382,236 @@ def test_read_only_poll_loop_trips_stall_trigger(
     gate = next(g for g in gates if g.reason.startswith("stall:no-delta"))
     assert gate.assignmentId == a.id
     assert client.get(f"/api/assignments/{a.id}").json()["assignment"]["state"] == "gated"
+
+
+def test_gemini_cli_adapter_drives_assignment_and_counts_capacity(
+    client, make_org, mint_session, live_server, tmp_path, monkeypatch,
+):
+    """CAP-D5: cli-gemini compiles .gemini/settings.json + GEMINI.md, parses Gemini stream-json
+    (init -> tool_use -> message -> result with stats), settles SpendEvents under provider
+    'gemini-cli' at [prices.gemini] rates, and feeds gemini-request-count into google-consumer."""
+    from canopy_server.deps import (
+        get_capacity_ledger,
+        get_db,
+        get_engine,
+        get_ledger,
+        get_profile_store,
+        get_provider_accounts,
+    )
+    from canopy_server.profiles import ProfileParams
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CANOPY_CAPACITY", "1")
+    fake_gemini = Path(__file__).resolve().parent / "fake_gemini.py"
+    script_path = tmp_path / "fake_gemini_script.json"
+    script_path.write_text(json.dumps({
+        "sessionId": "sess-gem-1",
+        "turns": [
+            {"tools": [{"name": "declare_plan",
+                        "arguments": {"stages": [{"title": "implement"}]}}],
+             "usage": [200, 40, 100]},
+            {"tools": [{"name": "produce_artifact",
+                        "arguments": {"name": "pr", "type": "code-patch",
+                                      "content": "gemini diff"}},
+                       {"name": "finish",
+                        "arguments": {"refs": [], "summary": "done via fake gemini"}}],
+             "usage": [300, 60, 50]},
+        ],
+    }), encoding="utf-8")
+    monkeypatch.setenv("FAKE_GEMINI_SCRIPT", str(script_path))
+    monkeypatch.setenv("CANOPY_GEMINI_CLI_CMD", json.dumps([sys.executable, str(fake_gemini)]))
+    monkeypatch.setenv("CANOPY_CLI_MODEL", "gemini-2.5-pro")
+
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="GeminiTeam")
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+
+    # Bind the node to a gemini profile backed by an ai-pro subscription-cli account.
+    acct = get_provider_accounts().create(
+        provider="gemini", auth_mode="subscription-cli",
+        label="Gemini AI Pro (CLI)", plan_hint="ai-pro",
+    )
+    prof = get_profile_store().create_profile(
+        team["id"], name="Gemini Pro", provider="gemini", model="gemini-2.5-pro",
+        api_key_secret_id=None, params=ProfileParams(maxOutputTokens=2048),
+    )
+    with get_db().transaction() as conn:
+        conn.execute(
+            "UPDATE profiles_profile SET provider_account_id=? WHERE id=?",
+            (acct.id, prof.id),
+        )
+    get_profile_store().set_binding(team["id"], node["id"], prof.id)
+
+    _seed_charter(team, s["actuationId"], node["id"])
+    a = get_engine().submit_intent(
+        team["id"], s["actuationId"], "ship gemini feature",
+        target_node=node["id"], allowance_override=50_000,
+    ).assignment
+
+    agent = _agent(s["token"])
+    cfg = _cfg(live_server, s, node["id"])
+    assert cli_runtime.gemini_cli_tick(agent, cfg) == "engaged"  # briefed -> intake-complete
+    assert cli_runtime.gemini_cli_tick(agent, cfg) == "engaged"  # planning -> session starts
+    _wait_session_done(a.id)
+
+    detail = client.get(f"/api/assignments/{a.id}").json()
+    assert detail["assignment"]["state"] == "delivering"
+    assert detail["assignment"]["sessionRef"] == "sess-gem-1"
+
+    workdir = tmp_path / "assignments" / a.id / "work"
+    gem_settings = json.loads((workdir / ".gemini" / "settings.json").read_text(encoding="utf-8"))
+    assert "canopy" in gem_settings["mcpServers"]
+    assert "Bash(uv run pytest tests/unit*)" in gem_settings["permissions"]["allow"]
+    assert (workdir / "GEMINI.md").is_file()
+
+    # Step settled from Gemini result.stats (500 in, 100 out, 150 cached) under gemini-cli.
+    meter = get_ledger().get_meter(a.meterId)
+    assert meter.spent == 500 + 100 + int(150 * 0.1)
+    with get_db().connect() as conn:
+        spend_row = conn.execute(
+            "SELECT provider, model, input_tokens, output_tokens, cache_read_tokens, "
+            "est_cost_micros FROM ledger_spend_event WHERE task_id = ?",
+            (a.id,),
+        ).fetchone()
+    assert spend_row is not None
+    assert spend_row["provider"] == "gemini-cli"
+    assert spend_row["model"] == "gemini-2.5-pro"
+    assert spend_row["input_tokens"] == 500
+    assert spend_row["output_tokens"] == 100
+    assert spend_row["cache_read_tokens"] == 150
+    assert spend_row["est_cost_micros"] > 0
+
+    # And the local request counter fed google-consumer's cli_daily window.
+    w = get_capacity_ledger().window(acct.id, "cli_daily")
+    assert w is not None
+    assert w["source"] == "inferred"
+    assert abs(w["utilization_pct"] - (100.0 * 1 / 1500)) < 0.01
+
+
+def test_subagent_denial_and_result_usage_reconciliation(
+    client, make_org, mint_session, live_server, tmp_path, monkeypatch,
+):
+    """Subagent tools (Task, Agent, Subagent, dispatch_agent) are denied by default, and any
+    unattributed token burn reported in result.usage / result.modelUsage (e.g. from a nested
+    subagent or background model call) is reconciled into a closing Step and charged to the
+    salary meter."""
+    from canopy_server.deps import get_engine, get_ledger
+
+    monkeypatch.chdir(tmp_path)
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"}, name="Reconcile")
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+    _seed_charter(team, s["actuationId"], node["id"])
+    # Allowance is 500: the top-level assistant turn burns 180 (under budget), but a hidden
+    # subagent in modelUsage burned another 420 -> total 600, which reconciles and trips
+    # the hard-stop gate!
+    a = get_engine().submit_intent(
+        team["id"], s["actuationId"], "no hidden subagent tokens",
+        target_node=node["id"], allowance_override=500,
+    ).assignment
+
+    _write_script(tmp_path, monkeypatch, {
+        "sessionId": "sess-reconcile",
+        "turns": [
+            {"tools": [{"name": "declare_plan",
+                        "arguments": {"stages": [{"title": "implement"}]}}],
+             "usage": [150, 30]},
+        ],
+        "modelUsage": {
+            "claude-sonnet-5": {"inputTokens": 150, "outputTokens": 30},
+            "claude-haiku-4-5": {"inputTokens": 350, "outputTokens": 70,
+                                 "cacheReadInputTokens": 1200},
+        },
+    })
+
+    agent = _agent(s["token"])
+    cfg = _cfg(live_server, s, node["id"])
+    cli_runtime.cli_tick(agent, cfg)  # intake
+    cli_runtime.cli_tick(agent, cfg)  # session
+    _wait_session_done(a.id)
+
+    workdir = tmp_path / "assignments" / a.id / "work"
+    perms = json.loads((workdir / ".claude" / "settings.json").read_text(encoding="utf-8"))[
+        "permissions"
+    ]
+    for sub_tool in ("Task", "Agent", "Subagent", "dispatch_agent"):
+        assert sub_tool in perms["deny"]
+
+    detail = client.get(f"/api/assignments/{a.id}").json()
+    reconciled = [st for st in detail["steps"] if st["deltaRef"] == "reconcile:unattributed"]
+    assert len(reconciled) == 1
+    assert reconciled[0]["inputTokens"] == 350
+    assert reconciled[0]["outputTokens"] == 70
+    assert reconciled[0]["cacheReadTokens"] == 1200
+
+    # Total meter spend includes both the top-level turn (180) and the reconciled subagent
+    # (350 + 70 + int(1200 * 0.1) = 540).
+    meter = get_ledger().get_meter(a.meterId)
+    assert meter.spent == 180 + 540
+    assert detail["assignment"]["state"] == "gated"
+    assert any(
+        g["state"] == "open" and g["openedBy"] == "trigger:hard-stop"
+        for g in detail["gates"]
+    )
+
+
+def test_cli_poll_preserves_operator_notes_for_mcp_get_assignment(
+    client, live_server, make_org, mint_session, tmp_path, monkeypatch,
+):
+    """Polling GET /api/dp/assignment/current from cli_tick (with consume_notes=false) does not
+    swallow operator notes before the CLI session calls MCP get_assignment."""
+    from canopy_server.deps import get_engine
+
+    monkeypatch.chdir(tmp_path)
+    team = make_org(seed={"kind": "root", "roleKey": "backend-engineer"})
+    node = _node(team, "backend-engineer")
+    s = mint_session(team["id"], node_id=node["id"])
+    _seed_charter(team, s["actuationId"], node["id"])
+    res = get_engine().submit_intent(
+        team["id"], s["actuationId"], "Build feature X", target_node=node["id"],
+    )
+    a = res.assignment
+
+    # Post an operator note before the CLI session runs.
+    note_resp = client.post(
+        f"/api/intents/{res.intent.id}/notes",
+        json={"text": "Use PostgreSQL instead of SQLite.", "assignmentId": a.id},
+    )
+    assert note_resp.status_code == 201, note_resp.text
+
+    agent = _agent(s["token"])
+    cfg = _cfg(live_server, s, node["id"])
+    # Tick 1 advances briefed -> planning (polling /api/dp/assignment/current
+    # with consume_notes=false).
+    cli_runtime.cli_tick(agent, cfg)
+
+    # When the LLM inside the CLI session calls MCP `get_assignment`, the note
+    # must still be undelivered.
+    mcp_resp = client.post(
+        "/api/dp/mcp",
+        headers={"Authorization": f"Bearer {s['token']}"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "get_assignment", "arguments": {}},
+        },
+    )
+    assert mcp_resp.status_code == 200
+    payload = json.loads(mcp_resp.json()["result"]["content"][0]["text"])
+    assert len(payload["notes"]) == 1
+    assert payload["notes"][0]["text"] == "Use PostgreSQL instead of SQLite."
+
+    # A subsequent MCP `get_assignment` call sees [] because the first MCP call consumed it.
+    mcp_resp2 = client.post(
+        "/api/dp/mcp",
+        headers={"Authorization": f"Bearer {s['token']}"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "get_assignment", "arguments": {}},
+        },
+    )
+    payload2 = json.loads(mcp_resp2.json()["result"]["content"][0]["text"])
+    assert payload2["notes"] == []

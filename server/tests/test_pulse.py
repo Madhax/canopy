@@ -67,6 +67,7 @@ def test_pulse_live_overlay(client, make_org, mint_session):
 
     p = client.get(f"/api/teams/{team['id']}/pulse?windowMinutes=60").json()
     [node] = p["nodes"]
+    assert node["status"] == "engaged"
     assert node["current"]["assignmentId"] == a["id"]
     assert node["current"]["state"] == "executing"
     assert node["current"]["briefPreview"].startswith("Add CSV export")
@@ -89,5 +90,6 @@ def test_pulse_live_overlay(client, make_org, mint_session):
     assert p["gates"]["open"] == 1
     assert p["gates"]["byKind"] == {"intervention": 1}
     assert p["gates"]["attention"] == 1
+    assert p["nodes"][0]["status"] == "gated"
     assert p["nodes"][0]["openGateKinds"] == ["intervention"]
     assert p["nodes"][0]["openGates"] == [{"kind": "intervention", "owner": "operator"}]

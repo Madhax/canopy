@@ -334,6 +334,7 @@ def _owned(work_store, rec, assignment_id: str):
 
 @router.get("/assignment/current")
 def assignment_current(
+    consume_notes: bool = True,
     authorization: str | None = Header(default=None),
     runtokens=Depends(get_runtokens),
     work_store=Depends(get_work_store),
@@ -358,15 +359,21 @@ def assignment_current(
         return {"hold": {**admission.payload, "reason": admission.reason}}
     brief = work_store.get_brief(a.id)
     meter = ledger.get_meter(a.meterId) if a.meterId else None
+    raw_notes = (
+        work_store.take_undelivered_notes(a.id)
+        if consume_notes
+        else work_store.peek_undelivered_notes(a.id)
+    )
     return {
         "assignment": a.model_dump(),
         "brief": brief.model_dump() if brief else None,
         "contract": {"kind": a.contractKind, "type": a.contractType},
         "memory": [m.entry for m in work_store.get_memory(rec.teamId, rec.nodeId)],
         "meter": meter.model_dump() if meter else None,
-        # Undelivered notes, stamped delivered_at by this very read (amendment D-5) — advisory
-        # context for the next turn, never a suspension.
-        "notes": [n.model_dump() for n in work_store.take_undelivered_notes(a.id)],
+        # Undelivered notes, stamped delivered_at when consume_notes=True (amendment D-5) —
+        # advisory context for the next turn, never a suspension. The CLI adapter polls with
+        # consume_notes=false so notes remain undelivered until MCP `get_assignment` reads them.
+        "notes": [n.model_dump() for n in raw_notes],
         # K3/K4 (C4): pacing + degrade-model ride the same response; runtimes that
         # ignore them (loop) behave exactly as before.
         "pace": _pace_of(sched, rec.teamId),
@@ -452,7 +459,8 @@ def assignment_events(
                 from ..deps import get_scheduler
 
                 if get_scheduler().check(rec.teamId, rec.nodeId, _a).extra_usage:
-                    provider_label = "claude-extra"
+                    is_gemini = (body.model or "").startswith("gemini")
+                    provider_label = "gemini-extra" if is_gemini else "claude-extra"
             engine.record_step(
                 body.assignmentId, input_tokens=body.inputTokens, output_tokens=body.outputTokens,
                 duration_ms=body.durationMs, kind=body.stepKind, stage_idx=body.stageIdx,

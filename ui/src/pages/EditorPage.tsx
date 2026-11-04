@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useCatalog } from "../api/catalog";
 import { importTeam, useTeam } from "../api/teams";
-import { useActuationCurrent } from "../api/actuation";
+import { useActuationCurrent, useNodeModels } from "../api/actuation";
 import { apiGet } from "../api/client";
 import type { TeamDoc } from "../schema/team";
 import type { ValidationIssue } from "../validation/codes";
@@ -101,7 +101,9 @@ export function EditorPage() {
   }, [query.data, load, setPath, markSavedSignature]);
 
   const team = doc ? getOrgAtPath(doc, path) : null;
-  const { currentIssues, issueAgentIds, issueDepIds, errorCount, warningCount } = useValidation(
+  const {
+    currentIssues, issueAgentIds, issueDepIds, errorAgentIds, errorCount, warningCount,
+  } = useValidation(
     doc,
     catalog.data,
     path,
@@ -190,6 +192,13 @@ export function EditorPage() {
     }
     return m;
   }, [actuation, path]);
+
+  // UX-35: which model feeds each node on the current canvas (own binding → team default).
+  const resolveModel = useNodeModels(doc?.id);
+  const nodeModel = useCallback(
+    (nodeId: string) => resolveModel(nodeId, path),
+    [resolveModel, path],
+  );
 
   useKeyboardShortcuts(saveNow);
 
@@ -378,6 +387,8 @@ export function EditorPage() {
             issueDepIds={issueDepIds}
             onOpenChild={(childTeamId) => setPath([...path, childTeamId])}
             nodeStatus={nodeStatus}
+            errorAgentIds={errorAgentIds}
+            nodeModel={nodeModel}
             connectors={atRoot ? connectorInstances : undefined}
             connectorGoverned={connectorGoverned}
             selectedConnectorId={connectorSel}

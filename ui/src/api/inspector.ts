@@ -4,7 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend } from "./client";
 import { usePollInterval } from "./work";
-import type { Assignment, Gate, Meter, Step } from "./work";
+import type { ArtifactMeta, Assignment, Gate, Meter, Step } from "./work";
 
 export interface Charter {
   displayName: string;
@@ -35,7 +35,13 @@ export interface WorkspaceFile {
 export interface AgentState {
   nodeId: string;
   charter: Charter | null;
-  binding: { profileId: string; name: string; provider: string; model: string } | null;
+  binding: {
+    profileId: string;
+    name: string;
+    provider: string;
+    model: string;
+    source?: "node" | "team-default";
+  } | null;
   envelope: { toolGrants: string[]; runtimeKind: string };
   salary: { perAssignmentAllowance: number; warnThresholdPct: number; hardStop: boolean };
   directory: {
@@ -74,6 +80,7 @@ export interface AgentState {
     toolEvents: ToolEvent[];
     logTail: string[];
   };
+  artifacts?: ArtifactMeta[];
   workspace: { root: string; files: WorkspaceFile[]; truncated: boolean } | null;
 }
 

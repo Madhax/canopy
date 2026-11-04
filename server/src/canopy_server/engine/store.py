@@ -1276,6 +1276,18 @@ class WorkStore:
             ).fetchall()
         return [_note(r) for r in rows]
 
+    def peek_undelivered_notes(self, assignment_id: str) -> list[Note]:
+        """Read undelivered notes without stamping ``delivered_at`` (used by the CLI
+        adapter's 2 s status poll so notes survive until the LLM calls MCP
+        ``get_assignment``)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_note WHERE assignment_id=? AND delivered_at IS NULL "
+                "ORDER BY created_at, id",
+                (assignment_id,),
+            ).fetchall()
+        return [_note(r) for r in rows]
+
     def take_undelivered_notes(self, assignment_id: str) -> list[Note]:
         """The assignment's undelivered notes, stamped ``delivered_at`` in the same transaction —
         a note is injected exactly once (amendment D-5)."""

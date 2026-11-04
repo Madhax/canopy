@@ -10,12 +10,20 @@ import {
   type AgentState,
   type FilePreview,
 } from "../../api/inspector";
-import { useAssignmentAction, type Assignment, type Gate, type Step } from "../../api/work";
+import {
+  useArtifact,
+  useAssignmentAction,
+  type ArtifactPreview,
+  type Assignment,
+  type Gate,
+  type Step,
+} from "../../api/work";
+import { ArtifactBrowserView } from "./ArtifactBrowser";
 import { Button, CenteredSpinner, EmptyState } from "../common";
 
 const TABS = [
   "Overview", "Assignment", "Plan & Steps", "Spend", "Gates & Queue", "Memory",
-  "Session", "Workspace",
+  "Session", "Artifacts", "Workspace",
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -27,6 +35,10 @@ interface Props {
   onIntervene: (assignmentId: string, note: string) => void;
   filePreview: FilePreview | null;
   onPreviewFile: (path: string | null) => void;
+  selectedArtifactRef?: string | null;
+  artifactPreview?: ArtifactPreview | null;
+  artifactPreviewLoading?: boolean;
+  onPreviewArtifact?: (ref: string | null) => void;
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -35,6 +47,7 @@ const STATUS_TONE: Record<string, string> = {
   gated: "bg-warn",
   paused: "bg-warn",
   dead: "bg-danger",
+  erroring: "bg-danger",
 };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -101,6 +114,21 @@ function StepsTable({ steps }: { steps: Step[] }) {
   );
 }
 
+function formatInspectorGateReason(gate: Gate): string {
+  if (gate.reason.startsWith("await:")) {
+    const ids = gate.reason.slice("await:".length).split(",").map((s) => s.trim()).filter(Boolean);
+    return `awaiting reports (${ids.join(", ")})`;
+  }
+  if (gate.reason.startsWith("dependsOn:")) {
+    const ids = gate.reason.slice("dependsOn:".length).split(",").map((s) => s.trim()).filter(Boolean);
+    return `waiting on (${ids.join(", ")})`;
+  }
+  if (typeof gate.payload.detail === "string" && gate.payload.detail) {
+    return `${gate.payload.detail} (${gate.reason})`;
+  }
+  return gate.reason;
+}
+
 function GateRow({ gate }: { gate: Gate }) {
   return (
     <div className="rounded-md border border-border bg-canvas px-3 py-2 text-xs">
@@ -108,7 +136,7 @@ function GateRow({ gate }: { gate: Gate }) {
       <span className={`ml-2 ${gate.state === "open" ? "text-warn" : "text-ink-muted"}`}>
         {gate.state}
       </span>
-      <span className="ml-2 text-ink-muted">{gate.reason}</span>
+      <span className="ml-2 text-ink-muted" title={gate.reason}>{formatInspectorGateReason(gate)}</span>
       <div className="mt-0.5 text-[10px] text-ink-muted">
         opened by {gate.openedBy} · {gate.createdAt.slice(0, 19).replace("T", " ")}
       </div>
@@ -128,9 +156,13 @@ function AssignmentRow({ a, extra }: { a: Assignment; extra?: string }) {
 
 export function AgentInspector({
   state, nodeName, onClose, onResetMemory, onIntervene, filePreview, onPreviewFile,
+  selectedArtifactRef, artifactPreview = null, artifactPreviewLoading = false, onPreviewArtifact,
 }: Props) {
   const [tab, setTab] = useState<Tab>("Overview");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [localArtifactRef, setLocalArtifactRef] = useState<string | null>(null);
+  const activeArtifactRef = selectedArtifactRef !== undefined ? selectedArtifactRef : localArtifactRef;
+  const handleSelectArtifact = onPreviewArtifact ?? setLocalArtifactRef;
   const c = state.charter;
   const cur = state.current;
   const status = state.directory?.status ?? "not-actuated";
@@ -456,6 +488,18 @@ export function AgentInspector({
           </div>
         )}
 
+        {tab === "Artifacts" && (
+          <ArtifactBrowserView
+            artifacts={state.artifacts ?? []}
+            nodeName={nodeName}
+            selectedRef={activeArtifactRef}
+            onSelectRef={handleSelectArtifact}
+            preview={artifactPreview}
+            previewLoading={artifactPreviewLoading}
+            compact
+          />
+        )}
+
         {tab === "Workspace" &&
           (state.workspace ? (
             <div className="flex flex-col gap-2">
@@ -533,6 +577,8 @@ export function InspectorPanel({
   const act = useAssignmentAction(teamId);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const preview = useWorkspaceFile(teamId, nodeId, previewPath);
+  const [previewArtifactRef, setPreviewArtifactRef] = useState<string | null>(null);
+  const artifactPreview = useArtifact(teamId, previewArtifactRef);
 
   return (
     <div className="fixed inset-y-0 right-0 z-40 w-[460px] max-w-full border-l border-border bg-surface shadow-xl">
@@ -547,6 +593,10 @@ export function InspectorPanel({
           }
           filePreview={preview.data ?? null}
           onPreviewFile={setPreviewPath}
+          selectedArtifactRef={previewArtifactRef}
+          artifactPreview={artifactPreview.data ?? null}
+          artifactPreviewLoading={artifactPreview.isLoading}
+          onPreviewArtifact={setPreviewArtifactRef}
         />
       ) : state.isError ? (
         <div className="p-4">

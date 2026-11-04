@@ -63,9 +63,14 @@ def next_midnight_pt(now: datetime) -> str:
 
 
 @register_adapter("google:subscription-cli")
+@register_adapter("gemini:subscription-cli")
+@register_adapter("google")
+@register_adapter("gemini")
 class GoogleConsumerAdapter(QuotaAdapter):
     def expected_windows(self, account: ProviderAccount) -> list[WindowSpec]:
-        return list(WINDOWS)
+        if account.authMode == "subscription-cli":
+            return list(WINDOWS)
+        return []
 
     def on_session_event(
         self, account: ProviderAccount, ev: SessionSignal

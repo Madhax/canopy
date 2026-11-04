@@ -1,6 +1,8 @@
 // Phase-2 control-plane API: profiles, bindings, secrets, actuation (control-plane.md §9).
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend } from "./client";
+import { type NodeModelInfo, resolveNodeModel } from "../lib/nodeModel";
 import type {
   AgentBinding,
   AgentProfile,
@@ -26,6 +28,52 @@ export function useBindings(teamId: string | undefined) {
   });
 }
 
+/** The team-default profile id (UX-35): what every node without its own binding runs on. */
+export function useTeamDefaultProfile(teamId: string | undefined) {
+  return useQuery({
+    queryKey: ["profile-default", teamId],
+    queryFn: () =>
+      apiGet<{ teamId: string; profileId: string | null }>(`/teams/${teamId}/profile-default`),
+    enabled: !!teamId,
+  });
+}
+
+export function useSetTeamDefaultProfile(teamId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (profileId: string | null) =>
+      apiSend<{ teamId: string; profileId: string | null }>(
+        "PUT",
+        `/teams/${teamId}/profile-default`,
+        { profileId },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profile-default", teamId] }),
+  });
+}
+
+/**
+ * Resolver for "which model feeds this node" across the whole team tree. Returns undefined
+ * for every node until profiles, bindings and the team default have all loaded — so the canvas
+ * never flashes a node red while the answer is still in flight.
+ */
+export function useNodeModels(teamId: string | undefined) {
+  const profiles = useProfiles(teamId);
+  const bindings = useBindings(teamId);
+  const teamDefault = useTeamDefaultProfile(teamId);
+  const ready = !!profiles.data && !!bindings.data && !!teamDefault.data;
+  return useMemo(() => {
+    if (!ready) return () => undefined;
+    return (nodeId: string, teamPath: string[]): NodeModelInfo =>
+      resolveNodeModel(
+        nodeId,
+        teamPath,
+        bindings.data!,
+        profiles.data!,
+        teamDefault.data!.profileId,
+      );
+  }, [ready, profiles.data, bindings.data, teamDefault.data]);
+}
+
 export function useSecrets(teamId: string | undefined) {
   return useQuery({
     queryKey: ["secrets", teamId],
@@ -47,7 +95,11 @@ export interface ProfileInput {
 
 export function useProfileMutations(teamId: string | undefined) {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["profiles", teamId] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["profiles", teamId] });
+    // Deleting the default profile clears the team default server-side.
+    qc.invalidateQueries({ queryKey: ["profile-default", teamId] });
+  };
   return {
     create: useMutation({
       mutationFn: (body: ProfileInput) =>

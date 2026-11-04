@@ -2,7 +2,7 @@
 // document — states, stage cursors, meters, padlocks, notes — with every line a handle:
 // leave a note (D-5) or intervene (X1) inline. Read + act; the view stores nothing.
 import { useState } from "react";
-import type { PlanNode } from "../../api/work";
+import type { Gate, PlanNode } from "../../api/work";
 import { Button, Markdown } from "../common";
 import { DeliverableCard } from "./DeliverableCard";
 import { BudgetChip, StageProgress, stateLabel } from "./MissionControl";
@@ -27,6 +27,62 @@ const STATE_TONE: Record<string, string> = {
   cancelled: "text-ink-muted line-through",
   proposed: "text-ink-muted italic",
 };
+
+export function formatGateSummary(
+  g: Gate,
+  node: PlanNode,
+  nodeName: (id: string) => string,
+): string | null {
+  if (g.kind === "dependency") {
+    if (g.payload.await === true || g.reason === "await" || g.reason.startsWith("await:")) {
+      const rawIds = Array.isArray(g.payload.children)
+        ? (g.payload.children as string[])
+        : g.reason.startsWith("await:")
+          ? g.reason
+              .slice("await:".length)
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
+      const names = Array.from(
+        new Set(
+          rawIds.map((id) => {
+            const child = node.children.find((c) => c.assignment.id === id);
+            return child ? nodeName(child.assignment.nodeId) : id;
+          }),
+        ),
+      );
+      return names.length > 0 ? `awaiting ${names.join(", ")}` : "awaiting reports";
+    }
+    if (g.reason.startsWith("dependsOn:")) {
+      const ids = g.reason
+        .slice("dependsOn:".length)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return ids.length > 0 ? `waiting on ${ids.join(", ")}` : "waiting on upstream";
+    }
+  }
+  if (typeof g.payload.detail === "string" && g.payload.detail) {
+    return g.payload.detail;
+  }
+  if (typeof g.payload.note === "string" && g.payload.note) {
+    return g.payload.note;
+  }
+  if (typeof g.payload.question === "string" && g.payload.question) {
+    return g.payload.question;
+  }
+  if (g.openedBy === "trigger:hard-stop" || g.reason.startsWith("hard-stop:")) {
+    return "budget exhausted";
+  }
+  if (g.reason.startsWith("plan-review")) {
+    return "plan review";
+  }
+  if (g.reason.startsWith(`${g.kind}:`)) {
+    return g.reason.slice(g.kind.length + 1);
+  }
+  return g.reason || null;
+}
 
 export function PlanOutline(props: Props) {
   const { node, nodeName, depth = 0 } = props;
@@ -56,21 +112,30 @@ export function PlanOutline(props: Props) {
         <span className={`text-xs font-semibold ${STATE_TONE[a.state] ?? "text-ink"}`}>
           {stateLabel(a.state)}
         </span>
+        {a.state === "executing" && a.sessionHealth === "erroring" && (
+          <span
+            className="max-w-[28rem] truncate rounded bg-danger/15 px-1.5 text-[11px] font-medium text-danger"
+            title={a.sessionHealthDetail ?? "the agent's session is reporting errors"}
+          >
+            ⚠ erroring{a.sessionHealthDetail ? ` — ${a.sessionHealthDetail}` : ""}
+          </span>
+        )}
         {/* F4/F5: gates awaiting the OPERATOR ring in danger; internal wiring stays quiet. */}
-        {openGates.map((g) =>
-          g.owner === "operator" ? (
+        {openGates.map((g) => {
+          const detail = formatGateSummary(g, node, nodeName);
+          return g.owner === "operator" ? (
             <span key={g.id}
                   className="rounded bg-danger/15 px-1.5 text-[11px] font-medium text-danger"
                   title={`${g.reason} — needs you`}>
-              🔒 {g.kind}
+              🔒 {g.kind}{detail ? ` · ${detail}` : ""}
             </span>
           ) : (
             <span key={g.id} className="rounded bg-surface-2 px-1.5 text-[11px] text-ink-muted"
                   title={`${g.reason} — internal (${g.owner}), not your action`}>
-              🔗 {g.kind}
+              🔗 {g.kind}{detail ? ` · ${detail}` : ""}
             </span>
-          ),
-        )}
+          );
+        })}
         {/* F15: progress = plan stages; budget is its own labeled number. */}
         {node.plan && node.plan.stages.length > 0 && (
           <StageProgress

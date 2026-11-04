@@ -222,6 +222,19 @@ async def _delivery_loop() -> None:
         await asyncio.sleep(1)
 
 
+def _backfill_team_defaults() -> None:
+    """UX-35 boot pass: teams created before team-default profiles existed, and still without
+    any profile, get the ready-to-actuate default. Idempotent; never blocks boot."""
+    from .deps import get_profile_store, get_store
+
+    try:
+        profiles = get_profile_store()
+        for team_id in get_store().list_ids():
+            profiles.ensure_team_default(team_id)
+    except Exception:  # noqa: BLE001 - a convenience backfill must not take the server down
+        pass
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # C1 boot migrations: store construction renames tables / assigns the default
@@ -233,6 +246,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     get_store()
     migrate_c1_filesystem(get_data_dir(), get_db())
+    _backfill_team_defaults()
 
     tasks = [
         asyncio.create_task(_reconciler_loop()),

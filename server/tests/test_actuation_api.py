@@ -5,6 +5,9 @@ from __future__ import annotations
 
 def test_actuate_blocked_on_readiness(client, make_org):
     team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    # A new team starts with a team-default profile; clearing it leaves the node unbound.
+    r = client.put(f"/api/teams/{team['id']}/profile-default", json={"profileId": None})
+    assert r.status_code == 200 and r.json()["profileId"] is None
     r = client.post(f"/api/teams/{team['id']}/actuations")
     assert r.status_code == 422
     body = r.json()

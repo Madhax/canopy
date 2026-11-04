@@ -777,6 +777,9 @@ class ExecutionEngine:
         plan = self.store.create_plan(assignment_id, stages)
         if a.state == "planning":
             self.store.set_assignment_state(assignment_id, "executing")
+        if plan.stages:
+            self.store.set_stage_state(plan.id, 0, "active")
+            plan = self.store.get_plan(assignment_id, plan.version) or plan
         return plan
 
     def record_step(
@@ -813,8 +816,11 @@ class ExecutionEngine:
             # The CLI reports the model it ran; price it like the gateway would (anthropic
             # rates apply to claude-cli sessions — the provider is the transport, not the
             # billing identity).
+            is_gemini = model.startswith("gemini") or (provider_label or "").startswith("gemini")
+            price_provider = "gemini" if is_gemini else "anthropic"
+            default_provider_label = "gemini-cli" if is_gemini else "claude-cli"
             est_cost, _known = estimate_cost_micros(
-                self.prices, "anthropic", model, input_tokens, output_tokens,
+                self.prices, price_provider, model, input_tokens, output_tokens,
                 cache_read_tokens, cache_creation_tokens,
             )
             self.ledger.record(
@@ -822,7 +828,7 @@ class ExecutionEngine:
                 actuation_id=a.actuationId,
                 # C6 K10: while the extra-usage rung is engaged the caller labels
                 # the spend 'claude-extra' — money, never subscription "$0" rows.
-                provider=provider_label or "claude-cli", model=model,
+                provider=provider_label or default_provider_label, model=model,
                 input_tokens=input_tokens, output_tokens=output_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cache_creation_tokens=cache_creation_tokens, est_cost_micros=est_cost,
@@ -849,6 +855,12 @@ class ExecutionEngine:
         plan = self.store.get_plan(assignment_id)
         if plan is not None:
             self.store.set_stage_state(plan.id, idx, state)
+            if (
+                state == "done"
+                and idx + 1 < len(plan.stages)
+                and plan.stages[idx + 1].state == "pending"
+            ):
+                self.store.set_stage_state(plan.id, idx + 1, "active")
 
     def put_artifact(
         self, assignment_id: str, name: str, type: str, content: bytes, *,
