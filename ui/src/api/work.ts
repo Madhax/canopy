@@ -18,6 +18,9 @@ export interface Assignment {
   meterId: string | null;
   priority: number;
   sessionRef: string | null;
+  /** F14: "running" | "erroring" as reported by the node's runtime; null = not reported. */
+  sessionHealth?: string | null;
+  sessionHealthDetail?: string | null;
   createdAt: string;
 }
 
@@ -271,7 +274,7 @@ function useInvalidateWork(teamId: string | null) {
   const qc = useQueryClient();
   return () => {
     for (const key of ["intents", "intent-plan", "gates", "notifications", "assignments",
-                       "spend", "assignment-detail", "cadences", "triggers"]) {
+                       "spend", "assignment-detail", "cadences", "triggers", "artifacts"]) {
       qc.invalidateQueries({ queryKey: [key] });
     }
     void teamId;
@@ -280,8 +283,36 @@ function useInvalidateWork(teamId: string | null) {
 
 // Operator artifact preview (the deliverable viewer). Refs are immutable versions, so the
 // result never goes stale.
+export interface ArtifactMeta {
+  id?: string;
+  ref: string;
+  teamId?: string;
+  nodeId: string;
+  taskId?: string | null;
+  name: string;
+  type: string;
+  filename?: string | null;
+  size: number;
+  sha256?: string;
+  version: number;
+  prevVersionRef?: string | null;
+  createdAt: string;
+}
+
+export function useTeamArtifacts(teamId: string | null, nodeId?: string | null) {
+  const qs = nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : "";
+  return useQuery({
+    queryKey: ["artifacts", teamId, nodeId ?? null],
+    queryFn: () => apiGet<{ artifacts: ArtifactMeta[] }>(`/teams/${teamId}/artifacts${qs}`),
+    enabled: !!teamId,
+    refetchInterval: usePollInterval(),
+    select: (d) => d.artifacts,
+  });
+}
+
 export interface ArtifactPreview {
   meta: {
+    taskId?: string | null;
     ref: string;
     name: string;
     type: string;
@@ -292,6 +323,7 @@ export interface ArtifactPreview {
   };
   content: string | null;
   reason: "too-large" | "binary" | "missing-blob" | null;
+  lineage?: ArtifactMeta[];
 }
 
 export function useArtifact(teamId: string | null, ref: string | null) {

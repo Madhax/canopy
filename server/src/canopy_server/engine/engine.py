@@ -777,6 +777,9 @@ class ExecutionEngine:
         plan = self.store.create_plan(assignment_id, stages)
         if a.state == "planning":
             self.store.set_assignment_state(assignment_id, "executing")
+        if plan.stages:
+            self.store.set_stage_state(plan.id, 0, "active")
+            plan = self.store.get_plan(assignment_id, plan.version) or plan
         return plan
 
     def record_step(
@@ -849,6 +852,12 @@ class ExecutionEngine:
         plan = self.store.get_plan(assignment_id)
         if plan is not None:
             self.store.set_stage_state(plan.id, idx, state)
+            if (
+                state == "done"
+                and idx + 1 < len(plan.stages)
+                and plan.stages[idx + 1].state == "pending"
+            ):
+                self.store.set_stage_state(plan.id, idx + 1, "active")
 
     def put_artifact(
         self, assignment_id: str, name: str, type: str, content: bytes, *,

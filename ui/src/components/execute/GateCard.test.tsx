@@ -111,4 +111,28 @@ describe("PlanOutline", () => {
     const chip = screen.getByText(/🔒 escalation/);
     expect(chip.className).toContain("text-danger");
   });
+
+  it("formats await dependency gates inline with child agent names", () => {
+    const childBe: PlanNode = {
+      assignment: { id: "as_be", intentId: "in_1", nodeId: "a_be", parentId: "as_root",
+                    issuedBy: "a_lead", state: "executing", briefVersion: 1,
+                    contractKind: "artifact", contractType: "PullRequest",
+                    meterId: null, priority: 0, sessionRef: null, createdAt: "" },
+      brief: null, plan: null, gates: [], meter: null, deliverable: null, notes: [], children: [],
+    };
+    const node: PlanNode = {
+      assignment: { id: "as_root", intentId: "in_1", nodeId: "a_lead", parentId: null,
+                    issuedBy: "operator", state: "gated", briefVersion: 1,
+                    contractKind: "artifact", contractType: "Deliverable",
+                    meterId: null, priority: 0, sessionRef: null, createdAt: "" },
+      brief: null, plan: null,
+      gates: [{ id: "g_await", assignmentId: "as_root", kind: "dependency", openedBy: "system",
+                owner: "system", reason: "await:as_be", payload: { await: true, children: ["as_be"] },
+                state: "open", resolution: null, createdAt: "" }],
+      meter: null, deliverable: null, notes: [], children: [childBe],
+    };
+    render(<PlanOutline node={node} nodeName={nodeName} onNote={() => {}}
+                        onIntervene={() => {}} onAccept={() => {}} onReject={() => {}} />);
+    expect(screen.getByText(/🔗 dependency · awaiting Backend Engineer/)).toBeTruthy();
+  });
 });

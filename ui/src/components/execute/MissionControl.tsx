@@ -15,6 +15,7 @@ const STATUS_TONE: Record<string, string> = {
   pending: "bg-warn/15 text-warn",
   failed: "bg-danger/15 text-danger",
   dead: "bg-danger/15 text-danger",
+  erroring: "bg-danger/15 text-danger",
   "not-actuated": "bg-surface-2 text-ink-muted",
 };
 
@@ -147,9 +148,9 @@ function NodeCard({ node, onInspect }: { node: PulseNode; onInspect: (id: string
     <button
       onClick={() => onInspect(node.nodeId)}
       title="Inspect this agent"
-      className={`w-[230px] rounded-md border border-border bg-surface p-2 text-left shadow-sm transition-shadow hover:border-accent hover:shadow-md ${
-        dim ? "opacity-70" : ""
-      }`}
+      className={`w-[230px] rounded-md border bg-surface p-2 text-left shadow-sm transition-shadow hover:border-accent hover:shadow-md ${
+        node.status === "erroring" ? "border-danger" : "border-border"
+      } ${dim ? "opacity-70" : ""}`}
     >
       <div className="flex items-center gap-1.5">
         <span className="truncate text-xs font-semibold text-ink">{node.name}</span>
@@ -173,6 +174,11 @@ function NodeCard({ node, onInspect }: { node: PulseNode; onInspect: (id: string
         </p>
       ) : (
         <p className="mt-1 text-[11px] text-ink-muted">no active work</p>
+      )}
+      {node.current?.healthDetail && (
+        <p className="mt-1 line-clamp-2 text-[10px] text-danger" title={node.current.healthDetail}>
+          ⚠ {node.current.healthDetail}
+        </p>
       )}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {node.current?.stageProgress && <StageProgress progress={node.current.stageProgress} />}

@@ -42,12 +42,13 @@ Twelve trials later the leaderboard reads: **B1** holds the correctness floor, c
 | `04-ux-experiment-bench.md` | UX: authoring — the lab home, the create flow, the rubric editor, the task manager, the variant composer |
 | `05-ux-observatory.md` | UX: observing and governing — the leaderboard, the lineage tree, trial comparison pages, verdict overrides, notifications, honesty rules |
 | `06-implementation-plan.md` | The L-series milestones, API map, schema sketches, test plan, debts opened, doc-edit impact map |
+| `07-selection-and-evidence.md` | **Proposed (2026-08-16):** the selection problem — factors and campaigns (design of experiments over the mutation vocabulary), the cross-experiment evidence store, advisory formation-selection surfaces, and the never-explore-on-live-work boundary; milestone L7 |
 
 ## Scope
 
 **In scope:** the experiment domain (experiments, variants, trials, tasks, rubrics, verdicts); measured/programmatic/judged/human scoring with tiers; blinded pairwise panel judging with human audit and override; task curation, replay, and reviewed generation with holdout discipline; mechanical variant generators (model-downgrade and structure sweeps) and the proposer role; champion–challenger operation, promotion as a governed action; the lab UX surfaces; continuous cadence-driven operation under capacity governance.
 
-**Non-goals (this series):** production traffic splitting — trials replay or generate tasks, they never intercept a live intent (shadow-mirroring live intents is a possible future mode, noted in `01` §9); bandit/Bayesian auto-tuning beyond champion–challenger; cross-experiment meta-learning; model fine-tuning (this searches *structure* space, not weight space); crowd or external evaluation; statistical machinery beyond paired win rates, floors, and minimum sample sizes (no p-value theater over n=9); routing production work across specialized champions (a real idea the per-tag leaderboard will provoke; deliberately a separate future design — `03` §8).
+**Non-goals (this series):** production traffic splitting — trials replay or generate tasks, they never intercept a live intent (shadow-mirroring live intents is a possible future mode, noted in `01` §9); bandit/Bayesian auto-tuning beyond champion–challenger; cross-experiment meta-learning; model fine-tuning (this searches *structure* space, not weight space); crowd or external evaluation; statistical machinery beyond paired win rates, floors, and minimum sample sizes (no p-value theater over n=9); routing production work across specialized champions (a real idea the per-tag leaderboard will provoke; the *evidence and advisory-selection* half is now designed in `07-selection-and-evidence.md` — live dispatch remains a separate future design — `03` §8).
 
 ## Relationship to the existing corpus
 

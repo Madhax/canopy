@@ -138,6 +138,10 @@ class Db:
                 renames.append(("organization_id", "team_id"))
             if "org_path" in cols and "team_path" not in cols:
                 renames.append(("org_path", "team_path"))
+            # artifacts_artifact carried the slug too; missing it left pre-C1 DBs failing
+            # every artifact write (INSERT … team_slug → "no such column") after the rename.
+            if "org_slug" in cols and "team_slug" not in cols:
+                renames.append(("org_slug", "team_slug"))
             for old, new in renames:
                 conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
 

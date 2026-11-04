@@ -247,7 +247,7 @@ class Actuator:
                                         teamPath=team_path))
             if self._node_runtime(team, agent) == "cli-claude":
                 needs_cli = True
-            binding = self.profiles.get_binding_for_node(team.id, agent.id, team_path)
+            binding = self.profiles.resolve_binding(team.id, agent.id, team_path)
             if binding is None:
                 issues.append(issue("BINDING_MISSING", "error", agentIds=[agent.id],
                                     teamPath=team_path))
@@ -267,6 +267,9 @@ class Actuator:
     # -- lifecycle ---------------------------------------------------------- #
     def create_actuation(self, team_id: str) -> str:
         team = self.store.read(team_id)
+        # A team with no profiles at all gets the ready-to-run default (UX-35) — so a freshly
+        # built team actuates on the first click instead of bouncing on BINDING_MISSING.
+        self.profiles.ensure_team_default(team_id)
         issues = self.check_readiness(team)
         if issues:
             raise ActuationError(issues)
@@ -322,7 +325,7 @@ class Actuator:
         self, actuation_id: str, top: Team, team_path: list[str], agent: Agent
     ) -> None:
         self.directory.upsert_provisioning(actuation_id, agent.id)
-        binding = self.profiles.get_binding_for_node(top.id, agent.id, team_path)
+        binding = self.profiles.resolve_binding(top.id, agent.id, team_path)
         profile = self.profiles.get_profile(binding.profileId) if binding else None
         preamble = profile.systemPreamble if profile else ""
         charter = compile_charter(top, team_path, agent.id, catalog=self.catalog,
@@ -465,7 +468,16 @@ class Actuator:
         recovered_any = False
         for stale in self.directory.stale(actuation_id, threshold):
             node = self._node(actuation_id, stale.nodeId)
-            if node is None or node["attempts"] >= _MAX_RESTARTS:
+            if node is None:
+                continue
+            if node["attempts"] >= _MAX_RESTARTS:
+                if stale.status != "dead":
+                    self.directory.set_status(actuation_id, stale.nodeId, "dead")
+                    self._set_node(
+                        actuation_id, stale.nodeId, sub_state="failed",
+                        error="heartbeat lost (restart limit reached)",
+                    )
+                    self._set_state(actuation_id, "degraded")
                 continue
             found = agents_by_id.get(stale.nodeId)
             if not found:

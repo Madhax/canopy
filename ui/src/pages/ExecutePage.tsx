@@ -22,12 +22,13 @@ import { usePulse } from "../api/pulse";
 import { useAssignments } from "../api/work";
 import { Button, CenteredSpinner, EmptyState, Markdown } from "../components/common";
 import { InspectorPanel } from "../components/execute/AgentInspector";
+import { ArtifactBrowserSection } from "../components/execute/ArtifactBrowser";
 import { CadenceSection, type CadenceSeed } from "../components/execute/CadenceSection";
 import { TriggerSection } from "../components/execute/TriggerSection";
 import { CostSection } from "../components/execute/CostExplorer";
 import { MissionControl, TeamPulse } from "../components/execute/MissionControl";
 import { GateCard } from "../components/execute/GateCard";
-import { OrgPicker, orgLabelSuffix } from "../components/execute/OrgPicker";
+import { OrgPicker, orgLabelSuffix, useRunningTeams } from "../components/execute/OrgPicker";
 import { PlanOutline } from "../components/execute/PlanOutline";
 
 const SEVERITY_TONE: Record<string, string> = {
@@ -54,7 +55,7 @@ export function ExecutePage() {
   const effectiveOrg = teamId;
   const [intentId, setIntentId] = useState<string | null>(null);
   const [text, setText] = useState("");
-  const [view, setView] = useState<"work" | "pulse" | "costs">("work");
+  const [view, setView] = useState<"work" | "pulse" | "artifacts" | "costs">("work");
   const [inspectNode, setInspectNode] = useState<string | null>(null);
   const [cadenceSeed, setCadenceSeed] = useState<CadenceSeed | null>(null);
 
@@ -91,6 +92,13 @@ export function ExecutePage() {
   }, [assignments.data, gates.data]);
 
   const orgSuffix = useMemo(() => orgLabelSuffix(teams.data ?? []), [teams.data]);
+  // Only teams that are up and running can be driven; the team in hand stays listed even if
+  // it stops, so the switcher never silently changes what you're looking at.
+  const { running } = useRunningTeams(teams.data ?? []);
+  const switcherTeams = useMemo(
+    () => (teams.data ?? []).filter((o) => o.id === effectiveOrg || running.some((r) => r.id === o.id)),
+    [teams.data, running, effectiveOrg],
+  );
 
   return (
     <div className="min-h-full">
@@ -121,7 +129,7 @@ export function ExecutePage() {
             {live ? "live" : "polling"}
           </span>
           <div className="flex rounded-md border border-border bg-canvas p-0.5 text-xs">
-            {(["work", "pulse", "costs"] as const).map((v) => (
+            {(["work", "pulse", "artifacts", "costs"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -143,7 +151,7 @@ export function ExecutePage() {
             className="rounded-md border border-border bg-canvas px-2 py-1 text-sm outline-none focus:border-accent"
           >
             <option value="">— pick a team —</option>
-            {(teams.data ?? []).map((o) => (
+            {switcherTeams.map((o) => (
               <option key={o.id} value={o.id}>
                 {orgSuffix(o.id) ? `${o.name} ${orgSuffix(o.id)}` : o.name}
               </option>
@@ -158,6 +166,14 @@ export function ExecutePage() {
         <CenteredSpinner label="Loading organizations…" />
       ) : !effectiveOrg ? (
         <OrgPicker teams={teams.data ?? []} onPick={setOrgId} />
+      ) : view === "artifacts" ? (
+        <main className="mx-auto max-w-6xl px-6 py-6">
+          <ArtifactBrowserSection
+            teamId={effectiveOrg}
+            nodeName={nodeName}
+            onInspectNode={setInspectNode}
+          />
+        </main>
       ) : view === "costs" ? (
         <main className="mx-auto max-w-6xl px-6 py-6">
           <CostSection teamId={effectiveOrg} nodeName={nodeName} />

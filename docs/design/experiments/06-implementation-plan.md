@@ -18,6 +18,7 @@ The L-series lands **after the C-series** (it speaks C1's vocabulary and reuses 
 | **L4** | Task sources | replay importer (closed-intent picker, `baseRef` pinning, reference metadata); `task-author` role + generated queue + review flow; tags + leaderboard slices; pool-health warnings; holdout masking + reveal audit | replayed task reproduces a closed bug trial in CI (fixture repo); generated tasks blocked from rotation until approved; holdout never appears in proposer-visible fixtures (adversarial test) |
 | **L5** | Search | mutation vocabulary + lineage; `sweep:model-downgrade` (then `salary-trim`, `flatten`); envelope + auto-instantiate + out-of-envelope ApprovalGate; `structure-proposer` role + VariantProposal contract + predicted-vs-observed; lineage tree UI; variant composer + diff overlay | downgrade sweep on mock walks the tier ladder and stops at a scripted floor breach, frontier reported; out-of-envelope proposal opens a gate with the draft as payload; lineage renders 20 variants legibly |
 | **L6** | Continuous + hardening | cadence-driven trials (runway-courteous, activeHours); restart/redelivery sweeps for in-flight trials; trial timeout/void policy; promotion flow end-to-end (deactuate→apply→re-actuate + receipt); retention for exhibits/verdicts; live smoke (one real trial, one real panel, marked manual) | control-plane restart mid-trial resumes collecting correctly (E6-style audit); a month-long mock soak (compressed clock) leaves a legible lineage; `phase3-debts.md` gains this series' rows |
+| **L7** | Selection & evidence *(proposed 2026-08-16 — `07-selection-and-evidence.md`)* | catalog `factors[]` + controlled stratum vocabulary; `campaign:<key>` generator (fractional-factorial design matrices, `campaign-cell` mutations); staged-fidelity scheduling (screen on measured/programmatic → judge survivors, successive halving within a campaign); `experiment_effect` read-model + recompute + queries; wizard evidence chips with tier/provenance/staleness; intent-page advisory chip; thin-evidence report for forge | 3-factor half-fraction campaign on `mock` over 8 tasks yields effect rows matching golden vectors; chips render n/tier/staleness; adversarial: selection surfaces cannot dispatch, block, or reroute; effects never pool cross-org; superseded-model effects excluded from recommendations |
 
 Each milestone leaves the previous ones' surfaces working; nothing in L1–L4 depends on the proposer existing (the lab-free fallback is a standing requirement, `03` §6).
 
@@ -100,6 +101,13 @@ Per the four pillars: **deterministic core** — everything through L5 runs on `
 - **LAB-D3 — generated-task validity.** A drifting task-author steers scores; walled by review + replay anchoring + tag balance surfacing. Sunset when generation has a month of accepted-rate history.
 - **LAB-D4 — evaluation overhead unbounded a priori.** Judging cost scales with trials × panel; surfaced from L3 (header stat) so the operator prices it; a cap knob if reality demands.
 - **LAB-D5 — promotion applies via deactuate→re-actuate.** Inherits D7/D8 (no live structural edits); a promotion mid-flight waits for the team to drain. Sunsets with D7/D8 themselves.
+
+*Registered with the 2026-08-16 amendments (`02` §4–§5, `07` §7):*
+
+- **LAB-D6 — transfer validity.** Bench evidence from one repo/domain/model-era generalizes imperfectly; strata, staleness, and advisory-only language scope it, never eliminate it. Measured honestly forever.
+- **LAB-D7 — evidence staleness.** Model updates invalidate effects; `modelSnapshot` provenance + recommendation-query exclusion + re-run nags mechanize the honesty.
+- **LAB-D8 — stratum inference.** Advisory chips need intents tagged with strata; inference errors mislead. v1: inferred, displayed, operator-correctable; corrections are the calibration stream.
+- **LAB-D9 — non-inferiority ratchet (mitigated by design).** Champion-referenced floors permit cross-generation drift; anchor floors (`02` §4 amendment) are the mechanism, but anchors themselves age (an anchor from a weaker model era eventually under-demands). Re-anchoring is explicit, logged, and nagged after model changes.
 
 ## 9. Definition of done for the series
 

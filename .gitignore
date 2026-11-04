@@ -22,3 +22,6 @@ data/
 # Playwright (E6 e2e)
 ui/playwright-report/
 ui/test-results/
+
+# Claude Code (machine-local permissions)
+.claude/settings.local.json

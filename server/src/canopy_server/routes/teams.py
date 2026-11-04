@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .. import revisions
 from ..catalog import get_catalog
-from ..deps import get_actuator, get_db, get_store, now_iso
+from ..deps import get_actuator, get_db, get_profile_store, get_store, now_iso
 from ..ids import new_document_id
 from ..migrate import UnsupportedSchemaVersion, migrate_team
 from ..models import Team
@@ -150,6 +150,8 @@ def create_organization(
         meta={"seed": req.seed, "needsLayout": True},
     )
     store.write(team)
+    # UX-35: every new team starts with a ready-to-actuate default profile.
+    get_profile_store().ensure_team_default(team.id)
     return JSONResponse(status_code=201, content=team.model_dump(by_alias=True, mode="json"))
 
 
@@ -276,6 +278,7 @@ def import_organization(body: dict, store: JsonFileStore = Depends(get_store)) -
     fresh.createdAt = ts
     fresh.updatedAt = ts
     store.write(fresh)
+    get_profile_store().ensure_team_default(fresh.id)
     return JSONResponse(
         status_code=201,
         content={

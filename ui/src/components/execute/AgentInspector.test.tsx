@@ -166,4 +166,37 @@ describe("AgentInspector", () => {
     fireEvent.click(screen.getByText("out/result.csv"));
     expect(props.onPreviewFile).toHaveBeenCalledWith("out/result.csv");
   });
+
+  it("artifacts tab: lists produced artifacts and previews selected artifact", () => {
+    const onPreviewArtifact = vi.fn();
+    const state: AgentState = {
+      ...fixture(),
+      artifacts: [
+        {
+          id: "art_1",
+          ref: "team://acme/a_be/deliverable@1",
+          nodeId: "a_be",
+          taskId: "as_cur",
+          name: "deliverable",
+          type: "PullRequest",
+          size: 256,
+          version: 1,
+          createdAt: "2026-07-28T10:00:00Z",
+        },
+      ],
+    };
+    renderPanel({
+      state,
+      selectedArtifactRef: "team://acme/a_be/deliverable@1",
+      onPreviewArtifact,
+      artifactPreview: {
+        meta: state.artifacts![0],
+        content: "diff --git a/app.py b/app.py\n+print('hello world')",
+        reason: null,
+      },
+    });
+    fireEvent.click(screen.getByText("Artifacts"));
+    expect(screen.getByText("deliverable@v1")).toBeTruthy();
+    expect(screen.getByText(/print\('hello world'\)/)).toBeTruthy();
+  });
 });

@@ -67,6 +67,27 @@ def spend_rollup(
 _QUEUED_STATES = frozenset({"created", "briefed"})
 
 
+def effective_node_status(raw_status: str, current: Any) -> str:
+    """Resolve the operator-visible node status from directory liveness + current assignment.
+
+    The agent runtime only heartbeats ``idle`` or ``engaged`` (and intentionally heartbeats
+    ``idle`` while ``gated``, ``paused``, or ``delivering`` so the router keeps delivering
+    coordination messages). When the process is alive in the directory (``idle`` or
+    ``engaged``) and holds an active assignment, the assignment's state determines whether
+    the node reads as ``erroring``, ``gated``, ``paused``, or ``engaged``.
+    """
+    if current is not None and current.state == "executing" and current.sessionHealth == "erroring":
+        return "erroring"
+    if raw_status in ("idle", "engaged", "not-actuated") and current is not None:
+        if current.state == "gated":
+            return "gated"
+        if current.state == "paused":
+            return "paused"
+        if current.state in ("intake", "planning", "executing", "delivering"):
+            return "engaged"
+    return raw_status
+
+
 @router.get("/teams/{team_id}/pulse")
 def team_pulse(team_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)) -> Any:
     """Mission control's feed (operator-experience.md §2): the team pulse header (actuation
@@ -147,16 +168,24 @@ def team_pulse(team_id: str, windowMinutes: int = 10, ledger=Depends(get_ledger)
              "total": len(plan.stages)}
             if plan and plan.stages else None
         )
+        erroring = bool(
+            current and current.state == "executing" and current.sessionHealth == "erroring"
+        )
         nodes.append({
             "nodeId": agent.id,
             "name": agent.name,
             "managerId": agent.managerId,
             "roleKey": agent.role.key,
-            "status": status_by_node.get(agent.id, "not-actuated"),
+            # A session reporting errors outranks the heartbeat's idle/engaged — otherwise a
+            # node retrying a failing call reads as calmly "idle" while nothing moves.
+            "status": (
+                effective_node_status(status_by_node.get(agent.id, "not-actuated"), current)
+            ),
             "current": (
                 {"assignmentId": current.id, "state": current.state,
                  "briefPreview": (brief.text[:80] if brief else ""),
-                 "stageProgress": stage_progress}
+                 "stageProgress": stage_progress,
+                 "healthDetail": current.sessionHealthDetail if erroring else None}
                 if current else None
             ),
             "queueDepth": sum(1 for a in active if a.state in _QUEUED_STATES),

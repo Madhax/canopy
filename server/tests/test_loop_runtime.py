@@ -143,3 +143,60 @@ def test_loop_manager_fans_out_and_synthesizes(client, make_org, mint_session):
     client.post(f"/api/assignments/{root.id}/accept", json={"note": "ship it"})
     intent = client.get(f"/api/intents/{root.intentId}").json()["intent"]
     assert intent["state"] == "completed"
+
+
+def test_loop_backs_off_and_reports_a_failing_artifact_write(
+    client, make_org, mint_session, monkeypatch,
+):
+    """The live failure: every artifact write 500'd and the loop re-billed a completion every
+    2 s for 10 minutes, then read as a silent "stall". Now one completion is paid for, the
+    session reports ``erroring`` (→ a session-error notification, no stall gate), retries back
+    off, and the retry re-uses the paid completion."""
+    import canopy_agent.runtime as rt
+
+    from canopy_server.deps import get_db, get_engine
+    from canopy_server.main import app
+
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    root = _root_of(team)
+    s = mint_session(team["id"], node_id=root["id"])
+    eng = get_engine()
+    a = eng.submit_intent(team["id"], s["actuationId"], "hello world",
+                          target_node=root["id"]).assignment
+    cfg = AgentConfig(cp_url="http://cp", run_token=s["token"], node_id=root["id"],
+                      actuation_id=s["actuationId"], a2a_host="127.0.0.1", a2a_port=0)
+    agent = TestClient(app, headers={"Authorization": f"Bearer {s['token']}"},
+                       raise_server_exceptions=False)
+
+    def state():
+        return client.get(f"/api/assignments/{a.id}").json()["assignment"]
+
+    while state()["state"] != "executing":
+        loop_tick(agent, cfg)
+
+    real_put = eng.put_artifact
+
+    def broken(*_a, **_k):
+        raise RuntimeError("no such column: team_slug")
+
+    monkeypatch.setattr(eng, "put_artifact", broken)
+    loop_tick(agent, cfg)
+    loop_tick(agent, cfg)  # inside the backoff window: no new completion
+    assert state()["state"] == "executing"
+    assert state()["sessionHealth"] == "erroring"
+
+    def spends():
+        with get_db().connect() as conn:
+            return conn.execute("SELECT COUNT(*) AS n FROM ledger_spend_event "
+                                "WHERE task_id=?", (a.id,)).fetchone()["n"]
+
+    assert spends() == 1
+    eng.sweep_triggers()  # erroring is surfaced as a notification, not a stall gate
+    notes = client.get(f"/api/teams/{team['id']}/notifications").json()["notifications"]
+    assert any(n["kind"] == "session-error" for n in notes)
+
+    monkeypatch.setattr(eng, "put_artifact", real_put)
+    rt._NEXT_TRY.clear()  # skip the remaining backoff
+    loop_tick(agent, cfg)
+    assert state()["state"] == "delivering"
+    assert spends() == 1  # the retry re-used the completion it had already paid for

@@ -14,7 +14,7 @@ a profile can point a node at ``mock`` and actuate with zero keys and zero spend
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS profiles_binding (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_binding_node
     ON profiles_binding (team_id, agent_node_id, team_path);
 CREATE INDEX IF NOT EXISTS ix_binding_org ON profiles_binding (team_id);
+
+-- The team-default profile (UX-35, docs/design/ux/04-first-run.md §4): the profile every node
+-- of the team runs on unless a per-node binding overrides it. Control-plane data like bindings —
+-- never part of the Team document. A dangling profile_id reads as "no default".
+CREATE TABLE IF NOT EXISTS profiles_team_default (
+    team_id     TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 
 -- F8: the team's work-target repo binding (operator data, mutable at runtime, no restart).
 -- NULL/absent falls back to the boot-time [repo] source, then the fixture.
@@ -94,6 +103,30 @@ class AgentBinding(BaseModel):
     agentNodeId: str
     teamPath: list[str] = Field(default_factory=list)
     profileId: str
+
+
+# The id a synthetic binding carries when a node inherits the team default (no per-node row).
+TEAM_DEFAULT_BINDING_ID = "team-default"
+
+# Fallback model per provider when canopy.toml's [prices.<provider>] table names none.
+_FALLBACK_MODEL: dict[str, str] = {
+    "mock": "mock-1",
+    "anthropic": "claude-sonnet-5",
+    "gemini": "gemini-2.5-flash",
+}
+
+
+def default_provider_and_model() -> tuple[str, str]:
+    """The provider/model a freshly materialized team-default profile uses: the configured
+    ``[gateway] default_provider`` (``mock`` out of the box — zero keys, zero spend) and the
+    first model its price table lists."""
+    from .config import get_default_provider, get_prices
+
+    provider = get_default_provider()
+    if provider not in _FALLBACK_MODEL:
+        provider = "mock"
+    priced = list((get_prices().get(provider) or {}).keys())
+    return provider, (priced[0] if priced else _FALLBACK_MODEL[provider])
 
 
 class ProfileStore:
@@ -178,6 +211,7 @@ class ProfileStore:
     def delete_profile(self, profile_id: str) -> bool:
         with self.db.transaction() as conn:
             cur = conn.execute("DELETE FROM profiles_profile WHERE id = ?", (profile_id,))
+            conn.execute("DELETE FROM profiles_team_default WHERE profile_id = ?", (profile_id,))
             return cur.rowcount > 0
 
     def get_profile(self, profile_id: str) -> AgentProfile | None:
@@ -273,6 +307,69 @@ class ProfileStore:
                 "SELECT * FROM profiles_binding WHERE team_id = ?", (team_id,)
             ).fetchall()
         return [self._row_to_binding(r) for r in rows]
+
+    def resolve_binding(
+        self, team_id: str, agent_node_id: str, team_path: list[str] | None = None
+    ) -> AgentBinding | None:
+        """The binding that actually powers a node: its own binding if it has one, else the
+        team default (a synthetic binding with id ``team-default``), else None.
+
+        Every runtime consumer (readiness, provisioning, the gateway, capacity attribution, the
+        inspector) resolves through here so "which model feeds this node" has one answer."""
+        own = self.get_binding_for_node(team_id, agent_node_id, team_path)
+        if own is not None:
+            return own
+        default_id = self.get_team_default(team_id)
+        if default_id is None:
+            return None
+        return AgentBinding(
+            id=TEAM_DEFAULT_BINDING_ID,
+            teamId=team_id,
+            agentNodeId=agent_node_id,
+            teamPath=team_path or [],
+            profileId=default_id,
+        )
+
+    # -- team default (UX-35) ---------------------------------------------- #
+    def get_team_default(self, team_id: str) -> str | None:
+        """The team-default profile id, or None (unset, or pointing at a deleted profile)."""
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT d.profile_id FROM profiles_team_default d "
+                "JOIN profiles_profile p ON p.id = d.profile_id WHERE d.team_id = ?",
+                (team_id,),
+            ).fetchone()
+        return row["profile_id"] if row else None
+
+    def set_team_default(self, team_id: str, profile_id: str | None) -> None:
+        with self.db.transaction() as conn:
+            if profile_id:
+                conn.execute(
+                    "INSERT INTO profiles_team_default (team_id, profile_id, updated_at) "
+                    "VALUES (?, ?, ?) ON CONFLICT(team_id) DO UPDATE SET "
+                    "profile_id=excluded.profile_id, updated_at=excluded.updated_at",
+                    (team_id, profile_id, now_iso()),
+                )
+            else:
+                conn.execute("DELETE FROM profiles_team_default WHERE team_id = ?", (team_id,))
+
+    def ensure_team_default(self, team_id: str) -> str | None:
+        """Give a team that has *no profiles at all* a ready-to-actuate default: one profile on
+        the configured default provider (mock out of the box), set as the team default.
+
+        Idempotent, and deliberately narrow — a team that already has profiles but no default
+        is left alone (choosing among the operator's own profiles is the operator's call).
+        Returns the team-default profile id, or None when none is set."""
+        current = self.get_team_default(team_id)
+        if current is not None or self.list_profiles(team_id):
+            return current
+        provider, model = default_provider_and_model()
+        p = self.create_profile(
+            team_id, name=f"Team default ({model})", provider=cast(Provider, provider),
+            model=model,
+        )
+        self.set_team_default(team_id, p.id)
+        return p.id
 
     # -- repo source (F8) --------------------------------------------------- #
     def get_repo_source(self, team_id: str) -> str | None:

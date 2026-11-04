@@ -317,6 +317,7 @@ def test_stage_timestamps_stamped(pod):
     eng.update_stage(root.id, 0, "done")
     plan = eng.store.get_plan(root.id)
     assert plan.stages[0].completedAt is not None
+    assert plan.stages[1].state == "active" and plan.stages[1].startedAt is not None
 
 
 def test_plan_aggregate_over_http(pod, client):
