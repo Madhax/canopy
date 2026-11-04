@@ -39,6 +39,7 @@ class ProfileBody(BaseModel):
     model: str
     endpoint: str | None = None
     apiKeySecretId: str | None = None
+    providerAccountId: str | None = None
     params: ProfileParams = Field(default_factory=ProfileParams)
     systemPreamble: str = ""
 
@@ -49,6 +50,7 @@ class ProfilePatch(BaseModel):
     model: str | None = None
     endpoint: str | None = None
     apiKeySecretId: str | None = None
+    providerAccountId: str | None = None
     params: ProfileParams | None = None
     systemPreamble: str | None = None
 
@@ -101,6 +103,7 @@ def create_profile(
         model=body.model,
         endpoint=body.endpoint,
         api_key_secret_id=body.apiKeySecretId,
+        provider_account_id=body.providerAccountId,
         params=body.params,
         system_preamble=body.systemPreamble,
     )

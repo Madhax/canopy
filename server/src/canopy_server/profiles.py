@@ -26,17 +26,18 @@ Provider = Literal["anthropic", "gemini", "mock"]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS profiles_profile (
-    id                 TEXT PRIMARY KEY,
-    team_id    TEXT NOT NULL,
-    name               TEXT NOT NULL,
-    provider           TEXT NOT NULL,
-    model              TEXT NOT NULL,
-    endpoint           TEXT,
-    api_key_secret_id  TEXT,
-    params             TEXT NOT NULL,
-    system_preamble    TEXT NOT NULL DEFAULT '',
-    created_at         TEXT NOT NULL,
-    updated_at         TEXT NOT NULL
+    id                  TEXT PRIMARY KEY,
+    team_id             TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    provider            TEXT NOT NULL,
+    model               TEXT NOT NULL,
+    endpoint            TEXT,
+    api_key_secret_id   TEXT,
+    provider_account_id TEXT,
+    params              TEXT NOT NULL,
+    system_preamble     TEXT NOT NULL DEFAULT '',
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_profiles_org ON profiles_profile (team_id);
 
@@ -160,6 +161,7 @@ class ProfileStore:
         model: str,
         endpoint: str | None = None,
         api_key_secret_id: str | None = None,
+        provider_account_id: str | None = None,
         params: ProfileParams | None = None,
         system_preamble: str = "",
     ) -> AgentProfile:
@@ -173,19 +175,26 @@ class ProfileStore:
             model=model,
             endpoint=endpoint,
             apiKeySecretId=api_key_secret_id,
+            providerAccountId=provider_account_id,
             params=params or ProfileParams(),
             systemPreamble=system_preamble,
             createdAt=ts,
             updatedAt=ts,
         )
         with self.db.transaction() as conn:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(profiles_profile)")}
+            if "provider_account_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE profiles_profile ADD COLUMN provider_account_id TEXT"
+                )
             conn.execute(
                 "INSERT INTO profiles_profile (id, team_id, name, provider, model, "
-                "endpoint, api_key_secret_id, params, system_preamble, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "endpoint, api_key_secret_id, provider_account_id, params, system_preamble, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     p.id, team_id, p.name, p.provider, p.model, p.endpoint, p.apiKeySecretId,
-                    p.params.model_dump_json(), p.systemPreamble, p.createdAt, p.updatedAt,
+                    p.providerAccountId, p.params.model_dump_json(), p.systemPreamble,
+                    p.createdAt, p.updatedAt,
                 ),
             )
         return p
@@ -197,12 +206,19 @@ class ProfileStore:
         merged = current.model_copy(update=changes)
         merged.updatedAt = now_iso()
         with self.db.transaction() as conn:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(profiles_profile)")}
+            if "provider_account_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE profiles_profile ADD COLUMN provider_account_id TEXT"
+                )
             conn.execute(
                 "UPDATE profiles_profile SET name=?, provider=?, model=?, endpoint=?, "
-                "api_key_secret_id=?, params=?, system_preamble=?, updated_at=? WHERE id=?",
+                "api_key_secret_id=?, provider_account_id=?, params=?, system_preamble=?, "
+                "updated_at=? WHERE id=?",
                 (
                     merged.name, merged.provider, merged.model, merged.endpoint,
-                    merged.apiKeySecretId, merged.params.model_dump_json(), merged.systemPreamble,
+                    merged.apiKeySecretId, merged.providerAccountId,
+                    merged.params.model_dump_json(), merged.systemPreamble,
                     merged.updatedAt, profile_id,
                 ),
             )

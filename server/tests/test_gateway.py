@@ -79,3 +79,104 @@ def test_step_is_tagged_coordination(client, make_org, mint_session):
         ).fetchone()
     assert table is None
     assert spend is not None
+
+
+def test_gemini_provider_tool_calls_and_catalog(monkeypatch):
+    """GeminiProvider maps neutral ToolSpec -> google.genai FunctionDeclaration and extracts
+    function_call parts into ToolCall results with stopReason='tool_use'."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from canopy_server.gateway.base import CompletionRequest, Message, ToolSpec
+    from canopy_server.gateway.providers import GeminiProvider
+
+    captured: dict = {}
+
+    class FakeModels:
+        async def generate_content(self, *, model, contents, config):
+            captured["model"] = model
+            captured["contents"] = contents
+            captured["config"] = config
+            part_text = SimpleNamespace(text="Calling tool...", function_call=None)
+            part_fc = SimpleNamespace(
+                text=None,
+                function_call=SimpleNamespace(
+                    id="fc_1", name="declare_plan", args={"stages": [{"title": "s1"}]}
+                ),
+            )
+            cand = SimpleNamespace(content=SimpleNamespace(parts=[part_text, part_fc]))
+            usage = SimpleNamespace(prompt_token_count=120, candidates_token_count=35)
+            return SimpleNamespace(candidates=[cand], usage_metadata=usage)
+
+    fake_client = SimpleNamespace(aio=SimpleNamespace(models=FakeModels()))
+    prov = GeminiProvider()
+    monkeypatch.setattr(prov, "_client", lambda cred, endpoint: fake_client)
+
+    req = CompletionRequest(
+        system="You are an agent.",
+        messages=[Message(role="user", content="plan the work")],
+        tools=[
+            ToolSpec(
+                name="declare_plan",
+                description="Declare stages",
+                inputSchema={"type": "object", "properties": {"stages": {"type": "array"}}},
+            )
+        ],
+    )
+    res = asyncio.run(prov.complete(req, "fake-key", model="gemini-2.5-pro", endpoint=None))
+    assert res.stopReason == "tool_use"
+    assert res.text == "Calling tool..."
+    assert len(res.toolCalls) == 1
+    assert res.toolCalls[0].id == "fc_1"
+    assert res.toolCalls[0].name == "declare_plan"
+    assert res.toolCalls[0].arguments == {"stages": [{"title": "s1"}]}
+    assert res.inputTokens == 120
+    assert res.outputTokens == 35
+    assert captured["config"].tools is not None
+    decls = captured["config"].tools[0].function_declarations
+    assert len(decls) == 1 and decls[0].name == "declare_plan"
+
+    known_ids = {m.id for m in prov.list_known_models()}
+    assert {
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+    } <= known_ids
+
+
+def test_gateway_records_cache_tokens_in_meter_and_ledger(client, make_org, mint_session):
+    """Gateway completions forward cacheReadTokens and cacheCreationTokens into the ledger
+    and charge billing-weighted tokens against meter.spent."""
+    from canopy_server.deps import get_db
+
+    team = make_org(seed={"kind": "root", "roleKey": "engineering-lead"})
+    s = mint_session(team["id"], allowance=5000)
+    r = _post(
+        client,
+        s["token"],
+        kind="production",
+        providerOptions={
+            "mock": {
+                "output_tokens": 50,
+                "cache_read_tokens": 1000,
+                "cache_creation_tokens": 200,
+            }
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cacheReadTokens"] == 1000
+    assert body["cacheCreationTokens"] == 200
+    # Effective meter charge = inputTokens + 50 + int(1000*0.1 + 200*1.25) = inputTokens + 400
+    assert body["meter"]["spent"] == body["inputTokens"] + 50 + 350
+
+    with get_db().connect() as conn:
+        spend = conn.execute(
+            "SELECT cache_read_tokens, cache_creation_tokens FROM ledger_spend_event "
+            "WHERE step_id = ?",
+            (body["stepId"],),
+        ).fetchone()
+    assert spend["cache_read_tokens"] == 1000
+    assert spend["cache_creation_tokens"] == 200

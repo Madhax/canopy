@@ -72,11 +72,15 @@ class MockProvider(ModelProvider):
 
         in_tokens = _est_tokens(req.system) + sum(_est_tokens(m.content) for m in req.messages)
         out_tokens = int(opts["output_tokens"]) if "output_tokens" in opts else _est_tokens(text)
+        cache_read = int(opts.get("cache_read_tokens", 0))
+        cache_creation = int(opts.get("cache_creation_tokens", 0))
         return CompletionResult(
             text=text,
             toolCalls=tool_calls,
             inputTokens=in_tokens,
             outputTokens=out_tokens,
+            cacheReadTokens=cache_read,
+            cacheCreationTokens=cache_creation,
             stopReason=stop_reason,
             providerRaw={"mock": True},
         )
@@ -141,6 +145,8 @@ class AnthropicProvider(ModelProvider):
             toolCalls=tool_calls,
             inputTokens=resp.usage.input_tokens,
             outputTokens=resp.usage.output_tokens,
+            cacheReadTokens=int(getattr(resp.usage, "cache_read_input_tokens", 0) or 0),
+            cacheCreationTokens=int(getattr(resp.usage, "cache_creation_input_tokens", 0) or 0),
             stopReason=resp.stop_reason or "end_turn",
         )
 
@@ -195,10 +201,23 @@ class GeminiProvider(ModelProvider):
             )
             for m in req.messages
         ]
+        tools = None
+        if req.tools:
+            decls = [
+                types.FunctionDeclaration(
+                    name=t.name,
+                    description=t.description,
+                    parameters_json_schema=t.inputSchema
+                    or {"type": "object", "properties": {}},
+                )
+                for t in req.tools
+            ]
+            tools = [types.Tool(function_declarations=decls)]
         config = types.GenerateContentConfig(
             system_instruction=req.system or None,
             max_output_tokens=req.maxOutputTokens,
             temperature=req.temperature,
+            tools=tools,
         )
         try:
             resp = await client.aio.models.generate_content(
@@ -207,12 +226,43 @@ class GeminiProvider(ModelProvider):
         except Exception as exc:  # noqa: BLE001
             raise ProviderError(f"gemini call failed: {exc}") from exc
 
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        candidates = getattr(resp, "candidates", None) or []
+        if candidates and getattr(candidates[0], "content", None):
+            parts = getattr(candidates[0].content, "parts", None) or []
+            for idx, part in enumerate(parts):
+                part_text = getattr(part, "text", None)
+                if part_text:
+                    text_parts.append(part_text)
+                fc = getattr(part, "function_call", None)
+                if fc is not None:
+                    tc_id = getattr(fc, "id", None) or f"geminitc_{idx}"
+                    args = getattr(fc, "args", None) or {}
+                    tool_calls.append(
+                        ToolCall(id=str(tc_id), name=str(fc.name), arguments=dict(args))
+                    )
+        else:
+            raw_text = getattr(resp, "text", None)
+            if raw_text:
+                text_parts.append(raw_text)
+            for idx, fc in enumerate(getattr(resp, "function_calls", None) or []):
+                tc_id = getattr(fc, "id", None) or f"geminitc_{idx}"
+                args = getattr(fc, "args", None) or {}
+                tool_calls.append(
+                    ToolCall(id=str(tc_id), name=str(fc.name), arguments=dict(args))
+                )
+
         usage = getattr(resp, "usage_metadata", None)
+        prompt_tok = int(getattr(usage, "prompt_token_count", 0) or 0)
+        cached_tok = int(getattr(usage, "cached_content_token_count", 0) or 0)
         return CompletionResult(
-            text=resp.text or "",
-            inputTokens=getattr(usage, "prompt_token_count", 0) or 0,
-            outputTokens=getattr(usage, "candidates_token_count", 0) or 0,
-            stopReason="end_turn",
+            text="".join(text_parts),
+            toolCalls=tool_calls,
+            inputTokens=max(0, prompt_tok - cached_tok),
+            outputTokens=int(getattr(usage, "candidates_token_count", 0) or 0),
+            cacheReadTokens=cached_tok,
+            stopReason="tool_use" if tool_calls else "end_turn",
         )
 
     async def validate(self, *, model, cred, endpoint) -> ValidationResult:
@@ -233,4 +283,7 @@ class GeminiProvider(ModelProvider):
         return [
             ModelInfo(id="gemini-2.5-pro", label="Gemini 2.5 Pro"),
             ModelInfo(id="gemini-2.5-flash", label="Gemini 2.5 Flash"),
+            ModelInfo(id="gemini-2.5-flash-lite", label="Gemini 2.5 Flash-Lite"),
+            ModelInfo(id="gemini-3.1-pro-preview", label="Gemini 3.1 Pro (Preview)"),
+            ModelInfo(id="gemini-3-flash-preview", label="Gemini 3 Flash (Preview)"),
         ]

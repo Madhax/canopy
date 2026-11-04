@@ -98,13 +98,15 @@ def main() -> int:
                "message": {"content": content,
                            "usage": {"input_tokens": usage[0], "output_tokens": usage[1]}}})
 
+    result_usage = script.get("resultUsage", {})
+    model_usage = script.get("modelUsage", {})
     if script.get("limitResult"):
         _emit({"type": "result", "subtype": "error_during_execution", "is_error": True,
                "result": script["limitResult"], "total_cost_usd": 0.0,
-               "num_turns": len(turns), "usage": {}})
+               "num_turns": len(turns), "usage": result_usage, "modelUsage": model_usage})
         return 1
     _emit({"type": "result", "subtype": "success", "total_cost_usd": 0.0,
-           "num_turns": len(turns), "usage": {}})
+           "num_turns": len(turns), "usage": result_usage, "modelUsage": model_usage})
     return 0
 
 

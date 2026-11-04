@@ -155,8 +155,9 @@ def test_settle_step_records_cache_tokens_and_cache_aware_cost(client, make_org,
     # claude-fable-5 @ $10 in / $50 out per MTok:
     # 100*10 + 200*50 + 10000*10*0.1 + 1000*10*1.25 (all /1M USD) = 0.0335 USD = 33_500 micros
     assert ev["est_cost_micros"] == 33_500
-    # The METER currency stays raw input+output (F1 decision): cache tokens don't charge it.
-    assert get_ledger().get_meter(a.meterId).spent == 300
+    # The METER charges billing-weighted effective tokens (F1):
+    # 100 + 200 + int(10_000 * 0.1 + 1_000 * 1.25) = 300 + 1_000 + 1_250 = 2_550.
+    assert get_ledger().get_meter(a.meterId).spent == 2_550
 
     # An unpriced model settles with zero cost but full token truth (IM-5 honesty is the
     # display layer's job -- F2).

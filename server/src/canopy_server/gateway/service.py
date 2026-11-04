@@ -90,6 +90,8 @@ class GatewayResult(BaseModel):
     toolCalls: list[ToolCall]
     inputTokens: int
     outputTokens: int
+    cacheReadTokens: int = 0
+    cacheCreationTokens: int = 0
     stopReason: str
     stepId: str
     provider: str
@@ -168,8 +170,14 @@ class DefaultModelGateway(ModelGateway):
             self._sems[provider] = asyncio.Semaphore(cap)
         return self._sems[provider]
 
-    def _price(self, provider: str, model: str, in_tok: int, out_tok: int) -> tuple[int, bool]:
-        return estimate_cost_micros(self.prices, provider, model, in_tok, out_tok)
+    def _price(
+        self, provider: str, model: str, in_tok: int, out_tok: int,
+        cache_read_tok: int = 0, cache_creation_tok: int = 0,
+    ) -> tuple[int, bool]:
+        return estimate_cost_micros(
+            self.prices, provider, model, in_tok, out_tok,
+            cache_read_tok, cache_creation_tok,
+        )
 
     async def complete(self, run_token, req, *, kind="production", task_id=None) -> GatewayResult:
         rec = self.runtokens.resolve(run_token)
@@ -220,7 +228,8 @@ class DefaultModelGateway(ModelGateway):
             self.ledger.release(reservation)
             raise GatewayProviderError(f"unexpected provider failure: {exc}") from exc
         est_cost, price_known = self._price(
-            profile.provider, profile.model, result.inputTokens, result.outputTokens
+            profile.provider, profile.model, result.inputTokens, result.outputTokens,
+            result.cacheReadTokens, result.cacheCreationTokens,
         )
         step_id = new_step_id()
         outcome = self.ledger.record(
@@ -233,6 +242,8 @@ class DefaultModelGateway(ModelGateway):
             model=profile.model,
             input_tokens=result.inputTokens,
             output_tokens=result.outputTokens,
+            cache_read_tokens=result.cacheReadTokens,
+            cache_creation_tokens=result.cacheCreationTokens,
             est_cost_micros=est_cost,
             reserved=reservation.amount,
             task_id=task_id,
@@ -254,6 +265,8 @@ class DefaultModelGateway(ModelGateway):
             toolCalls=result.toolCalls,
             inputTokens=result.inputTokens,
             outputTokens=result.outputTokens,
+            cacheReadTokens=result.cacheReadTokens,
+            cacheCreationTokens=result.cacheCreationTokens,
             stopReason=result.stopReason,
             stepId=step_id,
             provider=profile.provider,

@@ -177,9 +177,26 @@ def get_provider_concurrency() -> dict[str, int]:
     return {k: int(v) for k, v in _raw_config()["gateway"]["concurrency"].items()}
 
 
+def _flatten_model_prices(table: dict[str, Any], prefix: str = "") -> dict[str, dict[str, float]]:
+    """Flatten TOML dotted model keys (e.g. unquoted ``gemini-2.5-pro`` parsed as
+    ``{"gemini-2": {"5-pro": {"input": ...}}}``) into ``{"gemini-2.5-pro": {"input": ...}}``."""
+    out: dict[str, dict[str, float]] = {}
+    for k, v in table.items():
+        key = f"{prefix}.{k}" if prefix else str(k)
+        if isinstance(v, dict) and ("input" in v or "output" in v):
+            out[key] = v
+        elif isinstance(v, dict):
+            out.update(_flatten_model_prices(v, key))
+    return out
+
+
 def get_prices() -> dict[str, dict[str, dict[str, float]]]:
     """``{provider: {model: {"input": usd_per_mtok, "output": usd_per_mtok}}}`` (estimates)."""
-    return _raw_config().get("prices", {})  # type: ignore[return-value]
+    raw = _raw_config().get("prices", {})
+    return {
+        prov: _flatten_model_prices(models) if isinstance(models, dict) else {}
+        for prov, models in raw.items()
+    }
 
 
 def get_capacity_enabled() -> bool:

@@ -88,6 +88,27 @@ def _migrate_spend_cache_tokens(db: Db) -> None:
 
 MeterState = str  # "open" | "exhausted" | "closed"
 
+# Billing-weighted cache-token multipliers for salary meters (Finding F1), matching
+# gateway.service.CACHE_READ_INPUT_WEIGHT / CACHE_CREATION_INPUT_WEIGHT.
+CACHE_READ_TOKEN_WEIGHT = 0.1
+CACHE_CREATION_TOKEN_WEIGHT = 1.25
+
+
+def effective_meter_tokens(
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
+) -> int:
+    """Billing-weighted effective tokens charged to a salary Meter (Finding F1).
+    Uncached input + output count 1:1; cache reads count 0.1x and cache creation
+    counts 1.25x, matching estimate_cost_micros."""
+    cache_equiv = int(
+        int(cache_read_tokens) * CACHE_READ_TOKEN_WEIGHT
+        + int(cache_creation_tokens) * CACHE_CREATION_TOKEN_WEIGHT
+    )
+    return int(input_tokens) + int(output_tokens) + cache_equiv
+
 
 class BudgetExhausted(Exception):
     """Raised by ``reserve`` when a hard-stop meter cannot cover the requested amount."""
@@ -264,7 +285,9 @@ class SqliteLedger(BudgetLedger):
         input_tokens, output_tokens, est_cost_micros, reserved, task_id=None,
         cache_read_tokens=0, cache_creation_tokens=0,
     ) -> RecordOutcome:
-        tokens = int(input_tokens) + int(output_tokens)
+        tokens = effective_meter_tokens(
+            input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
+        )
         ts = now_iso()
         with self.db.transaction() as conn:
             existing = conn.execute(

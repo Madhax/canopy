@@ -33,7 +33,7 @@ from ..deps import (
 
 router = APIRouter()
 
-_HEADLINE = {"anthropic": "five_hour", "google": "cli_daily"}
+_HEADLINE = {"anthropic": "five_hour", "google": "cli_daily", "gemini": "cli_daily"}
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:

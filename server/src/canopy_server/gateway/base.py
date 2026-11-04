@@ -55,6 +55,8 @@ class CompletionResult(BaseModel):
     toolCalls: list[ToolCall] = Field(default_factory=list)
     inputTokens: int = 0
     outputTokens: int = 0
+    cacheReadTokens: int = 0
+    cacheCreationTokens: int = 0
     stopReason: str = "end_turn"
     providerRaw: dict[str, Any] = Field(default_factory=dict)  # truncated, debugging only
 

@@ -15,7 +15,13 @@ import { Button } from "../../common";
 
 const KNOWN_MODELS: Record<Provider, string[]> = {
   anthropic: ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
-  gemini: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  gemini: [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+  ],
   mock: ["mock-1"],
 };
 

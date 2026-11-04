@@ -385,6 +385,8 @@ def _produce_and_finish(client: httpx.Client, cfg: AgentConfig, cur: dict) -> No
     client.post("/api/dp/assignment/events", json={
         "assignmentId": aid, "kind": "step", "stepKind": "production",
         "inputTokens": res["inputTokens"], "outputTokens": res["outputTokens"],
+        "cacheReadTokens": res.get("cacheReadTokens", 0),
+        "cacheCreationTokens": res.get("cacheCreationTokens", 0),
         "durationMs": duration_ms, "stepId": res["stepId"], "stageIdx": 0,
         "deltaKind": "artifact", "deltaRef": ref,
     })
@@ -423,6 +425,8 @@ def main() -> None:
 
     tick = select_runtime()
     _log("runtime", kind=os.environ.get("CANOPY_RUNTIME", "loop"))
+    last_heartbeat = 0.0
+    last_status = ""
     try:
         while True:
             try:
@@ -430,16 +434,20 @@ def main() -> None:
             except httpx.HTTPError as exc:
                 _log("tick_error", error=str(exc))
                 status = "idle"
-            # One retry: a server-side 500 closes the pooled keep-alive connection, and the
-            # next request on it dies with a reset — without the retry the pulse froze at the
-            # last status the node managed to report.
-            for attempt in (1, 2):
-                try:
-                    client.post("/api/dp/heartbeat", json={"status": status})
-                    break
-                except httpx.HTTPError as exc:
-                    if attempt == 2:
-                        _log("heartbeat_error", error=str(exc))
+            now = time.monotonic()
+            if status != last_status or (now - last_heartbeat) >= HEARTBEAT_SECONDS:
+                # One retry: a server-side 500 closes the pooled keep-alive connection, and the
+                # next request on it dies with a reset — without the retry the pulse froze at the
+                # last status the node managed to report.
+                for attempt in (1, 2):
+                    try:
+                        client.post("/api/dp/heartbeat", json={"status": status})
+                        last_heartbeat = now
+                        last_status = status
+                        break
+                    except httpx.HTTPError as exc:
+                        if attempt == 2:
+                            _log("heartbeat_error", error=str(exc))
             time.sleep(WORK_POLL_SECONDS)
     except KeyboardInterrupt:
         pass
